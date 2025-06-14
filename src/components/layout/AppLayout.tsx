@@ -22,7 +22,6 @@ import {
   ShieldCheck,
   UserCheck, 
   UserX, 
-  Send // Send ikonu zaten vardı, gereksiz importu kaldırdım.
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -46,7 +45,6 @@ import {
   query,
   where,
   onSnapshot,
-  updateDoc, // updateDoc eklendi, gerekiyorsa.
   deleteDoc,
   doc,
   serverTimestamp,
@@ -77,7 +75,7 @@ interface FriendRequestForPopover {
   fromUsername: string;
   fromAvatarUrl: string | null;
   createdAt: Timestamp;
-  userProfile?: UserData; // Gönderen kullanıcının profil bilgileri
+  userProfile?: UserData; 
 }
 
 function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => void, isAdmin?: boolean }) {
@@ -154,13 +152,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   
   const [incomingRequests, setIncomingRequests] = React.useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = React.useState(true);
-  const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({}); // For accept/decline buttons
+  const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
       setLoadingRequests(false);
-      return () => {}; // Unsubscribe fonksiyonu döndür
+      return () => {}; 
     }
 
     setLoadingRequests(true);
@@ -182,14 +180,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             }
         } catch (profileError) {
             console.error(`Error fetching profile for sender ${data.fromUserId}:`, profileError);
-            // Profil alınamazsa bile isteği göstermeye devam et, sadece kullanıcı adı ile.
         }
         return {
           id: reqDoc.id,
           fromUserId: data.fromUserId,
-          fromUsername: data.fromUsername, // Firestore'da bu alanın olduğundan emin olun
-          fromAvatarUrl: data.fromAvatarUrl, // Firestore'da bu alanın olduğundan emin olun
-          createdAt: data.createdAt as Timestamp, // Tip zorlaması
+          fromUsername: data.fromUsername,
+          fromAvatarUrl: data.fromAvatarUrl, 
+          createdAt: data.createdAt as Timestamp, 
           userProfile: userProfileData,
         } as FriendRequestForPopover;
       });
@@ -209,7 +206,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       setLoadingRequests(false);
     });
     
-    return () => unsubscribe(); // Cleanup on unmount
+    return () => unsubscribe(); 
   }, [currentUser?.uid, toast]);
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -217,18 +214,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handleAcceptRequestPopover = async (request: FriendRequestForPopover) => {
-    if (!currentUser || !userData || !request.userProfile) { // request.userProfile kontrolü eklendi
+    if (!currentUser || !userData || !request.userProfile) { 
         toast({ title: "Hata", description: "İstek kabul edilemedi, gönderen bilgileri eksik.", variant: "destructive" });
         return;
     }
     setActionLoading(request.id, true);
     try {
       const batch = writeBatch(db);
-      // Friend request status'unu güncelle
       const requestRef = doc(db, "friendRequests", request.id);
       batch.update(requestRef, { status: "accepted" });
 
-      // Mevcut kullanıcının arkadaş listesine ekle
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
       batch.set(myFriendRef, { 
         displayName: request.userProfile.displayName, 
@@ -236,7 +231,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         addedAt: serverTimestamp() 
       });
 
-      // Diğer kullanıcının (isteği gönderenin) arkadaş listesine ekle
       const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
       batch.set(theirFriendRef, { 
         displayName: userData.displayName, 
@@ -246,7 +240,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       
       await batch.commit();
       toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
-      // incomingRequests onSnapshot ile otomatik güncellenecek
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -258,11 +251,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
-      // İsteği silmek yerine durumunu 'declined' olarak güncelleyebilir veya silebilirsiniz.
-      // Silmek daha temiz bir yaklaşım olabilir.
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
-      // incomingRequests onSnapshot ile otomatik güncellenecek
     } catch (error) {
       console.error("Error declining friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
@@ -274,7 +264,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const getAvatarFallback = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "SK"; // Sohbet Küresi
+    return "SK"; 
   };
 
   const toggleTheme = () => {
@@ -296,7 +286,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50">
-               <SheetHeader className="p-4 border-b"> {/* SheetHeader eklendi */}
+               <SheetHeader className="p-4 border-b"> 
                 <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
               <SidebarContent onLinkClick={() => setMobileSheetOpen(false)} />
@@ -304,7 +294,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Sheet>
           
           <div className="w-full flex-1">
-            {/* Header içeriği buraya gelebilir, örneğin arama çubuğu */}
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3">
@@ -358,7 +347,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             size="icon" 
                             className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-800/50 dark:text-green-400"
                             onClick={() => handleAcceptRequestPopover(req)}
-                            disabled={performingAction[req.id] || !req.userProfile} // Eğer profil yoksa da disable et
+                            disabled={performingAction[req.id] || !req.userProfile} 
                             aria-label="Kabul Et"
                           >
                             {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}

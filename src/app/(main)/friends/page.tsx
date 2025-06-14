@@ -36,10 +36,9 @@ interface Friend extends UserData {
 
 interface SearchResultUser extends UserData {
   isFriend?: boolean;
-  isRequestSent?: boolean; // Mevcut kullanıcıdan bu kullanıcıya giden istek
-  isRequestReceived?: boolean; // Bu kullanıcıdan mevcut kullanıcıya gelen istek
-  outgoingRequestId?: string | null; // Giden isteğin ID'si (iptal için)
-  // incomingRequestId artık popover'da yönetildiği için burada gerekmeyebilir
+  isRequestSent?: boolean; 
+  isRequestReceived?: boolean; 
+  outgoingRequestId?: string | null; 
 }
 
 export default function FriendsPage() {
@@ -52,13 +51,12 @@ export default function FriendsPage() {
   
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [loadingSearch, setLoadingSearch] = useState(false);
-  const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({}); // Key can be userId or requestId
+  const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({}); 
 
   useEffect(() => {
     document.title = 'Arkadaşlarım - Sohbet Küresi';
   }, []);
 
-  // Fetch current user's friends
   useEffect(() => {
     if (!currentUser?.uid) {
       setLoadingFriends(false);
@@ -72,23 +70,21 @@ export default function FriendsPage() {
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
         const friendData = friendDoc.data();
-        // Arkadaşın tam profilini users koleksiyonundan çek
         const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
         if (userProfileDoc.exists()) {
           return { 
-            uid: friendDoc.id, // Ensure uid is set from friendDoc.id
+            uid: friendDoc.id, 
             ...userProfileDoc.data(), 
             addedAt: friendData.addedAt 
           } as Friend;
         }
-        // Fallback if user profile is somehow missing (should not happen ideally)
         return {
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
           photoURL: friendData.photoURL || null,
-          email: null, // Or some other default
-          diamonds: 0, // Or some other default
-          createdAt: friendData.addedAt || Timestamp.now(), // Use addedAt as fallback
+          email: friendData.email || null, 
+          diamonds: friendData.diamonds || 0, 
+          createdAt: friendData.addedAt || Timestamp.now(), 
           addedAt: friendData.addedAt
         } as Friend;
       });
@@ -111,9 +107,7 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
-      // displayName için arama (büyük/küçük harf duyarsız değil, ama başlangıç eşleşmesi)
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
-      // email için tam eşleşme (genellikle e-postalar benzersizdir)
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
       const [nameSnapshot, emailSnapshot] = await Promise.all([
@@ -134,11 +128,9 @@ export default function FriendsPage() {
 
       for (const user of rawResults) {
         let processedUser: SearchResultUser = { ...user };
-        // Arkadaşlık durumunu kontrol et
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
 
         if (!processedUser.isFriend) {
-          // Mevcut kullanıcıdan bu kullanıcıya giden bekleyen istek var mı?
           const outgoingQuery = query(collection(db, "friendRequests"), 
             where("fromUserId", "==", currentUser.uid), 
             where("toUserId", "==", user.uid), 
@@ -150,8 +142,6 @@ export default function FriendsPage() {
             processedUser.outgoingRequestId = outgoingSnap.docs[0].id;
           }
 
-          // Bu kullanıcıdan mevcut kullanıcıya gelen bekleyen istek var mı?
-          // (Eğer giden bir istek yoksa kontrol et, çakışmayı önlemek için)
           if (!processedUser.isRequestSent) {
             const incomingQuery = query(collection(db, "friendRequests"),
               where("fromUserId", "==", user.uid),
@@ -161,7 +151,6 @@ export default function FriendsPage() {
             const incomingSnap = await getDocs(incomingQuery);
             if(!incomingSnap.empty) {
               processedUser.isRequestReceived = true;
-              // incomingRequestId'ye burada ihtiyaç yok, bildirimlerde ele alınıyor
             }
           }
         }
@@ -177,7 +166,6 @@ export default function FriendsPage() {
     }
   };
   
-  // Bir eylemin yüklenip yüklenmediğini ayarlamak için yardımcı fonksiyon
   const setActionLoading = (id: string, isLoading: boolean) => {
     setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
   };
@@ -186,7 +174,6 @@ export default function FriendsPage() {
     if (!currentUser || !userData || !targetUser || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived) return;
     setActionLoading(targetUser.uid, true);
     try {
-      // Yeni bir arkadaşlık isteği dokümanı oluştur
       const newRequestRef = await addDoc(collection(db, "friendRequests"), {
         fromUserId: currentUser.uid,
         fromUsername: userData.displayName,
@@ -198,7 +185,6 @@ export default function FriendsPage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${targetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
-      // Arama sonuçlarındaki bu kullanıcı için UI'ı güncelle
       setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: true, outgoingRequestId: newRequestRef.id } : u
       ));
@@ -211,12 +197,15 @@ export default function FriendsPage() {
   };
   
   const handleCancelOutgoingRequest = async (targetUser: SearchResultUser) => {
-    if (!targetUser.outgoingRequestId) return;
-    setActionLoading(targetUser.outgoingRequestId, true); // İşlem ID'si olarak isteğin ID'sini kullan
+    if (!targetUser.outgoingRequestId) {
+        toast({ title: "Hata", description: "İptal edilecek istek ID'si bulunamadı.", variant: "destructive" });
+        return;
+    }
+    const requestId = targetUser.outgoingRequestId;
+    setActionLoading(requestId, true); 
     try {
-      await deleteDoc(doc(db, "friendRequests", targetUser.outgoingRequestId));
+      await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
-      // Arama sonuçlarındaki bu kullanıcı için UI'ı güncelle
        setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null} : u
       ));
@@ -224,7 +213,7 @@ export default function FriendsPage() {
       console.error("Error cancelling friend request:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği iptal edilemedi.", variant: "destructive" });
     } finally {
-      setActionLoading(targetUser.outgoingRequestId, false);
+      setActionLoading(requestId, false);
     }
   };
 
@@ -233,30 +222,24 @@ export default function FriendsPage() {
     setActionLoading(friendId, true);
     try {
       const batch = writeBatch(db);
-      // Kullanıcının kendi arkadaş listesinden sil
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, friendId);
       batch.delete(myFriendRef);
-      // Diğer kullanıcının arkadaş listesinden sil
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
       
-      // İlgili (kabul edilmiş) arkadaşlık isteklerini de sil (isteğe bağlı, temizlik için)
       const q = query(collection(db, "friendRequests"), 
         where("fromUserId", "in", [currentUser.uid, friendId]), 
         where("toUserId", "in", [currentUser.uid, friendId]),
-        where("status", "==", "accepted") // Sadece kabul edilenleri hedefle
+        where("status", "==", "accepted") 
       );
       const oldRequestsSnap = await getDocs(q);
       oldRequestsSnap.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
-      // myFriends listesi onSnapshot ile otomatik güncellenecektir.
-      // Eğer arama sonuçlarında bu kişi varsa, onun da durumunu güncelle
       setSearchResults(prevResults => prevResults.map(sr => 
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
-
     } catch (error) {
       console.error("Error removing friend:", error);
       toast({ title: "Hata", description: "Arkadaş çıkarılamadı.", variant: "destructive" });
@@ -265,13 +248,12 @@ export default function FriendsPage() {
     }
   };
 
-  // Kullanıcı avatarı için fallback metnini alır
   const getAvatarFallback = (name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "??";
   };
 
 
-  if (isAuthLoading && !currentUser) { // Auth yükleniyor ve henüz kullanıcı yoksa
+  if (isAuthLoading && !currentUser) { 
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -280,7 +262,7 @@ export default function FriendsPage() {
     );
   }
 
-  if (!currentUser) { // Yükleme bitti ama kullanıcı yoksa (örneğin giriş yapılmamış)
+  if (!currentUser) { 
      return (
       <div className="flex flex-1 items-center justify-center">
         <Card className="w-full max-w-md text-center p-6">
@@ -303,7 +285,7 @@ export default function FriendsPage() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="my-friends" className="w-full">
-            <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 mb-4 sm:mb-6">
+            <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6"> {/* Grid-cols-2 olarak güncellendi */}
               <TabsTrigger value="my-friends" className="text-xs sm:text-sm">Arkadaşlarım ({myFriends.length})</TabsTrigger>
               <TabsTrigger value="add-friend" className="text-xs sm:text-sm">Arkadaş Ekle</TabsTrigger>
             </TabsList>
@@ -324,7 +306,6 @@ export default function FriendsPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium text-sm sm:text-base">{friend.displayName || "İsimsiz"}</p>
-                          {/* <p className="text-xs text-muted-foreground">{friend.email || 'E-posta yok'}</p> */}
                         </div>
                       </div>
                       <div className="flex gap-1 sm:gap-2">
@@ -392,12 +373,12 @@ export default function FriendsPage() {
                                 </Button>
                                 <Button 
                                     variant="ghost" 
-                                    size="xs" // Button'un xs boyutu eklendi
+                                    size="xs" 
                                     className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
-                                    onClick={() => handleCancelOutgoingRequest(user)}
-                                    disabled={performingAction[user.outgoingRequestId!]}
+                                    onClick={() => user.outgoingRequestId && handleCancelOutgoingRequest(user)}
+                                    disabled={!user.outgoingRequestId || performingAction[user.outgoingRequestId]}
                                 >
-                                    {performingAction[user.outgoingRequestId!] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
+                                    {user.outgoingRequestId && performingAction[user.outgoingRequestId] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
                                 </Button>
                             </div>
                         ) : user.isRequestReceived ? (
@@ -423,7 +404,7 @@ export default function FriendsPage() {
                       </li>
                     ))}
                   </ul>
-                ) : !searchTerm && !loadingSearch && ( // Arama yapılmadıysa ve yüklenmiyorsa
+                ) : !searchTerm && !loadingSearch && ( 
                     <p className="text-muted-foreground text-center py-8">Arkadaş eklemek için kullanıcı adı veya e-posta ile arama yapın.</p>
                 )}
               </div>
