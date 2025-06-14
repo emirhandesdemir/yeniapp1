@@ -1,14 +1,15 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent } from "react";
+import { useState, useEffect, type ChangeEvent, useRef } from "react";
+import Image from "next/image"; // next/image import edildi
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Camera, Loader2 } from "lucide-react";
+import { User, Mail, Edit3, Save, XCircle, Camera, Loader2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -18,26 +19,33 @@ interface UserProfileForm {
 }
 
 export default function ProfilePage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading } = useAuth(); // userData eklendi
+  const { currentUser, userData, updateUserProfile, isUserLoading } = useAuth();
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.title = 'Profilim - Sohbet Küresi';
     if (currentUser) {
       setTempProfile({
         username: userData?.displayName || currentUser.displayName || "",
-        bio: "", // Bio needs to be fetched from a DB (e.g., users/{uid}/profile)
+        bio: "", 
       });
+      setPreviewImage(userData?.photoURL || currentUser.photoURL || null);
     }
   }, [currentUser, userData]);
 
   const handleEditToggle = () => {
     if (isEditing) {
+      // Cancel editing
       if (currentUser) {
         setTempProfile({ username: userData?.displayName || currentUser.displayName || "", bio: "" });
+        setPreviewImage(userData?.photoURL || currentUser.photoURL || null);
+        setSelectedFile(null);
       }
     }
     setIsEditing(!isEditing);
@@ -48,31 +56,70 @@ export default function ProfilePage() {
     setTempProfile(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast({ title: "Dosya Çok Büyük", description: "Lütfen 5MB'den küçük bir resim seçin.", variant: "destructive"});
+        return;
+      }
+      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+        toast({ title: "Geçersiz Dosya Türü", description: "Lütfen bir resim dosyası (JPEG, PNG, GIF, WebP) seçin.", variant: "destructive"});
+        return;
+      }
+      setSelectedFile(file);
+      setPreviewImage(URL.createObjectURL(file));
+    }
+  };
+
   const handleSave = async () => {
     if (!currentUser) {
       toast({ title: "Hata", description: "Profil kaydedilemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return;
     }
+    
+    const updates: { displayName?: string, photoFile?: File | null } = {};
+    let profileChanged = false;
+
+    if (tempProfile.username.trim() !== (userData?.displayName || currentUser.displayName || "")) {
+        if(tempProfile.username.trim().length < 3){
+            toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
+            return;
+        }
+        updates.displayName = tempProfile.username.trim();
+        profileChanged = true;
+    }
+    if (selectedFile) {
+        updates.photoFile = selectedFile;
+        profileChanged = true;
+    }
+
+    if (!profileChanged) {
+        setIsEditing(false); // No changes, just exit editing mode
+        return;
+    }
+
     try {
-      // updateUserProfile AuthContext'te hem Auth hem Firestore'u güncelliyor
-      await updateUserProfile({ displayName: tempProfile.username }); 
-      // photoURL ve bio için benzer bir güncelleme mekanizması eklenebilir.
-      toast({ title: "Başarılı", description: "Kullanıcı adınız güncellendi." });
+      await updateUserProfile(updates);
+      toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
       setIsEditing(false);
+      setSelectedFile(null); // Reset selected file after successful save
+      // previewImage will be updated by useEffect when userData changes
     } catch (error: any) {
-      toast({ title: "Profil Güncelleme Hatası", description: error.message, variant: "destructive" });
+      // Errors are typically handled within updateUserProfile, but a generic one here if needed.
+      // toast({ title: "Profil Güncelleme Hatası", description: error.message || "Bilinmeyen bir hata oluştu.", variant: "destructive" });
     }
   };
   
   const getAvatarFallbackText = () => {
-    const nameToUse = userData?.displayName || currentUser?.displayName;
+    const nameToUse = tempProfile.username || userData?.displayName || currentUser?.displayName;
     if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
     return "PN"; 
   };
 
 
-  if (!currentUser && isUserLoading) { // Sadece isUserLoading değil, currentUser yoksa ve yükleniyorsa
+  if (!currentUser && isUserLoading) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -81,7 +128,7 @@ export default function ProfilePage() {
     );
   }
   
-  if (!currentUser && !isUserLoading) { // Yükleme bitti ama kullanıcı hala yoksa (örn. yönlendirme bekleniyor)
+  if (!currentUser && !isUserLoading) { 
      return (
       <div className="flex flex-1 items-center justify-center">
         <p className="text-muted-foreground">Giriş yapmış kullanıcı bulunamadı. Yönlendiriliyor...</p>
@@ -98,22 +145,34 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center text-center -mt-12 sm:-mt-16">
           <div className="relative group">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
-              <AvatarImage src={userData?.photoURL || currentUser?.photoURL || "https://placehold.co/128x128.png"} alt={userData?.displayName || currentUser?.displayName || "Kullanıcı"} data-ai-hint="user portrait" />
+              <AvatarImage 
+                src={previewImage || "https://placehold.co/128x128.png"} // Use previewImage
+                alt={tempProfile.username || "Kullanıcı"} 
+                data-ai-hint="user portrait" 
+              />
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
             {isEditing && (
-              <label htmlFor="avatarUpload" className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
-                <input 
-                  type="file" 
-                  id="avatarUpload" 
-                  className="hidden" 
-                  accept="image/*" 
-                  onChange={() => toast({description: "Avatar yükleme özelliği yakında eklenecektir."})}
-                  disabled 
-                />
-              </label>
+              <Button 
+                type="button"
+                variant="outline"
+                size="icon"
+                className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-background/80 hover:bg-background border-2 border-primary/50 hover:border-primary text-primary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUserLoading}
+                aria-label="Profil fotoğrafını değiştir"
+              >
+                <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
             )}
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              className="hidden" 
+              accept="image/jpeg,image/png,image/gif,image/webp" 
+              onChange={handleFileChange}
+              disabled={!isEditing || isUserLoading}
+            />
           </div>
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-primary-foreground/90">
             {isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName || "Kullanıcı Adı Yok")}
@@ -141,9 +200,17 @@ export default function ProfilePage() {
                   rows={3} 
                   className="mt-1" 
                   placeholder="Kendinizden bahsedin... (Bu özellik yakında eklenecektir)"
-                  disabled 
+                  disabled // Şimdilik bio düzenleme devre dışı
                 />
               </div>
+              {selectedFile && previewImage && (
+                <div className="space-y-2">
+                    <Label>Yeni Profil Fotoğrafı Önizlemesi</Label>
+                    <div className="flex justify-center">
+                        <Image src={previewImage} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md border object-cover" data-ai-hint="profile preview"/>
+                    </div>
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 sm:pt-4">
                 <Button type="button" variant="outline" onClick={handleEditToggle} disabled={isUserLoading} className="w-full sm:w-auto">
                   <XCircle className="mr-2 h-4 w-4" /> Vazgeç

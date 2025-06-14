@@ -4,6 +4,7 @@ import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/a
 // import { getAnalytics } from "firebase/analytics"; // Analytics kullanmıyorsak kaldırılabilir
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage"; // Firebase Storage eklendi
 
 // TODO: BU DOĞRUDAN YAPILANDIRMA SADECE HATA AYIKLAMA AMAÇLIYDI.
 // BU DEĞİŞİKLİĞİ GERİ ALIP .ENV.LOCAL KULLANMAYA DÖNÜN!
@@ -28,6 +29,8 @@ if (!getApps().length) {
 
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app); // Storage instance'ı oluşturuldu
 // const analytics = getAnalytics(app); // Analytics kullanmıyorsak bu satır da kaldırılabilir veya yorumda bırakılabilir
 
-export { app, auth, db };
+export { app, auth, db, storage }; // storage export edildi
+

@@ -1,14 +1,15 @@
 
 "use client";
 
+import Image from "next/image"; // next/image import edildi
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react"; // UsersRound eklendi
+import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, UploadCloud, ImagePlus } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
-import { useEffect, useState } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, increment, writeBatch } from "firebase/firestore";
+import { useEffect, useState, useRef, ChangeEvent } from "react";
+import { db, storage } from "@/lib/firebase"; // storage import edildi
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage"; // storage fonksiyonları
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -36,7 +37,7 @@ interface ChatRoom {
   creatorName: string;
   createdAt: Timestamp;
   expiresAt: Timestamp;
-  image: string;
+  image: string; // Artık her zaman bir string olacak (URL veya placeholder)
   imageAiHint: string;
   participantCount?: number;
   maxParticipants: number;
@@ -46,9 +47,8 @@ const placeholderImages = [
   { url: "https://placehold.co/600x400.png", hint: "abstract modern" },
   { url: "https://placehold.co/600x400.png", hint: "community discussion" },
   { url: "https://placehold.co/600x400.png", hint: "technology connection" },
-  { url: "https://placehold.co/600x400.png", hint: "ideas meeting" },
-  { url: "https://placehold.co/600x400.png", hint: "group chat" },
 ];
+const defaultRoomImage = placeholderImages[0]; // Varsayılan oda resmi
 
 const ROOM_CREATION_COST = 1;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
@@ -61,6 +61,9 @@ export default function ChatRoomsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
+  const [newRoomImageFile, setNewRoomImageFile] = useState<File | null>(null);
+  const [newRoomImagePreview, setNewRoomImagePreview] = useState<string | null>(defaultRoomImage.url); // Başlangıçta varsayılan
+  const roomImageInputRef = useRef<HTMLInputElement>(null);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
@@ -81,8 +84,6 @@ export default function ChatRoomsPage() {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
         const roomData = doc.data() as ChatRoom; 
-        // Süresi dolan odaları doğrudan filtrelemiyoruz, kartta farklı gösteriyoruz.
-        // Eğer tamamen gizlenmesi isteniyorsa burada filtreleme yapılabilir.
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -95,6 +96,33 @@ export default function ChatRoomsPage() {
 
     return () => unsubscribe();
   }, [toast]);
+
+  const handleRoomImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast({ title: "Dosya Çok Büyük", description: "Lütfen 5MB'den küçük bir resim seçin.", variant: "destructive"});
+        return;
+      }
+      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+        toast({ title: "Geçersiz Dosya Türü", description: "Lütfen bir resim dosyası (JPEG, PNG, GIF, WebP) seçin.", variant: "destructive"});
+        return;
+      }
+      setNewRoomImageFile(file);
+      setNewRoomImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const resetCreateRoomForm = () => {
+    setNewRoomName("");
+    setNewRoomDescription("");
+    setNewRoomImageFile(null);
+    setNewRoomImagePreview(defaultRoomImage.url); // Varsayılana dön
+    if (roomImageInputRef.current) {
+      roomImageInputRef.current.value = ""; // Dosya inputunu temizle
+    }
+  };
+
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,8 +139,42 @@ export default function ChatRoomsPage() {
       return;
     }
     setIsCreatingRoom(true);
+    
+    let imageUrl = defaultRoomImage.url;
+    let imageHint = defaultRoomImage.hint;
+
     try {
-      const randomImage = placeholderImages[Math.floor(Math.random() * placeholderImages.length)];
+      if (newRoomImageFile) {
+        const file = newRoomImageFile;
+        const fileExtension = file.name.split('.').pop();
+        const imageFileName = `${currentUser.uid}_${Date.now()}.${fileExtension}`;
+        const roomImageRef = storageRef(storage, `chat_room_images/${imageFileName}`);
+        
+        const uploadTask = uploadBytesResumable(roomImageRef, file);
+        
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on('state_changed',
+            (snapshot) => { /* İlerleme takibi (isteğe bağlı) */ },
+            (error) => {
+              console.error("Room image upload error:", error);
+              toast({ title: "Oda Resmi Yükleme Hatası", description: "Oda resmi yüklenirken bir sorun oluştu.", variant: "destructive" });
+              reject(error);
+            },
+            async () => {
+              try {
+                imageUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                imageHint = "custom room image";
+                resolve();
+              } catch (urlError) {
+                console.error("Error getting room image download URL:", urlError);
+                toast({ title: "Oda Resmi URL Hatası", description: "Yüklenen oda resminin adresi alınamadı.", variant: "destructive" });
+                reject(urlError);
+              }
+            }
+          );
+        });
+      }
+
       const currentTime = new Date();
       const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
       
@@ -123,8 +185,8 @@ export default function ChatRoomsPage() {
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAtDate),
-        image: randomImage.url,
-        imageAiHint: randomImage.hint,
+        image: imageUrl, // Yüklenen veya varsayılan resim URL'si
+        imageAiHint: imageHint, // Yüklenen veya varsayılan hint
         participantCount: 0, 
         maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
       };
@@ -133,12 +195,15 @@ export default function ChatRoomsPage() {
       await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
 
       toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
-      setNewRoomName("");
-      setNewRoomDescription("");
+      resetCreateRoomForm();
       setIsCreateModalOpen(false);
     } catch (error) {
-      console.error("Error creating room: ", error);
-      toast({ title: "Hata", description: "Oda oluşturulurken bir sorun oluştu. Lütfen konsolu kontrol edin.", variant: "destructive" });
+      // Upload veya Firestore hatası yukarıda toast ile gösterilmiş olabilir.
+      // Bu genel bir yedekleme.
+      if (!(error instanceof Error && error.message.includes("upload") || error instanceof Error && error.message.includes("URL"))) {
+         toast({ title: "Hata", description: "Oda oluşturulurken bir sorun oluştu.", variant: "destructive" });
+      }
+      console.error("Error creating room (general catch): ", error);
     } finally {
       setIsCreatingRoom(false);
     }
@@ -197,7 +262,10 @@ export default function ChatRoomsPage() {
           <h1 className="text-3xl font-headline font-semibold">Sohbet Odaları</h1>
           <p className="text-muted-foreground">İlgi alanlarınıza uygun odalara katılın veya kendi odanızı oluşturun.</p>
         </div>
-        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <Dialog open={isCreateModalOpen} onOpenChange={(isOpen) => {
+            setIsCreateModalOpen(isOpen);
+            if (!isOpen) resetCreateRoomForm(); // Dialog kapanırken formu sıfırla
+        }}>
           <DialogTrigger asChild>
             <Button 
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto" 
@@ -207,46 +275,68 @@ export default function ChatRoomsPage() {
               Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[480px]">
             <form onSubmit={handleCreateRoom}>
               <DialogHeader>
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
-                  Odanız için bir ad ve açıklama girin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
+                  Odanız için bir ad, açıklama ve resim belirleyin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
                   Maksimum katılımcı sayısı {MAX_PARTICIPANTS_PER_ROOM} kişidir. Mevcut elmasınız: {userData?.diamonds ?? 0}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="roomName" className="text-right">
-                    Oda Adı
-                  </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="roomName">Oda Adı</Label>
                   <Input
                     id="roomName"
                     value={newRoomName}
                     onChange={(e) => setNewRoomName(e.target.value)}
-                    className="col-span-3"
                     required
                     disabled={isCreatingRoom}
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="roomDescription" className="text-right">
-                    Açıklama
-                  </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="roomDescription">Açıklama</Label>
                   <Textarea
                     id="roomDescription"
                     value={newRoomDescription}
                     onChange={(e) => setNewRoomDescription(e.target.value)}
-                    className="col-span-3"
-                    rows={3}
+                    rows={2}
                     disabled={isCreatingRoom}
                   />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="roomImage">Oda Resmi (İsteğe Bağlı)</Label>
+                    <div className="flex items-center gap-4">
+                        {newRoomImagePreview && (
+                            <Image 
+                                src={newRoomImagePreview} 
+                                alt="Oda resmi önizlemesi" 
+                                width={80} 
+                                height={80} 
+                                className="rounded-md border object-cover aspect-square"
+                                data-ai-hint="room preview image"
+                            />
+                        )}
+                        <Button type="button" variant="outline" onClick={() => roomImageInputRef.current?.click()} disabled={isCreatingRoom}>
+                            <UploadCloud className="mr-2 h-4 w-4" /> Resim Seç
+                        </Button>
+                    </div>
+                    <input 
+                        type="file" 
+                        id="roomImage"
+                        ref={roomImageInputRef}
+                        className="hidden" 
+                        accept="image/jpeg,image/png,image/gif,image/webp" 
+                        onChange={handleRoomImageChange}
+                        disabled={isCreatingRoom}
+                    />
+                    <p className="text-xs text-muted-foreground">Max 5MB. Önerilen boyut: 600x400.</p>
                 </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                    <Button type="button" variant="outline" disabled={isCreatingRoom}>İptal</Button>
+                    <Button type="button" variant="outline" disabled={isCreatingRoom} onClick={resetCreateRoomForm}>İptal</Button>
                 </DialogClose>
                 <Button 
                   type="submit" 
@@ -286,7 +376,7 @@ export default function ChatRoomsPage() {
             <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card`}>
               <div className="relative h-40 sm:h-48 w-full">
                 <Image
-                  src={room.image || "https://placehold.co/600x400.png"}
+                  src={room.image || defaultRoomImage.url}
                   alt={room.name}
                   layout="fill"
                   objectFit="cover"
@@ -342,5 +432,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
-    
