@@ -65,25 +65,32 @@ export default function FriendsPage() {
     }
     setLoadingFriends(true);
     const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-    const q = query(friendsRef); // orderBy("addedAt", "desc") kaldırıldı
+    // orderBy("addedAt", "desc") kaldırıldı. Gerekirse Firestore index oluşturulduktan sonra eklenebilir.
+    const q = query(friendsRef); 
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
         const friendData = friendDoc.data();
-        const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
-        if (userProfileDoc.exists()) {
-          return { 
-            uid: friendDoc.id, 
-            ...userProfileDoc.data(), 
-            addedAt: friendData.addedAt 
-          } as Friend;
+        try {
+            const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
+            if (userProfileDoc.exists()) {
+            return { 
+                uid: friendDoc.id, 
+                ...userProfileDoc.data(), 
+                addedAt: friendData.addedAt 
+            } as Friend;
+            }
+        } catch (error) {
+            console.error("Error fetching profile for friend:", friendDoc.id, error);
         }
-        return { // Fallback if user profile doc is somehow missing (should not happen ideally)
+        // Fallback if user profile doc is somehow missing or error fetching
+        return { 
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
           photoURL: friendData.photoURL || null,
           email: friendData.email || null, 
           diamonds: friendData.diamonds || 0, 
+          role: friendData.role || 'user',
           createdAt: friendData.addedAt || Timestamp.now(), 
           addedAt: friendData.addedAt
         } as Friend;
@@ -113,8 +120,6 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
-      // Case-insensitive search might require more complex queries or third-party services
-      // For simplicity, we use >= and <= for display name, and exact match for email.
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
@@ -136,11 +141,9 @@ export default function FriendsPage() {
 
       for (const user of rawResults) {
         let processedUser: SearchResultUser = { ...user };
-        // Check if already friends
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
 
         if (!processedUser.isFriend) {
-          // Check for outgoing pending request to this user
           const outgoingQuery = query(collection(db, "friendRequests"), 
             where("fromUserId", "==", currentUser.uid), 
             where("toUserId", "==", user.uid), 
@@ -152,7 +155,6 @@ export default function FriendsPage() {
             processedUser.outgoingRequestId = outgoingSnap.docs[0].id;
           }
 
-          // Check for incoming pending request from this user (only if no outgoing request)
           if (!processedUser.isRequestSent) {
             const incomingQuery = query(collection(db, "friendRequests"),
               where("fromUserId", "==", user.uid),
@@ -162,7 +164,6 @@ export default function FriendsPage() {
             const incomingSnap = await getDocs(incomingQuery);
             if(!incomingSnap.empty) {
               processedUser.isRequestReceived = true;
-              // No need to store incomingRequestId here as actions are in popover
             }
           }
         }
@@ -183,7 +184,7 @@ export default function FriendsPage() {
   };
 
   const handleSendFriendRequest = async (targetUser: SearchResultUser) => {
-    if (!currentUser || !userData || !targetUser || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived) return;
+    if (!currentUser || !userData || !targetUser.uid || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived) return;
     setActionLoading(targetUser.uid, true);
     try {
       const newRequestRef = await addDoc(collection(db, "friendRequests"), {
@@ -197,7 +198,6 @@ export default function FriendsPage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${targetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
-      // Update search results to reflect sent request
       setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: true, outgoingRequestId: newRequestRef.id } : u
       ));
@@ -219,9 +219,8 @@ export default function FriendsPage() {
     try {
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
-      // Update search results to reflect cancelled request
        setSearchResults(prev => prev.map(u => 
-        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null} : u
+        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u // Reset related flags
       ));
     } catch (error) {
       console.error("Error cancelling friend request:", error);
@@ -241,7 +240,6 @@ export default function FriendsPage() {
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
       
-      // Optional: Delete the accepted friend request document(s) too to keep friendRequests clean
       const q = query(collection(db, "friendRequests"), 
         where("status", "==", "accepted"),
         where("fromUserId", "in", [currentUser.uid, friendId]), 
@@ -249,8 +247,9 @@ export default function FriendsPage() {
       );
       const oldRequestsSnap = await getDocs(q);
       oldRequestsSnap.forEach(reqDoc => {
-        if((reqDoc.data().fromUserId === currentUser.uid && reqDoc.data().toUserId === friendId) ||
-           (reqDoc.data().fromUserId === friendId && reqDoc.data().toUserId === currentUser.uid)) {
+        const data = reqDoc.data();
+        if((data.fromUserId === currentUser.uid && data.toUserId === friendId) ||
+           (data.fromUserId === friendId && data.toUserId === currentUser.uid)) {
           batch.delete(reqDoc.ref);
         }
       });
@@ -258,7 +257,6 @@ export default function FriendsPage() {
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
       // myFriends list will update via onSnapshot.
-      // Update search results if the removed friend is in them
       setSearchResults(prevResults => prevResults.map(sr => 
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
@@ -394,15 +392,15 @@ export default function FriendsPage() {
                                 <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
                                     <Send className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Gönderildi
                                 </Button>
-                                {user.outgoingRequestId && // Only show cancel if requestId exists
+                                {user.outgoingRequestId && 
                                   <Button 
                                       variant="ghost" 
                                       size="xs" 
                                       className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
                                       onClick={() => handleCancelOutgoingRequest(user)}
-                                      disabled={performingAction[user.outgoingRequestId!]}
+                                      disabled={performingAction[user.outgoingRequestId]}
                                   >
-                                      {performingAction[user.outgoingRequestId!] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
+                                      {performingAction[user.outgoingRequestId] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
                                   </Button>
                                 }
                             </div>

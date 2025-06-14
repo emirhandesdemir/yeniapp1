@@ -26,10 +26,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-
-// UserData'yı AuthContext'ten alıyoruz, ancak burada admin paneli için ekstra bilgiler gerekebilir
-// Şimdilik AuthContext'teki UserData yeterli olacaktır.
-
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,10 +49,9 @@ export default function AdminUsersPage() {
       try {
         const usersCollectionRef = collection(db, "users");
         const querySnapshot = await getDocs(usersCollectionRef);
-        const usersList = querySnapshot.docs.map(doc => ({
-          uid: doc.id,
-          ...doc.data(),
-          // Firestore'dan gelen Timestamp'leri Date objesine çevirmeye gerek yok, doğrudan kullanılabilir.
+        const usersList = querySnapshot.docs.map(docSnapshot => ({ // doc renamed to docSnapshot to avoid conflict
+          uid: docSnapshot.id,
+          ...docSnapshot.data(),
         } as UserData));
         setUsers(usersList);
       } catch (error) {
@@ -71,8 +66,13 @@ export default function AdminUsersPage() {
       }
     };
 
-    fetchUsers();
-  }, [toast, adminUserData?.role]);
+    if (adminUserData?.role === 'admin') {
+        fetchUsers();
+    } else if (adminUserData !== undefined) { // adminUserData yüklendi ama admin değil
+        setLoading(false);
+    }
+    // adminUserData'nın yüklenmesini beklemek için bağımlılığa ekliyoruz.
+  }, [toast, adminUserData]); 
   
   const handleOpenEditRoleDialog = (user: UserData) => {
     setSelectedUser(user);
@@ -82,7 +82,7 @@ export default function AdminUsersPage() {
 
   const handleOpenEditDiamondsDialog = (user: UserData) => {
     setSelectedUser(user);
-    setDiamondAdjustment(0); // Reset adjustment
+    setDiamondAdjustment(0); 
     setIsEditDiamondsDialogOpen(true);
   };
 
@@ -93,7 +93,7 @@ export default function AdminUsersPage() {
       const userDocRef = doc(db, "users", selectedUser.uid);
       await updateDoc(userDocRef, { role: newRole });
       setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, role: newRole } : u));
-      toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email}' kullanıcısının rolü güncellendi.` });
+      toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının rolü güncellendi.` });
       setIsEditRoleDialogOpen(false);
       setSelectedUser(null);
     } catch (error) {
@@ -110,11 +110,11 @@ export default function AdminUsersPage() {
     try {
       const userDocRef = doc(db, "users", selectedUser.uid);
       const currentDiamonds = selectedUser.diamonds || 0;
-      const updatedDiamonds = Math.max(0, currentDiamonds + diamondAdjustment); // Elmaslar negatif olamaz
+      const updatedDiamonds = Math.max(0, currentDiamonds + diamondAdjustment); 
 
       await updateDoc(userDocRef, { diamonds: updatedDiamonds });
       setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, diamonds: updatedDiamonds } : u));
-      toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email}' kullanıcısının elmasları güncellendi.` });
+      toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının elmasları güncellendi.` });
       setIsEditDiamondsDialogOpen(false);
       setSelectedUser(null);
     } catch (error) {
@@ -205,15 +205,12 @@ export default function AdminUsersPage() {
                         : user.createdAt ? new Date(user.createdAt as any).toLocaleDateString('tr-TR') : 'Bilinmiyor'}
                     </TableCell>
                     <TableCell className="text-right space-x-1">
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenEditRoleDialog(user)} aria-label="Rolü Düzenle" className="hover:text-primary" disabled={user.uid === currentUser?.uid}>
+                      <Button variant="ghost" size="icon" onClick={() => handleOpenEditRoleDialog(user)} aria-label="Rolü Düzenle" className="hover:text-primary" disabled={user.uid === currentUser?.uid || processingAction}>
                         <UserCog className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenEditDiamondsDialog(user)} aria-label="Elmasları Düzenle" className="hover:text-yellow-500">
+                      <Button variant="ghost" size="icon" onClick={() => handleOpenEditDiamondsDialog(user)} aria-label="Elmasları Düzenle" className="hover:text-yellow-500" disabled={processingAction}>
                         <Gem className="h-4 w-4" />
                       </Button>
-                      {/* <Button variant="ghost" size="icon" className="hover:text-destructive" disabled>
-                        <Trash2 className="h-4 w-4" />
-                      </Button> */}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -223,14 +220,15 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
-      {/* Rol Düzenleme Dialogu */}
       <Dialog open={isEditRoleDialogOpen} onOpenChange={setIsEditRoleDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Kullanıcı Rolünü Düzenle</DialogTitle>
-            <DialogDescription>
-              {selectedUser?.displayName || selectedUser?.email} kullanıcısının rolünü değiştirin.
-            </DialogDescription>
+            {selectedUser && (
+              <DialogDescription>
+                {selectedUser.displayName || selectedUser.email || selectedUser.uid} kullanıcısının rolünü değiştirin.
+              </DialogDescription>
+            )}
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <Label htmlFor="role-select">Rol</Label>
@@ -246,7 +244,7 @@ export default function AdminUsersPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="outline">İptal</Button>
+              <Button type="button" variant="outline" disabled={processingAction}>İptal</Button>
             </DialogClose>
             <Button onClick={handleUpdateRole} disabled={processingAction}>
               {processingAction && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -256,14 +254,15 @@ export default function AdminUsersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Elmas Düzenleme Dialogu */}
       <Dialog open={isEditDiamondsDialogOpen} onOpenChange={setIsEditDiamondsDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Kullanıcı Elmaslarını Düzenle</DialogTitle>
-            <DialogDescription>
-              {selectedUser?.displayName || selectedUser?.email} kullanıcısının elmas sayısını düzenleyin. Mevcut: {selectedUser?.diamonds ?? 0}.
-            </DialogDescription>
+            {selectedUser && (
+              <DialogDescription>
+                {selectedUser.displayName || selectedUser.email || selectedUser.uid} kullanıcısının elmas sayısını düzenleyin. Mevcut: {selectedUser.diamonds ?? 0}.
+              </DialogDescription>
+            )}
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <Label htmlFor="diamond-adjustment">Eklenecek/Çıkarılacak Elmas</Label>
@@ -274,13 +273,15 @@ export default function AdminUsersPage() {
               onChange={(e) => setDiamondAdjustment(parseInt(e.target.value, 10) || 0)}
               placeholder="Örn: 10 veya -5"
             />
-            <p className="text-sm text-muted-foreground">
-              Sonuç: {(selectedUser?.diamonds ?? 0) + diamondAdjustment} elmas. (Minimum 0)
-            </p>
+            {selectedUser && (
+                <p className="text-sm text-muted-foreground">
+                Sonuç: {Math.max(0, (selectedUser.diamonds ?? 0) + diamondAdjustment)} elmas. (Minimum 0)
+                </p>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="outline">İptal</Button>
+              <Button type="button" variant="outline" disabled={processingAction}>İptal</Button>
             </DialogClose>
             <Button onClick={handleUpdateDiamonds} disabled={processingAction}>
               {processingAction && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

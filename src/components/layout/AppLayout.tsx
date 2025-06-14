@@ -72,7 +72,7 @@ const navItems: NavItem[] = [
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
   {
-    href: '/admin/dashboard',
+    href: '/admin/dashboard', // This is used as AccordionItem value
     label: 'Admin Paneli',
     icon: ShieldCheck,
     adminOnly: true,
@@ -93,19 +93,16 @@ interface FriendRequestForPopover {
 }
 
 function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
-  const isActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href) && item.href.length > 1);
-
+  const isActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href) && item.href.length > 1 && !item.subItems); // Don't mark parent active if only subitem is active
 
   if (item.adminOnly && !isAdmin) {
     return null;
   }
 
   if (item.subItems && item.subItems.length > 0) {
-    // For parent active state, check if currentPathname starts with any of the subItem hrefs
-    // OR if the currentPathname exactly matches the parent item's href (if it's also a page)
-    const isParentActive = item.href === currentPathname || item.subItems.some(
-      subItem => currentPathname === subItem.href || (subItem.href !== '/' && currentPathname.startsWith(subItem.href))
-    );
+    const isParentActive = item.subItems.some(
+      subItem => currentPathname === subItem.href || (subItem.href !== '/' && currentPathname.startsWith(subItem.href) && subItem.href.length > 1)
+    ) || currentPathname === item.href; // Parent itself can also be an active page
 
     return (
       <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive ? item.href : undefined}>
@@ -165,7 +162,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const handleLogout = async () => {
     try {
       await logOut();
-      toast({ title: "Başarıyla çıkış yapıldı."});
+      // toast({ title: "Başarıyla çıkış yapıldı."}); // Toast is now handled in AuthContext
       if (onLinkClick) onLinkClick();
     } catch (error: any) {
       toast({ title: "Çıkış Hatası", description: error.message, variant: "destructive" });
@@ -216,18 +213,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
       setLoadingRequests(false);
-      setIncomingInitialized(true);
+      if (!incomingInitialized) setIncomingInitialized(true);
       return () => {};
     }
-
-    setLoadingRequests(true);
-    setIncomingInitialized(false);
+    
+    if (!incomingInitialized) setLoadingRequests(true);
 
     const incomingQuery = query(
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
-      // orderBy("createdAt", "desc") Firestore dizinleri ayarlanana kadar kaldırıldı.
+      // orderBy("createdAt", "desc") // Kaldırıldı
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -241,6 +237,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             }
         } catch (profileError) {
             console.error(`Error fetching profile for sender ${data.fromUserId}:`, profileError);
+            // İsteği profilsiz de olsa göstermeye devam edebiliriz.
         }
         return {
           id: reqDoc.id,
@@ -256,27 +253,28 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
       } catch (error) {
-        console.error("Error resolving request promises:", error);
+        console.error("Error resolving request promises for notifications:", error);
+        // Kullanıcıya bir toast göstermek yerine konsola loglayabiliriz.
         // toast({ title: "Bildirim Yükleme Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" });
       } finally {
-        if (!incomingInitialized) setIncomingInitialized(true);
+        if (!incomingInitialized) {
+            setIncomingInitialized(true);
+            setLoadingRequests(false); // Initialize sonrası loading false
+        }
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
       // toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      if (!incomingInitialized) setIncomingInitialized(true);
+      if (!incomingInitialized) {
+        setIncomingInitialized(true);
+        setLoadingRequests(false); // Hata durumunda da loading false
+      }
     });
 
     return () => {
         unsubscribeIncoming();
     };
-  }, [currentUser?.uid, /* toast, */ incomingInitialized]); // toast kaldırıldı
-
-  React.useEffect(() => {
-    if (incomingInitialized) {
-      setLoadingRequests(false);
-    }
-  }, [incomingInitialized]);
+  }, [currentUser?.uid, incomingInitialized]);
 
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -310,6 +308,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
+      // onSnapshot otomatik olarak listeyi güncelleyecektir.
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -321,8 +320,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
+      // Sadece status'u "declined" olarak güncellemek yerine isteği silebiliriz.
+      // Veya daha sonra filtrelenmesi için status: "declined" yapabiliriz.
+      // Şimdilik silelim, böylece pending listesinden direkt çıkar.
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
+       // onSnapshot otomatik olarak listeyi güncelleyecektir.
     } catch (error) {
       console.error("Error declining friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
@@ -370,7 +373,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {userData && (
               <div className="flex items-center gap-1.5 sm:gap-2 text-sm font-medium text-primary dark:text-yellow-400">
                 <Gem className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span>{userData.diamonds}</span>
+                <span>{userData.diamonds ?? 0}</span>
               </div>
             )}
 
@@ -396,7 +399,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <div className="p-3 border-b">
                   <h3 className="text-sm font-medium text-foreground">Arkadaşlık İstekleri</h3>
                 </div>
-                {loadingRequests && !incomingInitialized ? ( // Sadece ilk yüklemede göster
+                {loadingRequests ? (
                   <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>
                 ) : incomingRequests.length === 0 ? (
                   <p className="p-4 text-sm text-muted-foreground text-center">Yeni arkadaşlık isteği yok.</p>
@@ -420,8 +423,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             disabled={performingAction[req.id] || !req.userProfile}
                             aria-label="Kabul Et"
                           >
-                            {performingAction[req.id] && <Loader2 className="h-4 w-4 animate-spin"/>}
-                            {!performingAction[req.id] && <UserCheck className="h-4 w-4" />}
+                            {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
                           </Button>
                           <Button
                             variant="ghost"
@@ -431,8 +433,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             disabled={performingAction[req.id]}
                             aria-label="Reddet"
                           >
-                           {performingAction[req.id] && <Loader2 className="h-4 w-4 animate-spin"/>}
-                           {!performingAction[req.id] && <UserX className="h-4 w-4" />}
+                           {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
