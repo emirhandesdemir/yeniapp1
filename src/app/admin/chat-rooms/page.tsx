@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, deleteDoc, doc, Timestamp, query, orderBy, getDocs as getSubDocs } from "firebase/firestore"; // getDocs as getSubDocs
+import { collection, getDocs, deleteDoc, doc, Timestamp, query, orderBy, getDocs as getSubDocs } from "firebase/firestore"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Trash2, Users, Clock, ListChecks } from "lucide-react";
+import { Loader2, Trash2, Users, Clock, ListChecks as AdminListChecksIcon, ShieldAlert } from "lucide-react"; // Renamed ListChecks
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,7 +49,7 @@ export default function AdminChatRoomsPage() {
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
-    }, 60000); // Update every minute for expiry info
+    }, 60000); 
     return () => clearInterval(timer);
   }, []);
 
@@ -59,6 +59,7 @@ export default function AdminChatRoomsPage() {
         setLoading(false);
         return;
       }
+      setLoading(true);
       try {
         const roomsCollectionRef = collection(db, "chatRooms");
         const q = query(roomsCollectionRef, orderBy("createdAt", "desc"));
@@ -90,16 +91,14 @@ export default function AdminChatRoomsPage() {
   const handleDeleteRoom = async (roomId: string, roomName: string) => {
     setProcessingDelete(roomId);
     try {
-      // Delete messages subcollection
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
-      const messagesSnapshot = await getSubDocs(messagesQuery); // Renamed import
+      const messagesSnapshot = await getSubDocs(messagesQuery); 
       const deleteMessagePromises: Promise<void>[] = [];
       messagesSnapshot.forEach((messageDoc) => {
         deleteMessagePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id)));
       });
       await Promise.all(deleteMessagePromises);
 
-      // Delete the room document
       await deleteDoc(doc(db, "chatRooms", roomId));
 
       setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId));
@@ -127,38 +126,51 @@ export default function AdminChatRoomsPage() {
   };
 
 
-  if (loading) {
+  if (adminUserData === undefined || adminUserData === null && loading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2">Sohbet odaları yükleniyor...</p>
-      </div>
-    );
-  }
+     <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+       <Loader2 className="h-12 w-12 animate-spin text-primary" />
+       <p className="ml-2 text-lg">Oda yönetimi yükleniyor...</p>
+     </div>
+   );
+ }
 
-  if (adminUserData?.role !== 'admin') {
-     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Card className="w-full max-w-md text-center p-6">
-            <CardHeader>
-                <ListChecks className="mx-auto h-12 w-12 text-destructive mb-4" />
-                <CardTitle>Erişim Reddedildi</CardTitle>
-                <CardDescription>Bu sayfayı görüntülemek için admin yetkiniz bulunmamaktadır.</CardDescription>
-            </CardHeader>
-        </Card>
-      </div>
-    );
-  }
+ if (adminUserData?.role !== 'admin') {
+    return (
+     <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+       <Card className="w-full max-w-md text-center p-6 shadow-lg">
+           <CardHeader>
+               <ShieldAlert className="mx-auto h-12 w-12 text-destructive mb-4" />
+               <CardTitle>Erişim Reddedildi</CardTitle>
+               <CardDescription>Bu sayfayı görüntülemek için admin yetkiniz bulunmamaktadır.</CardDescription>
+           </CardHeader>
+       </Card>
+     </div>
+   );
+ }
+
+ if (loading) { // admin yetkisi var ama veriler yükleniyor
+   return (
+     <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+       <Loader2 className="h-12 w-12 animate-spin text-primary" />
+       <p className="ml-2 text-lg">Sohbet odaları yükleniyor...</p>
+     </div>
+   );
+ }
+
 
   return (
     <div className="space-y-6">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-headline">Sohbet Odası Yönetimi</CardTitle>
+          <div className="flex items-center gap-3">
+            <AdminListChecksIcon className="h-7 w-7 text-primary" />
+            <CardTitle className="text-2xl font-headline">Oda Yönetimi</CardTitle>
+          </div>
           <CardDescription>Uygulamadaki tüm sohbet odalarını görüntüleyin ve yönetin.</CardDescription>
         </CardHeader>
         <CardContent>
-          {chatRooms.length === 0 ? (
+          {chatRooms.length === 0 && !loading ? (
             <p className="text-muted-foreground text-center py-8">Henüz oluşturulmuş sohbet odası bulunmamaktadır.</p>
           ) : (
             <Table>
@@ -183,7 +195,7 @@ export default function AdminChatRoomsPage() {
                       </Avatar>
                     </TableCell>
                     <TableCell className="font-medium">{room.name}</TableCell>
-                    <TableCell>{room.creatorName || room.creatorId.substring(0,8)}</TableCell>
+                    <TableCell>{room.creatorName || room.creatorId.substring(0,8)}...</TableCell>
                     <TableCell className="text-center">
                       <Badge variant="secondary" className="flex items-center justify-center gap-1 w-fit mx-auto">
                         <Users className="h-3 w-3" /> {room.participantCount ?? 0}

@@ -19,11 +19,12 @@ import {
   Gem,
   Sun,
   Moon,
-  ShieldCheck, // Admin Paneli ana ikonu
+  ShieldCheck, 
   UserCheck,
   UserX,
-  ChevronDown
-  // UserCog ve ListChecks importları kaldırıldı, çünkü alt menüler kalktı
+  ChevronDown,
+  UserCog, // Changed from AdminUserCogIcon for consistency
+  ListChecks // Changed from AdminListChecksIcon for consistency
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -53,7 +54,6 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  // orderBy kaldırılmıştı, bu iyi.
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -63,7 +63,8 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   adminOnly?: boolean;
-  subItems?: NavItem[]; // Bu özellik artık admin için kullanılmayacak ama yapı kalabilir.
+  subItems?: NavItem[];
+  isHeaderOnly?: boolean; // To make "Admin Paneli" non-clickable if it has subItems
 }
 
 const navItems: NavItem[] = [
@@ -72,11 +73,15 @@ const navItems: NavItem[] = [
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
   {
-    href: '/admin/dashboard', // Doğrudan dashboard'a yönlendir
+    href: '/admin/dashboard', // This will be the parent for accordion
     label: 'Admin Paneli',
-    icon: ShieldCheck, // Ana admin ikonu
+    icon: ShieldCheck,
     adminOnly: true,
-    // subItems artık yok
+    isHeaderOnly: true, // Make it non-clickable, acts as accordion trigger
+    subItems: [
+      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog, adminOnly: true },
+      { href: '/admin/chat-rooms', label: 'Oda Yönetimi', icon: ListChecks, adminOnly: true },
+    ],
   },
 ];
 
@@ -95,41 +100,28 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
     return currentPathname.startsWith(path);
   };
   
-  // Admin paneli artık alt menüye sahip olmadığı için isParentActive mantığı basitleşti.
-  const isDirectActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href));
+  const isDirectActive = isActivePath(item.href);
+  const isParentActive = item.subItems?.some(subItem => isActivePath(subItem.href)) || (item.href === '/admin/dashboard' && currentPathname.startsWith('/admin/'));
 
 
   if (item.adminOnly && !isAdmin) {
     return null;
   }
 
-  // Alt menü mantığı (Accordion) artık admin paneli için geçerli değil,
-  // ama diğer menü öğeleri için gelecekte gerekebilir diye korunuyor.
-  // Admin Paneli için subItems olmadığı için bu blok atlanacak.
-  if (item.subItems && item.subItems.length > 0 && item.href !== '/admin/dashboard') {
-    const isParentActiveForAccordion = item.subItems.some(subItem => isActivePath(subItem.href)) || isActivePath(item.href);
+  if (item.subItems && item.subItems.length > 0) {
     return (
-      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActiveForAccordion ? item.href : undefined}>
+      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive ? item.href : undefined}>
         <AccordionItem value={item.href} className="border-b-0">
           <AccordionTrigger
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm w-full justify-between hover:no-underline",
-              isParentActiveForAccordion
-                ? "bg-sidebar-primary/10 text-sidebar-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary"
+              isParentActive
+                ? "bg-primary/10 text-primary font-semibold dark:bg-primary/20 dark:text-primary" // Updated active parent style
                 : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
               "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
-            asChild={item.href === currentPathname && !item.subItems.some(sub => sub.href === currentPathname)}
-             onClick={(e) => {
-                if (item.href !== currentPathname || !item.subItems?.some(sub => sub.href === currentPathname)) {
-                     if(item.href === currentPathname && item.subItems?.some(sub => sub.href === currentPathname)){
-                         e.preventDefault(); 
-                    }
-                } else {
-                    e.preventDefault();
-                }
-             }}
+            // No Link wrapping if it's just a header
           >
              <div className="flex items-center gap-3">
                 <item.icon className="h-5 w-5" />
@@ -155,7 +147,7 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm",
         isDirectActive
-          ? "bg-primary text-primary-foreground font-semibold shadow-sm"
+          ? "bg-primary text-primary-foreground font-semibold shadow-sm" // Active style for direct links
           : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
         "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
         isDirectActive && "dark:bg-sidebar-primary dark:text-sidebar-primary-foreground"
@@ -170,7 +162,7 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
 
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const { logOut, isUserLoading, userData } = useAuth();
-  const { toast } = useToast(); // toast burada tanımlı
+  const { toast } = useToast(); 
   const pathname = usePathname();
 
   const handleLogout = async () => {
@@ -238,6 +230,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
+      // orderBy("createdAt", "desc") has been removed here to simplify and avoid index issues
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -267,20 +260,24 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
-        toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
+        if(incomingInitialized) { // Only show toast if already initialized to avoid spam on first load error
+            toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
+        }
       } finally {
-        if (!incomingInitialized) {
+         setLoadingRequests(false);
+         if (!incomingInitialized) {
             setIncomingInitialized(true);
         }
-        setLoadingRequests(false); // Ensure loading is set to false in all cases
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
-      toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive"});
-      if (!incomingInitialized) {
+       if(incomingInitialized){
+            toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive"});
+       }
+       setLoadingRequests(false); 
+       if (!incomingInitialized) {
         setIncomingInitialized(true);
       }
-      setLoadingRequests(false); 
     });
 
     return () => {

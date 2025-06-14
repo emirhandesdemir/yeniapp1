@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, Timestamp, doc, updateDoc, query, orderBy } from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Edit, Trash2, ShieldQuestion, Gem, UserCog } from "lucide-react";
+import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert } from "lucide-react"; // Renamed UserCog
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -30,7 +29,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  const { currentUser, userData: adminUserData } = useAuth();
+  const { currentUser: adminAuthUser, userData: adminUserData } = useAuth();
 
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isEditRoleDialogOpen, setIsEditRoleDialogOpen] = useState(false);
@@ -46,10 +45,12 @@ export default function AdminUsersPage() {
         setLoading(false);
         return;
       }
+      setLoading(true);
       try {
         const usersCollectionRef = collection(db, "users");
-        const querySnapshot = await getDocs(usersCollectionRef);
-        const usersList = querySnapshot.docs.map(docSnapshot => ({ // doc renamed to docSnapshot to avoid conflict
+        const q = query(usersCollectionRef, orderBy("createdAt", "desc"));
+        const querySnapshot = await getDocs(q);
+        const usersList = querySnapshot.docs.map(docSnapshot => ({ 
           uid: docSnapshot.id,
           ...docSnapshot.data(),
         } as UserData));
@@ -68,10 +69,9 @@ export default function AdminUsersPage() {
 
     if (adminUserData?.role === 'admin') {
         fetchUsers();
-    } else if (adminUserData !== undefined) { // adminUserData yüklendi ama admin değil
+    } else if (adminUserData !== undefined) { 
         setLoading(false);
     }
-    // adminUserData'nın yüklenmesini beklemek için bağımlılığa ekliyoruz.
   }, [toast, adminUserData]); 
   
   const handleOpenEditRoleDialog = (user: UserData) => {
@@ -132,21 +132,21 @@ export default function AdminUsersPage() {
     return "PN";
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
+  if (adminUserData === undefined || adminUserData === null && loading) {
+     return (
+      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2">Kullanıcılar yükleniyor...</p>
+        <p className="ml-2 text-lg">Kullanıcı yönetimi yükleniyor...</p>
       </div>
     );
   }
 
   if (adminUserData?.role !== 'admin') {
      return (
-      <div className="flex flex-1 items-center justify-center">
-        <Card className="w-full max-w-md text-center p-6">
+      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+        <Card className="w-full max-w-md text-center p-6 shadow-lg">
             <CardHeader>
-                <UserCog className="mx-auto h-12 w-12 text-destructive mb-4" />
+                <ShieldAlert className="mx-auto h-12 w-12 text-destructive mb-4" />
                 <CardTitle>Erişim Reddedildi</CardTitle>
                 <CardDescription>Bu sayfayı görüntülemek için admin yetkiniz bulunmamaktadır.</CardDescription>
             </CardHeader>
@@ -154,16 +154,29 @@ export default function AdminUsersPage() {
       </div>
     );
   }
+  
+  if (loading) { // admin yetkisi var ama veriler yükleniyor
+    return (
+      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-2 text-lg">Kullanıcılar yükleniyor...</p>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-6">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-headline">Kullanıcı Yönetimi</CardTitle>
-          <CardDescription>Uygulamadaki tüm kullanıcıları görüntüleyin ve yönetin.</CardDescription>
+          <div className="flex items-center gap-3">
+            <AdminUserCogIcon className="h-7 w-7 text-primary" />
+            <CardTitle className="text-2xl font-headline">Kullanıcı Yönetimi</CardTitle>
+          </div>
+          <CardDescription>Uygulamadaki tüm kullanıcıları görüntüleyin ve rollerini/elmaslarını yönetin.</CardDescription>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
+          {users.length === 0 && !loading ? (
             <p className="text-muted-foreground text-center py-8">Henüz kayıtlı kullanıcı bulunmamaktadır.</p>
           ) : (
             <Table>
@@ -201,12 +214,12 @@ export default function AdminUsersPage() {
                     </TableCell>
                     <TableCell>
                       {user.createdAt instanceof Timestamp 
-                        ? user.createdAt.toDate().toLocaleDateString('tr-TR') 
-                        : user.createdAt ? new Date(user.createdAt as any).toLocaleDateString('tr-TR') : 'Bilinmiyor'}
+                        ? user.createdAt.toDate().toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : user.createdAt ? new Date(user.createdAt as any).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Bilinmiyor'}
                     </TableCell>
                     <TableCell className="text-right space-x-1">
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenEditRoleDialog(user)} aria-label="Rolü Düzenle" className="hover:text-primary" disabled={user.uid === currentUser?.uid || processingAction}>
-                        <UserCog className="h-4 w-4" />
+                      <Button variant="ghost" size="icon" onClick={() => handleOpenEditRoleDialog(user)} aria-label="Rolü Düzenle" className="hover:text-primary" disabled={user.uid === adminAuthUser?.uid || processingAction}>
+                        <AdminUserCogIcon className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleOpenEditDiamondsDialog(user)} aria-label="Elmasları Düzenle" className="hover:text-yellow-500" disabled={processingAction}>
                         <Gem className="h-4 w-4" />
@@ -294,3 +307,5 @@ export default function AdminUsersPage() {
     </div>
   );
 }
+
+    
