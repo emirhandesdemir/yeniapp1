@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -14,7 +15,8 @@ import {
   Menu,
   Settings,
   Bell,
-  Loader2
+  Loader2,
+  Gem // Gem ikonu eklendi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -106,7 +108,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const router = useRouter();
-  const { currentUser, logOut, isUserLoading } = useAuth();
+  const { currentUser, userData, logOut, isUserLoading } = useAuth(); // userData eklendi
   const { toast } = useToast();
 
   const handleLogoutFromDropdown = async () => {
@@ -143,7 +145,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
-               <SheetHeader className="p-4 border-b"> {/* Added SheetHeader and Title for accessibility */}
+               <SheetHeader className="p-4 border-b">
                 <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
               <SidebarContent onLinkClick={() => setMobileSheetOpen(false)} />
@@ -154,6 +156,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {/* Header content like search can go here */}
           </div>
 
+          {userData && (
+            <div className="flex items-center gap-2 text-sm font-medium text-primary mr-2">
+              <Gem className="h-5 w-5 text-yellow-500" />
+              <span>{userData.diamonds}</span>
+            </div>
+          )}
+
           <Button variant="ghost" size="icon" className="rounded-full">
             <Bell className="h-5 w-5 text-muted-foreground" />
             <span className="sr-only">Bildirimler</span>
@@ -163,14 +172,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
                 <Avatar className="h-9 w-9">
-                  <AvatarImage src={currentUser?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
+                  <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
                   <AvatarFallback>{getAvatarFallback()}</AvatarFallback>
                 </Avatar>
                 <span className="sr-only">Kullanıcı menüsünü aç/kapat</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{currentUser?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
+              <DropdownMenuLabel>{currentUser?.displayName || userData?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => router.push('/profile')}>
                 <UserCircle className="mr-2 h-4 w-4" /> Profili Görüntüle
@@ -193,3 +202,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+

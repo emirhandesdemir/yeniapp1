@@ -3,13 +3,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X } from "lucide-react";
+import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem } from "lucide-react"; // Clock ve Gem eklendi
 import Link from "next/link";
 import Image from "next/image";
-import type { Metadata } from 'next';
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, where } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc } from "firebase/firestore"; // Timestamp ve updateDoc eklendi
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -25,11 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-
-// export const metadata: Metadata = { // Client component, metadata handled differently
-//   title: 'Sohbet Odaları - Sohbet Küresi',
-//   description: 'Aktif sohbet odalarını keşfedin veya yenisini oluşturun.',
-// };
+import { addMinutes, formatDistanceToNow, isPast } from 'date-fns'; // date-fns importları
+import { tr } from 'date-fns/locale'; // Türkçe lokasyon için
 
 interface ChatRoom {
   id: string;
@@ -37,10 +33,11 @@ interface ChatRoom {
   description: string;
   creatorId: string;
   creatorName: string;
-  createdAt: any; // Firestore Timestamp
+  createdAt: Timestamp;
+  expiresAt: Timestamp; // Oda son geçerlilik tarihi eklendi
   image: string;
   imageAiHint: string;
-  participantCount?: number; // Optional for now
+  participantCount?: number;
 }
 
 const placeholderImages = [
@@ -51,6 +48,9 @@ const placeholderImages = [
   { url: "https://placehold.co/600x400.png", hint: "group chat" },
 ];
 
+const ROOM_CREATION_COST = 1; // Elmas maliyeti
+const ROOM_DEFAULT_DURATION_MINUTES = 20; // Dakika cinsinden
+
 
 export default function ChatRoomsPage() {
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
@@ -59,8 +59,17 @@ export default function ChatRoomsPage() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, userData, updateUserDiamonds, isUserLoading } = useAuth(); // userData ve updateUserDiamonds eklendi
   const { toast } = useToast();
+  const [now, setNow] = useState(new Date()); // Zamanı güncellemek için
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 60000); // Her dakika güncelle
+    return () => clearInterval(timer);
+  }, []);
+
 
   useEffect(() => {
     document.title = 'Sohbet Odaları - Sohbet Küresi';
@@ -68,7 +77,14 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        rooms.push({ id: doc.id, ...doc.data() } as ChatRoom);
+        // Süresi dolmuş odaları filtrele (istemci tarafında - idealde sunucu yapar)
+        const roomData = doc.data() as ChatRoom;
+        if (roomData.expiresAt && isPast(roomData.expiresAt.toDate())) {
+          // İsteğe bağlı: Süresi dolan odaları silmek yerine, kullanıcıya bilgi verilebilir veya gizlenebilir.
+          // Şimdilik listelemeye devam edelim, kartta belirteceğiz.
+          // console.log(`Oda "${roomData.name}" süresi doldu, normalde silinmeli.`);
+        }
+        rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
       setLoading(false);
@@ -83,8 +99,12 @@ export default function ChatRoomsPage() {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) {
+    if (!currentUser || !userData) {
       toast({ title: "Hata", description: "Oda oluşturmak için giriş yapmalısınız.", variant: "destructive" });
+      return;
+    }
+    if (userData.diamonds < ROOM_CREATION_COST) {
+      toast({ title: "Yetersiz Elmas", description: `Oda oluşturmak için ${ROOM_CREATION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds}`, variant: "destructive" });
       return;
     }
     if (!newRoomName.trim()) {
@@ -94,17 +114,24 @@ export default function ChatRoomsPage() {
     setIsCreatingRoom(true);
     try {
       const randomImage = placeholderImages[Math.floor(Math.random() * placeholderImages.length)];
+      const currentTime = new Date();
+      const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
+      
       await addDoc(collection(db, "chatRooms"), {
         name: newRoomName,
         description: newRoomDescription,
         creatorId: currentUser.uid,
-        creatorName: currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
+        creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
+        expiresAt: Timestamp.fromDate(expiresAtDate), // Son geçerlilik tarihi
         image: randomImage.url,
         imageAiHint: randomImage.hint,
-        participantCount: 1, // Initial participant is the creator
+        participantCount: 1,
       });
-      toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu.` });
+
+      await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
+
+      toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       setNewRoomName("");
       setNewRoomDescription("");
       setIsCreateModalOpen(false);
@@ -121,16 +148,13 @@ export default function ChatRoomsPage() {
       return;
     }
     try {
-      // First, delete all messages in the room (subcollection)
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
-      const messagesSnapshot = await getDocs(messagesQuery); // Need to import getDocs
+      const messagesSnapshot = await getDocs(messagesQuery);
       const deletePromises: Promise<void>[] = [];
       messagesSnapshot.forEach((messageDoc) => {
         deletePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id)));
       });
       await Promise.all(deletePromises);
-
-      // Then, delete the room itself
       await deleteDoc(doc(db, "chatRooms", roomId));
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
     } catch (error) {
@@ -139,18 +163,14 @@ export default function ChatRoomsPage() {
     }
   };
   
-  // Import getDocs if not already imported
-  useEffect(() => {
-    const importGetDocs = async () => {
-      if (typeof getDocs === 'undefined') {
-        const { getDocs: firestoreGetDocs } = await import("firebase/firestore");
-        // This is a workaround to make getDocs available in the scope
-        (window as any).getDocs = firestoreGetDocs;
-      }
-    };
-    importGetDocs();
-  }, []);
-  const getDocs = (queryRef: any) => (window as any).getDocs ? (window as any).getDocs(queryRef) : Promise.resolve({ forEach: () => {} });
+  const getExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
+    if (!expiresAt) return "Süre bilgisi yok";
+    const expiryDate = expiresAt.toDate();
+    if (isPast(expiryDate)) {
+      return "Süresi Doldu";
+    }
+    return `Kalan süre: ${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
+  };
 
 
   if (loading) {
@@ -171,9 +191,9 @@ export default function ChatRoomsPage() {
         </div>
         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse">
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse" disabled={!currentUser || isUserLoading}>
               <PlusCircle className="mr-2 h-5 w-5" />
-              Yeni Oda Oluştur
+              Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300" />)
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
@@ -181,7 +201,8 @@ export default function ChatRoomsPage() {
               <DialogHeader>
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
-                  Odanız için bir ad ve açıklama girin.
+                  Odanız için bir ad ve açıklama girin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
+                  Mevcut elmasınız: {userData?.diamonds ?? 0}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -214,7 +235,7 @@ export default function ChatRoomsPage() {
                 <DialogClose asChild>
                     <Button type="button" variant="outline">İptal</Button>
                 </DialogClose>
-                <Button type="submit" disabled={isCreatingRoom}>
+                <Button type="submit" disabled={isCreatingRoom || !currentUser || (userData && userData.diamonds < ROOM_CREATION_COST)}>
                   {isCreatingRoom && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Oluştur
                 </Button>
@@ -241,7 +262,7 @@ export default function ChatRoomsPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {chatRooms.map((room) => (
-            <Card key={room.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card">
+            <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card ${room.expiresAt && isPast(room.expiresAt.toDate()) ? 'opacity-60' : ''}`}>
               <div className="relative h-48 w-full">
                 <Image
                   src={room.image || "https://placehold.co/600x400.png"}
@@ -258,8 +279,8 @@ export default function ChatRoomsPage() {
                     size="icon"
                     className="absolute top-2 right-2 z-10 opacity-70 hover:opacity-100"
                     onClick={(e) => {
-                      e.preventDefault(); // Link'e tıklamayı engelle
-                      e.stopPropagation(); // Card'a tıklamayı engelle
+                      e.preventDefault(); 
+                      e.stopPropagation();
                       handleDeleteRoom(room.id, room.name);
                     }}
                     aria-label="Odayı Sil"
@@ -278,11 +299,16 @@ export default function ChatRoomsPage() {
                   {room.participantCount || 1} katılımcı
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Oluşturan: {room.creatorName}</p>
+                <div className="flex items-center text-xs text-muted-foreground mt-2">
+                  <Clock className="mr-1 h-3 w-3" />
+                  {getExpiryInfo(room.expiresAt)}
+                </div>
               </CardContent>
               <CardFooter>
-                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
+                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={room.expiresAt && isPast(room.expiresAt.toDate())}>
                   <Link href={`/chat/${room.id}`}>
-                    <LogIn className="mr-2 h-4 w-4" /> Odaya Katıl
+                    <LogIn className="mr-2 h-4 w-4" /> 
+                    {room.expiresAt && isPast(room.expiresAt.toDate()) ? "Süresi Doldu" : "Odaya Katıl"}
                   </Link>
                 </Button>
               </CardFooter>

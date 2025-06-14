@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw } from "lucide-react"; // Clock, Gem, RefreshCw eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent } from "react";
@@ -21,11 +21,13 @@ import {
   getDoc,
   deleteDoc,
   Timestamp,
-  where,
-  getDocs,
+  updateDoc, // updateDoc eklendi
+  getDocs, // getDocs eklendi
 } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { addMinutes, formatDistanceToNow, isPast } from 'date-fns'; // date-fns importları
+import { tr } from 'date-fns/locale'; // Türkçe lokasyon için
 
 interface Message {
   id: string;
@@ -33,9 +35,9 @@ interface Message {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  timestamp: Timestamp | null; // Firestore Timestamp or null if pending
-  isOwn?: boolean; // Calculated client-side
-  userAiHint?: string; // Calculated client-side
+  timestamp: Timestamp | null;
+  isOwn?: boolean;
+  userAiHint?: string;
 }
 
 interface ChatRoomDetails {
@@ -43,8 +45,13 @@ interface ChatRoomDetails {
   name: string;
   description?: string;
   creatorId: string;
-  participantCount?: number; // Placeholder
+  participantCount?: number;
+  expiresAt?: Timestamp; // expiresAt eklendi
 }
+
+const ROOM_EXTENSION_COST = 2; // Elmas maliyeti
+const ROOM_EXTENSION_DURATION_MINUTES = 20; // Dakika
+
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -56,9 +63,18 @@ export default function ChatRoomPage() {
   const [loadingRoom, setLoadingRoom] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isExtending, setIsExtending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { currentUser } = useAuth();
+  const { currentUser, userData, updateUserDiamonds, isUserLoading } = useAuth(); // userData, updateUserDiamonds eklendi
   const { toast } = useToast();
+  const [now, setNow] = useState(new Date()); // Zamanı güncellemek için
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000); // Saniye başı güncelleme, geri sayım için daha iyi
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!roomId) return;
@@ -68,18 +84,19 @@ export default function ChatRoomPage() {
     const unsubscribeRoom = onSnapshot(roomDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const fetchedRoomDetails = {
+        const fetchedRoomDetails: ChatRoomDetails = {
           id: docSnap.id,
           name: data.name,
           description: data.description,
           creatorId: data.creatorId,
-          participantCount: data.participantCount || 0, // Handle missing participantCount
-        } as ChatRoomDetails;
+          participantCount: data.participantCount || 0,
+          expiresAt: data.expiresAt, // expiresAt eklendi
+        };
         setRoomDetails(fetchedRoomDetails);
         document.title = `${fetchedRoomDetails.name} - Sohbet Odası - Sohbet Küresi`;
       } else {
         toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" });
-        router.push("/chat"); // Redirect if room doesn't exist
+        router.push("/chat");
       }
       setLoadingRoom(false);
     }, (error) => {
@@ -122,7 +139,6 @@ export default function ChatRoomPage() {
   }, [roomId, currentUser, toast, router]);
 
   useEffect(() => {
-    // Scroll to bottom when new messages arrive
     if (scrollAreaRef.current) {
       const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
       if (viewport) {
@@ -131,16 +147,18 @@ export default function ChatRoomPage() {
     }
   }, [messages]);
 
+  const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
+
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !roomId) return;
+    if (!currentUser || !newMessage.trim() || !roomId || isRoomExpired) return;
     setIsSending(true);
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
         text: newMessage,
         senderId: currentUser.uid,
-        senderName: currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
-        senderAvatar: currentUser.photoURL,
+        senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
+        senderAvatar: userData?.photoURL || currentUser.photoURL,
         timestamp: serverTimestamp(),
       });
       setNewMessage("");
@@ -161,7 +179,6 @@ export default function ChatRoomPage() {
       return;
     }
     try {
-      // Delete all messages in the room (subcollection)
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
       const messagesSnapshot = await getDocs(messagesQuery);
       const deletePromises: Promise<void>[] = [];
@@ -169,8 +186,6 @@ export default function ChatRoomPage() {
         deletePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id)));
       });
       await Promise.all(deletePromises);
-
-      // Then, delete the room itself
       await deleteDoc(doc(db, "chatRooms", roomId));
       toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` });
       router.push("/chat");
@@ -179,6 +194,45 @@ export default function ChatRoomPage() {
       toast({ title: "Hata", description: "Oda silinirken bir sorun oluştu.", variant: "destructive" });
     }
   };
+
+  const handleExtendDuration = async () => {
+    if (!roomDetails || !currentUser || !userData || roomDetails.creatorId !== currentUser.uid || !roomDetails.expiresAt) {
+      toast({ title: "Hata", description: "Süre uzatma işlemi yapılamadı.", variant: "destructive" });
+      return;
+    }
+    if (userData.diamonds < ROOM_EXTENSION_COST) {
+      toast({ title: "Yetersiz Elmas", description: `Süre uzatmak için ${ROOM_EXTENSION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds}`, variant: "destructive" });
+      return;
+    }
+    setIsExtending(true);
+    try {
+      const currentExpiresAt = roomDetails.expiresAt.toDate();
+      const newExpiresAtDate = addMinutes(currentExpiresAt, ROOM_EXTENSION_DURATION_MINUTES);
+      
+      const roomDocRef = doc(db, "chatRooms", roomId);
+      await updateDoc(roomDocRef, {
+        expiresAt: Timestamp.fromDate(newExpiresAtDate)
+      });
+      await updateUserDiamonds(userData.diamonds - ROOM_EXTENSION_COST);
+
+      toast({ title: "Başarılı", description: `Oda süresi ${ROOM_EXTENSION_DURATION_MINUTES} dakika uzatıldı. ${ROOM_EXTENSION_COST} elmas harcandı.` });
+    } catch (error) {
+      console.error("Error extending room duration:", error);
+      toast({ title: "Hata", description: "Süre uzatılırken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsExtending(false);
+    }
+  };
+
+  const getExpiryInfo = (): string => {
+    if (!roomDetails?.expiresAt) return "Süre bilgisi yok";
+    const expiryDate = roomDetails.expiresAt.toDate();
+    if (isPast(expiryDate)) {
+      return "Süresi Doldu";
+    }
+    return `Kalan süre: ${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
+  };
+
 
   if (loadingRoom || !roomDetails) {
     return (
@@ -207,16 +261,29 @@ export default function ChatRoomPage() {
             <h2 className="text-lg font-semibold text-primary-foreground/90">{roomDetails.name}</h2>
             <div className="flex items-center text-sm text-muted-foreground">
                 <Users className="mr-1 h-4 w-4" />
-                {/* Participant count can be dynamic later */}
                 <span>{roomDetails.participantCount || 1} aktif üye</span>
+                 {roomDetails.expiresAt && (
+                    <>
+                        <Clock className="ml-3 mr-1 h-4 w-4" />
+                        <span>{getExpiryInfo()}</span>
+                    </>
+                )}
             </div>
             </div>
         </div>
-        {currentUser && roomDetails.creatorId === currentUser.uid && (
-            <Button variant="destructive" size="sm" onClick={handleDeleteRoom}>
-                <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
-            </Button>
-        )}
+        <div className="flex items-center gap-2">
+            {currentUser && roomDetails.creatorId === currentUser.uid && !isRoomExpired && roomDetails.expiresAt && (
+                <Button variant="outline" size="sm" onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>
+                    {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                    Süre Uzat (2 <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400" />)
+                </Button>
+            )}
+            {currentUser && roomDetails.creatorId === currentUser.uid && (
+                <Button variant="destructive" size="sm" onClick={handleDeleteRoom}>
+                    <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
+                </Button>
+            )}
+        </div>
       </header>
 
       <ScrollArea className="flex-1 p-4 space-y-4" ref={scrollAreaRef}>
@@ -226,10 +293,16 @@ export default function ChatRoomPage() {
                 <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p>
             </div>
         )}
-        {!loadingMessages && messages.length === 0 && (
+        {!loadingMessages && messages.length === 0 && !isRoomExpired && (
             <div className="text-center text-muted-foreground py-10">
                 <p>Henüz hiç mesaj yok.</p>
                 <p>İlk mesajı sen gönder!</p>
+            </div>
+        )}
+        {isRoomExpired && (
+             <div className="text-center text-destructive py-10">
+                <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p>
+                <p>Yeni mesaj gönderilemez.</p>
             </div>
         )}
         {messages.map((msg) => (
@@ -253,8 +326,8 @@ export default function ChatRoomPage() {
             </div>
             {msg.isOwn && (
               <Avatar className="h-8 w-8">
-                <AvatarImage src={currentUser?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-                <AvatarFallback>{currentUser?.displayName?.substring(0, 2).toUpperCase() || "SZ"}</AvatarFallback>
+                <AvatarImage src={currentUser?.photoURL || userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
+                <AvatarFallback>{userData?.displayName?.substring(0, 2).toUpperCase() || currentUser?.displayName?.substring(0, 2).toUpperCase() || "SZ"}</AvatarFallback>
               </Avatar>
             )}
           </div>
@@ -263,29 +336,30 @@ export default function ChatRoomPage() {
 
       <form onSubmit={handleSendMessage} className="p-4 border-t bg-background/50 rounded-b-xl">
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled>
+          <Button variant="ghost" size="icon" type="button" disabled={isRoomExpired}>
             <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
           <Input
-            placeholder="Mesajınızı yazın..."
+            placeholder={isRoomExpired ? "Oda süresi doldu" : "Mesajınızı yazın..."}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             className="flex-1 pr-20 rounded-full focus-visible:ring-accent"
             autoComplete="off"
-            disabled={!currentUser || isSending}
+            disabled={!currentUser || isSending || isRoomExpired || isUserLoading}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled>
+            <Button variant="ghost" size="icon" type="button" disabled={isRoomExpired}>
               <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
-            <Button type="submit" size="icon" className="bg-accent hover:bg-accent/90 rounded-full" disabled={!currentUser || isSending || !newMessage.trim()}>
+            <Button type="submit" size="icon" className="bg-accent hover:bg-accent/90 rounded-full" disabled={!currentUser || isSending || !newMessage.trim() || isRoomExpired || isUserLoading}>
               {isSending ? <Loader2 className="h-5 w-5 animate-spin text-accent-foreground" /> : <Send className="h-5 w-5 text-accent-foreground" />}
               <span className="sr-only">Gönder</span>
             </Button>
           </div>
         </div>
+        {isRoomExpired && <p className="text-xs text-destructive text-center mt-1">Bu odanın süresi dolduğu için mesaj gönderemezsiniz.</p>}
       </form>
     </div>
   );

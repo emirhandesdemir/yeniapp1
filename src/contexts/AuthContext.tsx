@@ -9,24 +9,39 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  updateProfile,
-  GoogleAuthProvider, // GoogleAuthProvider import edildi
-  signInWithPopup,    // signInWithPopup import edildi
+  updateProfile as updateFirebaseProfile, // Renamed to avoid conflict
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase'; // db import edildi
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore"; // Firestore fonksiyonları import edildi
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast'; // Toast hook'u import edildi
+import { useToast } from '@/hooks/use-toast';
+
+const INITIAL_DIAMONDS = 10; // Yeni kullanıcılar için başlangıç elmas miktarı
+
+interface UserData {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  diamonds: number;
+  createdAt: Timestamp;
+}
 
 interface AuthContextType {
-  currentUser: User | null;
-  loading: boolean;
-  isUserLoading: boolean;
+  currentUser: User | null; // Firebase Auth kullanıcısı
+  userData: UserData | null; // Firestore'dan gelen kullanıcı verileri (elmas vb.)
+  loading: boolean; // Genel Auth yükleme durumu
+  isUserLoading: boolean; // Kullanıcı işlemi yükleme durumu (login, signup vb.)
+  isUserDataLoading: boolean; // Firestore kullanıcı verisi yükleme durumu
   signUp: (email: string, password: string, username: string) => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string, photoURL?: string }) => Promise<void>;
-  signInWithGoogle: () => Promise<void>; // Google ile giriş fonksiyonu eklendi
+  updateUserProfile: (updates: { displayName?: string, photoURL?: string }) => Promise<void>; // Auth profilini günceller
+  updateUserDiamonds: (newDiamondCount: number) => Promise<void>; // Sadece elmasları günceller
+  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -45,25 +60,87 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isUserLoading, setIsUserLoading] = useState(false);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true); // Auth state yüklenmesi
+  const [isUserLoading, setIsUserLoading] = useState(false); // Giriş/kayıt gibi işlemler için
+  const [isUserDataLoading, setIsUserDataLoading] = useState(true); // Firestore'dan veri çekme
   const router = useRouter();
-  const { toast } = useToast(); // Toast hook'u kullanıma alındı
+  const { toast } = useToast();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
-      setLoading(false);
+      if (user) {
+        setIsUserDataLoading(true);
+        const userDocRef = doc(db, "users", user.uid);
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+          setUserData(docSnap.data() as UserData);
+        } else {
+          // Google ile ilk kez giriş yapan veya eski kullanıcı için belge yoksa oluştur
+          const newUserProfileData: UserData = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            diamonds: INITIAL_DIAMONDS,
+            createdAt: serverTimestamp() as Timestamp, // Firestore'a yazarken serverTimestamp() kullanılacak
+          };
+          try {
+            await setDoc(userDocRef, { // serverTimestamp() doğru kullanımı için setDoc içinde tekrar yazıldı
+              ...newUserProfileData,
+              createdAt: serverTimestamp() 
+            });
+            // Firestore'dan okurken Timestamp nesnesi gelecek, setDoc sonrası hemen kullanmak için düzeltme
+            const freshSnap = await getDoc(userDocRef);
+            if (freshSnap.exists()){
+                setUserData(freshSnap.data() as UserData);
+            } else {
+                 // Bu durum pek olası değil ama güvenlik için
+                setUserData({...newUserProfileData, createdAt: Timestamp.now() });
+            }
+
+          } catch (error) {
+            console.error("Error creating user document in Firestore:", error);
+            toast({ title: "Kullanıcı Verisi Hatası", description: "Kullanıcı verileri oluşturulurken bir sorun oluştu.", variant: "destructive" });
+          }
+        }
+        setIsUserDataLoading(false);
+      } else {
+        setUserData(null);
+        setIsUserDataLoading(false);
+      }
+      setLoading(false); // Auth state yüklemesi bitti
     });
     return unsubscribe;
-  }, []);
+  }, [toast]);
+
+  const createUserDocument = async (user: User, username?: string) => {
+    const userDocRef = doc(db, "users", user.uid);
+    const userDataToSet: Omit<UserData, 'createdAt'> & { createdAt: any } = { // serverTimestamp için any
+      uid: user.uid,
+      email: user.email,
+      displayName: username || user.displayName,
+      photoURL: user.photoURL,
+      diamonds: INITIAL_DIAMONDS,
+      createdAt: serverTimestamp(),
+    };
+    await setDoc(userDocRef, userDataToSet);
+    // userData state'ini güncellemek için, serverTimestamp'ın çözümlenmiş halini almamız gerekebilir.
+    // onAuthStateChanged bunu zaten yapıyor, bu yüzden burada tekrar setlemeye gerek yok.
+    const docSnap = await getDoc(userDocRef); // serverTimestamp çözüldükten sonra oku
+    if (docSnap.exists()) {
+      setUserData(docSnap.data() as UserData);
+    }
+  };
 
   const signUp = async (email: string, password: string, username: string) => {
     setIsUserLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(userCredential.user, { displayName: username });
-      setCurrentUser(auth.currentUser); 
+      await updateFirebaseProfile(userCredential.user, { displayName: username });
+      await createUserDocument(userCredential.user, username); // Firestore'a kullanıcı belgesi oluştur
+      // setCurrentUser ve setUserData onAuthStateChanged tarafından halledilecek
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
@@ -79,7 +156,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         message = "E-posta/Şifre ile kimlik doğrulama Firebase projenizde etkinleştirilmemiş. Lütfen Firebase konsolundan bu ayarı etkinleştirin.";
       }
       toast({ title: "Kayıt Hatası", description: message, variant: "destructive" });
-      // throw new Error(message); // Hata fırlatmak yerine toast gösteriyoruz
     } finally {
       setIsUserLoading(false);
     }
@@ -89,6 +165,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // Kullanıcı ve kullanıcı verisi onAuthStateChanged tarafından yüklenecek
       router.push('/');
       toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
@@ -98,7 +175,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         message = "E-posta veya şifre hatalı.";
       }
       toast({ title: "Giriş Hatası", description: message, variant: "destructive" });
-      // throw new Error(message);
     } finally {
       setIsUserLoading(false);
     }
@@ -108,7 +184,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      // Firestore'da kullanıcı belgesini kontrol et/oluştur
+      const userDocRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(userDocRef);
+      if (!docSnap.exists()) {
+        await createUserDocument(user);
+      }
+      // Kullanıcı ve kullanıcı verisi onAuthStateChanged tarafından yüklenecek/güncellenecek
       router.push('/');
       toast({ title: "Başarılı!", description: "Google ile giriş yapıldı." });
     } catch (error: any) {
@@ -122,7 +206,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         message = "Bu e-posta adresiyle zaten bir hesap mevcut, ancak farklı bir giriş yöntemiyle. Lütfen diğer yöntemle giriş yapmayı deneyin.";
       }
       toast({ title: "Google Giriş Hatası", description: message, variant: "destructive" });
-      // throw new Error(message);
     } finally {
       setIsUserLoading(false);
     }
@@ -132,12 +215,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     try {
       await signOut(auth);
+      // setCurrentUser ve setUserData onAuthStateChanged tarafından null'a çekilecek
       router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
       console.error("Logout error:", error);
       toast({ title: "Çıkış Hatası", description: "Çıkış yapılırken bir hata oluştu.", variant: "destructive" });
-      // throw new Error("Çıkış yapılırken bir hata oluştu.");
     } finally {
       setIsUserLoading(false);
     }
@@ -150,38 +233,77 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
     setIsUserLoading(true);
     try {
-      await updateProfile(auth.currentUser, updates);
-      setCurrentUser(auth.currentUser ? { ...auth.currentUser } : null);
+      await updateFirebaseProfile(auth.currentUser, updates); // Firebase Auth profilini güncelle
+      // Firestore kullanıcı belgesini de güncelle (displayName, photoURL)
+      const userDocRef = doc(db, "users", auth.currentUser.uid);
+      const firestoreUpdates: Partial<UserData> = {};
+      if(updates.displayName) firestoreUpdates.displayName = updates.displayName;
+      if(updates.photoURL) firestoreUpdates.photoURL = updates.photoURL;
+      
+      if(Object.keys(firestoreUpdates).length > 0){
+        await updateDoc(userDocRef, firestoreUpdates);
+      }
+
+      // State'leri güncelle
+      setCurrentUser(auth.currentUser ? { ...auth.currentUser } : null); // Auth state
+      const updatedDocSnap = await getDoc(userDocRef); // Firestore state için yeniden oku
+      if (updatedDocSnap.exists()) {
+        setUserData(updatedDocSnap.data() as UserData);
+      }
+
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
     } catch (error: any) {
       console.error("Profile update error:", error);
       toast({ title: "Profil Güncelleme Hatası", description: "Profil güncellenirken bir hata oluştu.", variant: "destructive" });
-      // throw new Error("Profil güncellenirken bir hata oluştu.");
     } finally {
       setIsUserLoading(false);
     }
   };
 
+  const updateUserDiamonds = async (newDiamondCount: number) => {
+    if (!currentUser || !userData) {
+      toast({ title: "Hata", description: "Elmaslar güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
+      return Promise.reject("Kullanıcı bulunamadı");
+    }
+    setIsUserLoading(true);
+    try {
+      const userDocRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userDocRef, { diamonds: newDiamondCount });
+      setUserData(prev => prev ? { ...prev, diamonds: newDiamondCount } : null);
+      // toast({ title: "Elmaslar Güncellendi", description: `Yeni elmas bakiyeniz: ${newDiamondCount}` }); // İsteğe bağlı, her işlemde gösterilmeyebilir.
+      return Promise.resolve();
+    } catch (error) {
+      console.error("Error updating diamonds:", error);
+      toast({ title: "Elmas Güncelleme Hatası", description: "Elmaslar güncellenirken bir sorun oluştu.", variant: "destructive" });
+      return Promise.reject(error);
+    } finally {
+      setIsUserLoading(false);
+    }
+  };
 
-  if (loading) {
+  if (loading || isUserDataLoading) { // Auth state veya Firestore user data yükleniyorsa
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Kimlik durumu yükleniyor...</p>
+        <p className="mt-4 text-muted-foreground">Kullanıcı verileri yükleniyor...</p>
       </div>
     );
   }
 
   const value = {
     currentUser,
-    loading: loading,
-    isUserLoading,
+    userData,
+    loading: loading, // Bu genel auth state yüklemesi için
+    isUserLoading, // Bu login/signup gibi kullanıcı aksiyonları için
+    isUserDataLoading, // Firestore user data yüklemesi
     signUp,
     logIn,
     logOut,
     updateUserProfile,
-    signInWithGoogle, // signInWithGoogle context değerine eklendi
+    updateUserDiamonds,
+    signInWithGoogle,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
+
