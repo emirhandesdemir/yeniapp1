@@ -23,7 +23,8 @@ import {
   UserCheck,
   UserX,
   ChevronDown,
-  UserCog
+  UserCog,
+  ListChecks // Yeni ikon eklendi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -53,7 +54,7 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  // orderBy // orderBy kaldırıldı
+  // orderBy // Gerekirse tekrar eklenebilir
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -72,13 +73,14 @@ const navItems: NavItem[] = [
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
   {
-    href: '/admin/dashboard', // This is used as AccordionItem value
+    href: '/admin/dashboard', 
     label: 'Admin Paneli',
     icon: ShieldCheck,
     adminOnly: true,
     subItems: [
       { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
       { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog },
+      { href: '/admin/chat-rooms', label: 'Oda Yönetimi', icon: ListChecks }, // Yeni alt menü öğesi
     ]
   },
 ];
@@ -93,34 +95,56 @@ interface FriendRequestForPopover {
 }
 
 function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
-  const isActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href) && item.href.length > 1 && !item.subItems); // Don't mark parent active if only subitem is active
+  const isActivePath = (path: string) => {
+    if (path === '/') return currentPathname === '/';
+    return currentPathname.startsWith(path);
+  };
+  
+  const isParentActive = item.subItems 
+    ? item.subItems.some(subItem => isActivePath(subItem.href)) || isActivePath(item.href)
+    : isActivePath(item.href);
+
+  const isDirectActive = currentPathname === item.href;
+
 
   if (item.adminOnly && !isAdmin) {
     return null;
   }
 
   if (item.subItems && item.subItems.length > 0) {
-    const isParentActive = item.subItems.some(
-      subItem => currentPathname === subItem.href || (subItem.href !== '/' && currentPathname.startsWith(subItem.href) && subItem.href.length > 1)
-    ) || currentPathname === item.href; // Parent itself can also be an active page
-
     return (
-      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive ? item.href : undefined}>
+      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive && !item.subItems.some(sub => sub.href === currentPathname) ? item.href : undefined}>
         <AccordionItem value={item.href} className="border-b-0">
           <AccordionTrigger
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm w-full justify-between hover:no-underline",
-              isParentActive
-                ? "bg-primary/10 text-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary"
+              isParentActive && !item.subItems.some(sub => sub.href === currentPathname && sub.href !== item.href)
+                ? "bg-sidebar-primary/10 text-sidebar-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary"
                 : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
               "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
+            // AccordionTrigger'a tıklandığında navigasyon olmaması için onClick ile Link'e yönlendirme
+            // Eğer item.href ana bir sayfa ise (örneğin /admin/dashboard) ve tıklanabilir olmasını istiyorsanız, bu mantığı ayarlamanız gerekebilir.
+            // Şimdilik, AccordionTrigger sadece açıp kapama işlevi görüyor.
+            asChild={item.href === currentPathname && !item.subItems.some(sub => sub.href === currentPathname)}
+            onClick={(e) => {
+              if (item.href !== currentPathname || !item.subItems?.some(sub => sub.href === currentPathname)) {
+                // Eğer mevcut yol item.href değilse veya aktif bir alt öğe yoksa, tıklama davranışı devam etsin (Accordion'u aç/kapat).
+                // Aksi takdirde, Link'in navigasyon yapmasını engelleme.
+                if(item.href === currentPathname && item.subItems?.some(sub => sub.href === currentPathname)){
+                     e.preventDefault(); // Ana kategori linki ise ve zaten oradaysak accordion'un navigasyonunu engelle
+                }
+              } else {
+                // Eğer zaten bu sayfadaysak ve alt menüsü varsa, tıklama sadece accordion'u açıp kapatmalı, navigasyon yapmamalı.
+                e.preventDefault();
+              }
+            }}
           >
-            <div className="flex items-center gap-3">
-              <item.icon className="h-5 w-5" />
-              {item.label}
-            </div>
+             <div className="flex items-center gap-3">
+                <item.icon className="h-5 w-5" />
+                {item.label}
+              </div>
           </AccordionTrigger>
           <AccordionContent className="pb-0 pl-5 pr-1 pt-1">
             <nav className="grid items-start gap-1">
@@ -140,13 +164,13 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
       onClick={onClick}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm",
-        isActive
+        isDirectActive
           ? "bg-primary text-primary-foreground font-semibold shadow-sm"
           : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
         "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
-        isActive && "dark:bg-sidebar-primary dark:text-sidebar-primary-foreground"
+        isDirectActive && "dark:bg-sidebar-primary dark:text-sidebar-primary-foreground"
       )}
-      aria-current={isActive ? "page" : undefined}
+      aria-current={isDirectActive ? "page" : undefined}
     >
       <item.icon className="h-5 w-5" />
       {item.label}
@@ -162,7 +186,6 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const handleLogout = async () => {
     try {
       await logOut();
-      // toast({ title: "Başarıyla çıkış yapıldı."}); // Toast is now handled in AuthContext
       if (onLinkClick) onLinkClick();
     } catch (error: any) {
       toast({ title: "Çıkış Hatası", description: error.message, variant: "destructive" });
@@ -212,8 +235,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   React.useEffect(() => {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
-      setLoadingRequests(false);
-      if (!incomingInitialized) setIncomingInitialized(true);
+      if (!incomingInitialized) { // Sadece ilk kez veya kullanıcı değiştiğinde
+        setLoadingRequests(false);
+        setIncomingInitialized(true);
+      }
       return () => {};
     }
     
@@ -223,7 +248,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
-      // orderBy("createdAt", "desc") // Kaldırıldı
+      // orderBy("createdAt", "desc") // Dizin sorunu çözülene kadar kaldırıldı
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -237,7 +262,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             }
         } catch (profileError) {
             console.error(`Error fetching profile for sender ${data.fromUserId}:`, profileError);
-            // İsteği profilsiz de olsa göstermeye devam edebiliriz.
         }
         return {
           id: reqDoc.id,
@@ -254,20 +278,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
-        // Kullanıcıya bir toast göstermek yerine konsola loglayabiliriz.
-        // toast({ title: "Bildirim Yükleme Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" });
       } finally {
         if (!incomingInitialized) {
             setIncomingInitialized(true);
-            setLoadingRequests(false); // Initialize sonrası loading false
+            setLoadingRequests(false);
         }
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
-      // toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
       if (!incomingInitialized) {
         setIncomingInitialized(true);
-        setLoadingRequests(false); // Hata durumunda da loading false
+        setLoadingRequests(false); 
       }
     });
 
@@ -308,7 +329,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
-      // onSnapshot otomatik olarak listeyi güncelleyecektir.
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -320,12 +340,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
-      // Sadece status'u "declined" olarak güncellemek yerine isteği silebiliriz.
-      // Veya daha sonra filtrelenmesi için status: "declined" yapabiliriz.
-      // Şimdilik silelim, böylece pending listesinden direkt çıkar.
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
-       // onSnapshot otomatik olarak listeyi güncelleyecektir.
     } catch (error) {
       console.error("Error declining friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
@@ -423,7 +439,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             disabled={performingAction[req.id] || !req.userProfile}
                             aria-label="Kabul Et"
                           >
-                            {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
+                            {performingAction[req.id] && performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
                           </Button>
                           <Button
                             variant="ghost"
@@ -433,7 +449,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             disabled={performingAction[req.id]}
                             aria-label="Reddet"
                           >
-                           {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
+                           {performingAction[req.id] && performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
@@ -487,4 +503,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+    
+
     
