@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, DoorOpen, DoorClosed } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef, FormEvent, useCallback } from "react";
+import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -26,14 +26,13 @@ import {
   where,
   writeBatch,
   increment,
-} from "firebase/firestore"; // deleteField kaldırıldı, kullanılmıyor
+} from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-// import { Badge } from "@/components/ui/badge"; // Artık header'da popover trigger'ı için badge kullanmıyoruz
 
 interface Message {
   id: string;
@@ -61,6 +60,7 @@ interface ActiveParticipant {
   displayName: string | null;
   photoURL: string | null;
   joinedAt?: Timestamp;
+  isTyping?: boolean;
 }
 
 interface FriendRequest {
@@ -77,7 +77,7 @@ interface FriendRequest {
 
 const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
-
+const TYPING_DEBOUNCE_DELAY = 1500; // ms
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -106,10 +106,27 @@ export default function ChatRoomPage() {
   const [isProcessingJoinLeave, setIsProcessingJoinLeave] = useState(true);
   const [isCurrentUserParticipant, setIsCurrentUserParticipant] = useState(false);
 
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "PN"; 
+    return "PN";
   };
+
+  const updateUserTypingStatus = useCallback(async (isTyping: boolean) => {
+    if (!currentUser || !roomId || !isCurrentUserParticipant) return;
+    const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
+    try {
+      // Check if participant document still exists before updating
+      const participantSnap = await getDoc(participantRef);
+      if (participantSnap.exists()) {
+        await updateDoc(participantRef, { isTyping });
+      }
+    } catch (error) {
+      // console.warn("Could not update typing status:", error); // Less intrusive logging
+    }
+  }, [currentUser, roomId, isCurrentUserParticipant]);
+
 
   const handleJoinRoom = useCallback(async () => {
     if (!currentUser || !userData || !roomId || !roomDetails) return;
@@ -121,11 +138,25 @@ export default function ChatRoomPage() {
       const participantSnap = await getDoc(participantRef);
       if (participantSnap.exists()) {
         setIsCurrentUserParticipant(true);
+        // Ensure isTyping is false if user re-joins or was already in
+        if (participantSnap.data()?.isTyping) {
+          await updateDoc(participantRef, { isTyping: false });
+        }
         setIsProcessingJoinLeave(false);
         return;
       }
 
-      if ((roomDetails.participantCount ?? 0) >= roomDetails.maxParticipants) {
+      // Re-fetch room details to get latest participant count before joining
+      const currentRoomSnap = await getDoc(roomRef);
+      if (!currentRoomSnap.exists()) {
+          toast({ title: "Hata", description: "Oda bulunamadı.", variant: "destructive" });
+          router.push("/chat");
+          return;
+      }
+      const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
+
+
+      if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) {
         setIsRoomFullError(true);
         toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" });
         setIsProcessingJoinLeave(false);
@@ -138,6 +169,7 @@ export default function ChatRoomPage() {
         displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
         photoURL: userData.photoURL || currentUser.photoURL || null,
         uid: currentUser.uid,
+        isTyping: false, // Initial typing state
       });
       batch.update(roomRef, { participantCount: increment(1) });
       await batch.commit();
@@ -149,11 +181,17 @@ export default function ChatRoomPage() {
     } finally {
       setIsProcessingJoinLeave(false);
     }
-  }, [currentUser, userData, roomId, roomDetails, toast]);
+  }, [currentUser, userData, roomId, roomDetails, toast, router]);
 
   const handleLeaveRoom = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve();
     
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    await updateUserTypingStatus(false); // Ensure typing is false before leaving
+
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
     try {
@@ -161,16 +199,15 @@ export default function ChatRoomPage() {
       batch.delete(participantRef);
       batch.update(roomRef, { participantCount: increment(-1) });
       await batch.commit();
-      setIsCurrentUserParticipant(false);
-      console.log("User left room and participant count decremented.");
+      setIsCurrentUserParticipant(false); // UI update
     } catch (error) {
       console.error("Error leaving room:", error);
     }
-  }, [currentUser, roomId, isCurrentUserParticipant]);
+  }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus]);
 
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000 * 60);
+    const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update 'now' every minute
     return () => clearInterval(timer);
   }, []);
 
@@ -194,10 +231,6 @@ export default function ChatRoomPage() {
         setRoomDetails(fetchedRoomDetails);
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
 
-        if (currentUser && userData) {
-            handleJoinRoom();
-        }
-
       } else {
         toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" });
         router.push("/chat");
@@ -209,20 +242,58 @@ export default function ChatRoomPage() {
       setLoadingRoom(false);
     });
 
+    // This effect now depends on roomDetails being loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, toast, router]);
+
+
+  useEffect(() => {
+    // This effect handles joining and listening to participants after roomDetails are loaded.
+    if (!roomId || !currentUser || !userData || !roomDetails) return;
+
+    // Attempt to join the room if details are available
+    if (!isCurrentUserParticipant && !isProcessingJoinLeave && !isRoomFullError) {
+        handleJoinRoom();
+    }
+    
     const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`), orderBy("joinedAt", "asc"));
     const unsubscribeParticipants = onSnapshot(participantsQuery, (snapshot) => {
       const fetchedParticipants: ActiveParticipant[] = [];
+      let currentUserIsStillParticipant = false;
       snapshot.forEach((doc) => {
-        fetchedParticipants.push({ id: doc.id, ...doc.data() } as ActiveParticipant);
+        const participantData = doc.data();
+        fetchedParticipants.push({ 
+            id: doc.id, 
+            displayName: participantData.displayName,
+            photoURL: participantData.photoURL,
+            joinedAt: participantData.joinedAt,
+            isTyping: participantData.isTyping,
+        } as ActiveParticipant);
+        if (doc.id === currentUser.uid) {
+            currentUserIsStillParticipant = true;
+        }
       });
       setActiveParticipants(fetchedParticipants);
+      setIsCurrentUserParticipant(currentUserIsStillParticipant); // Update based on current participants list
       
-      if (currentUser) {
-        const stillParticipant = fetchedParticipants.some(p => p.id === currentUser.uid);
-        setIsCurrentUserParticipant(stillParticipant);
+      // If current user is no longer in participants list (e.g. kicked, or data sync issue), trigger leave logic
+      if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
+        // User was a participant but is no longer listed. Might be due to external removal.
+        // For now, we just update the state. If explicit leave is needed, more logic would be required.
+        setIsCurrentUserParticipant(false); 
       }
+
     });
 
+    return () => {
+      unsubscribeParticipants();
+    };
+  }, [roomId, currentUser, userData, roomDetails, handleJoinRoom, isCurrentUserParticipant, isProcessingJoinLeave, isRoomFullError]);
+
+
+  useEffect(() => {
+    // Effect for messages
+    if(!roomId) return;
     setLoadingMessages(true);
     const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
@@ -252,20 +323,23 @@ export default function ChatRoomPage() {
     });
 
     return () => {
-      unsubscribeRoom();
-      unsubscribeMessages();
-      unsubscribeParticipants();
-      handleLeaveRoom();
+        unsubscribeMessages();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, currentUser, userData, toast, router, handleLeaveRoom]);
+  }, [roomId, currentUser?.uid, toast]);
 
 
   useEffect(() => {
-    if (roomDetails && currentUser && userData && !isCurrentUserParticipant && !isRoomFullError && isProcessingJoinLeave) {
-        handleJoinRoom();
-    }
-  }, [roomDetails, currentUser, userData, handleJoinRoom, isCurrentUserParticipant, isRoomFullError, isProcessingJoinLeave]);
+    // ComponentWillUnmount logic or when dependencies for leaving change
+    return () => {
+      if (isCurrentUserParticipant) { // Ensure leave room is called if user was a participant
+         handleLeaveRoom();
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCurrentUserParticipant, handleLeaveRoom]); // roomId and currentUser.uid are implicitly covered by handleLeaveRoom dependencies
 
 
   const scrollToBottom = () => {
@@ -285,12 +359,50 @@ export default function ChatRoomPage() {
   const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipant;
 
 
+  const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const currentMessage = e.target.value;
+    setNewMessage(currentMessage);
+
+    if (!isCurrentUserParticipant || !canSendMessage) return;
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    } else {
+      // If no timeout, means user wasn't typing (or timeout fired). Set isTyping to true.
+      if (currentMessage.trim() !== "") { // Only set typing if there's text
+        updateUserTypingStatus(true);
+      }
+    }
+
+    if (currentMessage.trim() === "") { // If input is empty, set typing false immediately
+        updateUserTypingStatus(false);
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+            typingTimeoutRef.current = null;
+        }
+    } else {
+        typingTimeoutRef.current = setTimeout(() => {
+            updateUserTypingStatus(false);
+            typingTimeoutRef.current = null;
+        }, TYPING_DEBOUNCE_DELAY);
+    }
+  };
+
+
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage) return;
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    await updateUserTypingStatus(false); // User sent a message, so not typing anymore
+
     setIsSending(true);
     const tempMessage = newMessage;
-    setNewMessage("");
+    setNewMessage(""); // Clear input immediately
+
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
         text: tempMessage,
@@ -302,12 +414,12 @@ export default function ChatRoomPage() {
     } catch (error) {
       console.error("Error sending message:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      setNewMessage(tempMessage);
+      setNewMessage(tempMessage); // Restore message on error
     } finally {
       setIsSending(false);
     }
   };
-  
+
   const handleDeleteRoom = async () => {
     if (!roomDetails || !currentUser || roomDetails.creatorId !== currentUser.uid) {
       toast({ title: "Hata", description: "Bu odayı silme yetkiniz yok.", variant: "destructive" });
@@ -318,17 +430,17 @@ export default function ChatRoomPage() {
     }
     try {
       const batch = writeBatch(db);
-      
+
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
       const messagesSnapshot = await getDocs(messagesQuery);
       messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
-      
+
       const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
       const participantsSnapshot = await getDocs(participantsQuery);
       participantsSnapshot.forEach((participantDoc) => batch.delete(participantDoc.ref));
-      
+
       batch.delete(doc(db, "chatRooms", roomId));
-      
+
       await batch.commit();
       toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` });
       router.push("/chat");
@@ -351,7 +463,7 @@ export default function ChatRoomPage() {
     try {
       const currentExpiresAt = roomDetails.expiresAt.toDate();
       const newExpiresAtDate = addMinutes(currentExpiresAt, ROOM_EXTENSION_DURATION_MINUTES);
-      
+
       const roomDocRef = doc(db, "chatRooms", roomId);
       await updateDoc(roomDocRef, {
         expiresAt: Timestamp.fromDate(newExpiresAtDate)
@@ -452,11 +564,11 @@ export default function ChatRoomPage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
-      setFriendshipStatus("request_sent"); 
-      setRelevantFriendRequest({ 
-        id: newRequestRef.id, 
-        fromUserId: currentUser.uid, 
-        fromUsername: userData.displayName || "", 
+      setFriendshipStatus("request_sent");
+      setRelevantFriendRequest({
+        id: newRequestRef.id,
+        fromUserId: currentUser.uid,
+        fromUsername: userData.displayName || "",
         fromAvatarUrl: userData.photoURL || null,
         toUserId: popoverTargetUser.uid,
         toUsername: popoverTargetUser.displayName || "",
@@ -471,7 +583,7 @@ export default function ChatRoomPage() {
       setPopoverLoading(false);
     }
   };
-  
+
   const handleAcceptFriendRequestPopover = async () => {
     if (!currentUser || !userData || !relevantFriendRequest || !popoverTargetUser) return;
     setPopoverLoading(true);
@@ -481,19 +593,19 @@ export default function ChatRoomPage() {
       batch.update(requestRef, { status: "accepted" });
 
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, popoverTargetUser.uid);
-      batch.set(myFriendRef, { 
-        displayName: popoverTargetUser.displayName, 
+      batch.set(myFriendRef, {
+        displayName: popoverTargetUser.displayName,
         photoURL: popoverTargetUser.photoURL,
-        addedAt: serverTimestamp() 
+        addedAt: serverTimestamp()
       });
 
       const theirFriendRef = doc(db, `users/${popoverTargetUser.uid}/confirmedFriends`, currentUser.uid);
-      batch.set(theirFriendRef, { 
-        displayName: userData.displayName, 
+      batch.set(theirFriendRef, {
+        displayName: userData.displayName,
         photoURL: userData.photoURL,
-        addedAt: serverTimestamp() 
+        addedAt: serverTimestamp()
       });
-      
+
       await batch.commit();
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} ile arkadaş oldunuz.` });
       setFriendshipStatus("friends");
@@ -505,13 +617,13 @@ export default function ChatRoomPage() {
       setPopoverLoading(false);
     }
   };
-  
 
-  if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError)) {
+
+  if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
     return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2 text-lg">Oda yükleniyor ve katılımcı durumu kontrol ediliyor...</p>
+        <p className="ml-2 text-lg">Oda yükleniyor...</p>
       </div>
     );
   }
@@ -550,7 +662,7 @@ export default function ChatRoomPage() {
                         <span className="text-xs">{activeParticipants.length}/{roomDetails.maxParticipants}</span>
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-60 p-0">
+                <PopoverContent className="w-64 p-0">
                     <div className="p-2 border-b">
                         <h3 className="text-xs font-medium text-center text-muted-foreground">
                             Aktif Katılımcılar ({activeParticipants.length}/{roomDetails.maxParticipants})
@@ -576,7 +688,15 @@ export default function ChatRoomPage() {
                                     <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar"/>
                                     <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
                                 </Avatar>
-                                <span className="text-xs font-medium truncate text-muted-foreground">{participant.displayName || "Bilinmeyen"}</span>
+                                <div className="flex-1 min-w-0">
+                                    <span className="text-xs font-medium truncate text-muted-foreground block">
+                                      {participant.displayName || "Bilinmeyen"}
+                                      {participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground/70 block">
+                                      {participant.joinedAt ? formatDistanceToNow(participant.joinedAt.toDate(), { addSuffix: true, locale: tr, includeSeconds: false }) : 'Yeni katıldı'}
+                                    </span>
+                                </div>
                             </li>
                             ))}
                         </ul>
@@ -608,7 +728,7 @@ export default function ChatRoomPage() {
         </div>
       </header>
 
-    <div className="flex flex-1 overflow-hidden"> {/* Bu div artık sadece mesaj alanını saracak */}
+    <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
             {loadingMessages && (
                 <div className="flex flex-1 items-center justify-center py-10">
@@ -616,11 +736,18 @@ export default function ChatRoomPage() {
                     <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p>
                 </div>
             )}
-            {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && (
+            {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipant && (
                 <div className="text-center text-muted-foreground py-10 px-4">
                     <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" />
                     <p className="text-lg font-medium">Henüz hiç mesaj yok.</p>
                     <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p>
+                </div>
+            )}
+             {!isCurrentUserParticipant && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (
+                <div className="text-center text-muted-foreground py-10 px-4">
+                    <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" />
+                    <p className="text-lg font-medium">Odaya katılmadınız.</p>
+                    <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p>
                 </div>
             )}
             {isRoomFullError && (
@@ -695,8 +822,8 @@ export default function ChatRoomPage() {
                         </Popover>
                     )}
                     <div className={`p-2.5 sm:p-3 shadow-md ${
-                        msg.isOwn 
-                        ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl" 
+                        msg.isOwn
+                        ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
                         : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl"
                     }`}>
                     <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
@@ -715,7 +842,6 @@ export default function ChatRoomPage() {
             </div>
             ))}
         </ScrollArea>
-        {/* SAĞ YAN PANEL KALDIRILDI */}
     </div>
 
 
@@ -728,7 +854,7 @@ export default function ChatRoomPage() {
           <Input
             placeholder={!canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın..."}
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={handleNewMessageInputChange}
             className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
             autoComplete="off"
             disabled={!canSendMessage || isSending || isUserLoading}
@@ -746,9 +872,9 @@ export default function ChatRoomPage() {
         </div>
         {!canSendMessage && (
             <p className="text-xs text-destructive text-center mt-1.5">
-            {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : 
+            {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." :
              isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." :
-             !isCurrentUserParticipant && !loadingRoom ? "Mesaj göndermek için odaya katılmanız veya bağlantının tamamlanması bekleniyor." : ""}
+             !isCurrentUserParticipant && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""}
             </p>
         )}
       </form>
