@@ -19,7 +19,10 @@ import {
   Gem,
   Sun, 
   Moon,
-  ShieldCheck // Admin paneli ikonu
+  ShieldCheck,
+  UserCheck, // Added for accept icon
+  UserX, // Added for decline icon
+  Send // Added for outgoing request cancel
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -31,12 +34,27 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuGroup
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, type UserData } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/contexts/ThemeContext'; 
-
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  Timestamp,
+  writeBatch,
+  getDoc
+} from "firebase/firestore";
 
 interface NavItem {
   href: string;
@@ -50,8 +68,17 @@ const navItems: NavItem[] = [
   { href: '/chat', label: 'Sohbet Odaları', icon: MessageSquare },
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
-  { href: '/admin/dashboard', label: 'Admin Paneli', icon: ShieldCheck, adminOnly: true }, // Admin paneli linki
+  { href: '/admin/dashboard', label: 'Admin Paneli', icon: ShieldCheck, adminOnly: true },
 ];
+
+interface FriendRequestForPopover {
+  id: string;
+  fromUserId: string;
+  fromUsername: string;
+  fromAvatarUrl: string | null;
+  createdAt: Timestamp;
+  userProfile?: UserData;
+}
 
 function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => void, isAdmin?: boolean }) {
   const pathname = usePathname();
@@ -124,19 +151,101 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const { currentUser, userData, logOut, isUserLoading } = useAuth();
   const { toast } = useToast();
   const { theme, setTheme, resolvedTheme } = useTheme(); 
+  
+  const [incomingRequests, setIncomingRequests] = React.useState<FriendRequestForPopover[]>([]);
+  const [loadingRequests, setLoadingRequests] = React.useState(true);
+  const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
 
-  const handleLogoutFromDropdown = async () => {
+  React.useEffect(() => {
+    if (!currentUser?.uid) {
+      setIncomingRequests([]);
+      setLoadingRequests(false);
+      return;
+    }
+
+    setLoadingRequests(true);
+    const incomingQuery = query(
+      collection(db, "friendRequests"),
+      where("toUserId", "==", currentUser.uid),
+      where("status", "==", "pending"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(incomingQuery, async (snapshot) => {
+      const reqPromises = snapshot.docs.map(async (reqDoc) => {
+        const data = reqDoc.data();
+        const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
+        return {
+          id: reqDoc.id,
+          fromUserId: data.fromUserId,
+          fromUsername: data.fromUsername,
+          fromAvatarUrl: data.fromAvatarUrl,
+          createdAt: data.createdAt,
+          userProfile: senderProfileDoc.exists() ? { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData : undefined,
+        } as FriendRequestForPopover;
+      });
+      setIncomingRequests(await Promise.all(reqPromises));
+      setLoadingRequests(false);
+    }, (error) => {
+      console.error("Error fetching incoming requests for popover:", error);
+      toast({ title: "Hata", description: "Bildirimler yüklenirken bir sorun oluştu.", variant: "destructive" });
+      setLoadingRequests(false);
+    });
+    
+    return () => unsubscribe();
+  }, [currentUser?.uid, toast]);
+
+  const setActionLoading = (id: string, isLoading: boolean) => {
+    setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
+  };
+
+  const handleAcceptRequestPopover = async (request: FriendRequestForPopover) => {
+    if (!currentUser || !userData) return;
+    setActionLoading(request.id, true);
     try {
-      await logOut();
-      toast({ title: "Başarıyla çıkış yapıldı."});
-    } catch (error: any) {
-      toast({ title: "Çıkış Hatası", description: error.message, variant: "destructive" });
+      const batch = writeBatch(db);
+      const requestRef = doc(db, "friendRequests", request.id);
+      batch.update(requestRef, { status: "accepted" });
+
+      const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
+      batch.set(myFriendRef, { 
+        displayName: request.userProfile?.displayName || request.fromUsername, 
+        photoURL: request.userProfile?.photoURL || request.fromAvatarUrl,
+        addedAt: serverTimestamp() 
+      });
+
+      const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
+      batch.set(theirFriendRef, { 
+        displayName: userData.displayName, 
+        photoURL: userData.photoURL,
+        addedAt: serverTimestamp() 
+      });
+      
+      await batch.commit();
+      toast({ title: "Başarılı", description: `${request.fromUsername} ile arkadaş oldunuz.` });
+    } catch (error) {
+      console.error("Error accepting friend request from popover:", error);
+      toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
+    } finally {
+      setActionLoading(request.id, false);
     }
   };
   
-  const getAvatarFallback = () => {
-    const nameToUse = userData?.displayName || currentUser?.displayName;
-    if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
+  const handleDeclineRequestPopover = async (requestId: string) => {
+    setActionLoading(requestId, true);
+    try {
+      await deleteDoc(doc(db, "friendRequests", requestId));
+      toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
+    } catch (error) {
+      console.error("Error declining friend request from popover:", error);
+      toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
+    } finally {
+      setActionLoading(requestId, false);
+    }
+  };
+
+  const getAvatarFallback = (name?: string | null) => {
+    if (name) return name.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
     return "SK";
   };
@@ -151,7 +260,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <SidebarContent />
       </div>
       <div className="flex flex-col">
-        <header className="flex h-16 items-center gap-2 sm:gap-4 border-b bg-card px-4 sm:px-6 sticky top-0 z-10">
+        <header className="flex h-16 items-center gap-2 sm:gap-4 border-b bg-card px-4 sm:px-6 sticky top-0 z-30"> {/* Increased z-index for header */}
           <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon" className="shrink-0 lg:hidden">
@@ -159,7 +268,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <span className="sr-only">Navigasyon menüsünü aç/kapat</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px]">
+            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50"> {/* Ensure SheetContent has high z-index */}
                <SheetHeader className="p-4 border-b">
                 <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
@@ -183,10 +292,69 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               <span className="sr-only">Temayı Değiştir</span>
             </Button>
 
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="sr-only">Bildirimler</span>
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full relative">
+                  <Bell className="h-5 w-5 text-muted-foreground" />
+                  {incomingRequests.length > 0 && (
+                    <span className="absolute top-0 right-0 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-destructive"></span>
+                    </span>
+                  )}
+                  <span className="sr-only">Bildirimler</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="p-3 border-b">
+                  <h3 className="text-sm font-medium text-foreground">Arkadaşlık İstekleri</h3>
+                </div>
+                {loadingRequests ? (
+                  <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>
+                ) : incomingRequests.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground text-center">Yeni arkadaşlık isteği yok.</p>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {incomingRequests.map(req => (
+                      <div key={req.id} className="flex items-center justify-between p-3 hover:bg-secondary/50 dark:hover:bg-secondary/20 border-b last:border-b-0">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
+                            <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername}</span>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-800/50 dark:text-green-400"
+                            onClick={() => handleAcceptRequestPopover(req)}
+                            disabled={performingAction[req.id]}
+                            aria-label="Kabul Et"
+                          >
+                            {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-800/50 dark:text-red-400"
+                            onClick={() => handleDeclineRequestPopover(req.id)}
+                            disabled={performingAction[req.id]}
+                            aria-label="Reddet"
+                          >
+                           {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* <div className="p-2 border-t text-center">
+                  <Button variant="link" size="sm" className="text-xs" onClick={() => router.push('/friends')}>Tüm İstekleri Gör</Button>
+                </div> */}
+              </PopoverContent>
+            </Popover>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -208,7 +376,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                   <Settings className="mr-2 h-4 w-4" /> Ayarlar
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogoutFromDropdown} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive">
+                <DropdownMenuItem onClick={logOut} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive">
                   {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />} 
                   Çıkış Yap
                 </DropdownMenuItem>
