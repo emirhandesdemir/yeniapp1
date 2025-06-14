@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent } from "react";
@@ -32,6 +32,8 @@ import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+
 
 interface Message {
   id: string;
@@ -85,7 +87,6 @@ export default function ChatRoomPage() {
   const { toast } = useToast();
   const [now, setNow] = useState(new Date());
 
-  // For User Info Popover
   const [popoverOpenForUserId, setPopoverOpenForUserId] = useState<string | null>(null);
   const [popoverTargetUser, setPopoverTargetUser] = useState<UserData | null>(null);
   const [popoverLoading, setPopoverLoading] = useState(false);
@@ -96,7 +97,7 @@ export default function ChatRoomPage() {
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
-    }, 1000); 
+    }, 1000 * 60); // Update every minute for expiry info
     return () => clearInterval(timer);
   }, []);
 
@@ -150,6 +151,7 @@ export default function ChatRoomPage() {
         userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking"
       })));
       setLoadingMessages(false);
+      setTimeout(() => scrollToBottom(), 0);
     }, (error) => {
       console.error("Error fetching messages:", error);
       toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
@@ -161,14 +163,18 @@ export default function ChatRoomPage() {
       unsubscribeMessages();
     };
   }, [roomId, currentUser, toast, router]);
-
-  useEffect(() => {
+  
+  const scrollToBottom = () => {
     if (scrollAreaRef.current) {
       const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
       if (viewport) {
         viewport.scrollTop = viewport.scrollHeight;
       }
     }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
   }, [messages]);
 
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
@@ -177,18 +183,20 @@ export default function ChatRoomPage() {
     e.preventDefault();
     if (!currentUser || !newMessage.trim() || !roomId || isRoomExpired) return;
     setIsSending(true);
+    const tempMessage = newMessage;
+    setNewMessage("");
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-        text: newMessage,
+        text: tempMessage,
         senderId: currentUser.uid,
         senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         timestamp: serverTimestamp(),
       });
-      setNewMessage("");
     } catch (error) {
       console.error("Error sending message:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
+      setNewMessage(tempMessage); // Restore message on error
     } finally {
       setIsSending(false);
     }
@@ -254,7 +262,7 @@ export default function ChatRoomPage() {
     if (isPast(expiryDate)) {
       return "Süresi Doldu";
     }
-    return `Kalan süre: ${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
+    return `${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
   };
 
   const handleOpenUserInfoPopover = async (senderId: string) => {
@@ -264,19 +272,16 @@ export default function ChatRoomPage() {
     setRelevantFriendRequest(null);
 
     try {
-      // Fetch target user details
       const userDocRef = doc(db, "users", senderId);
       const userDocSnap = await getDoc(userDocRef);
       if (!userDocSnap.exists()) {
         toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
-        setPopoverLoading(false);
         setPopoverOpenForUserId(null);
         return;
       }
-      const targetUser = userDocSnap.data() as UserData;
+      const targetUser = { uid: userDocSnap.id, ...userDocSnap.data() } as UserData;
       setPopoverTargetUser(targetUser);
 
-      // Check friendship status
       const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, senderId);
       const friendDocSnap = await getDoc(friendDocRef);
       if (friendDocSnap.exists()) {
@@ -285,7 +290,6 @@ export default function ChatRoomPage() {
         return;
       }
 
-      // Check outgoing friend request
       const outgoingReqQuery = query(
         collection(db, "friendRequests"),
         where("fromUserId", "==", currentUser.uid),
@@ -300,7 +304,6 @@ export default function ChatRoomPage() {
         return;
       }
 
-      // Check incoming friend request
       const incomingReqQuery = query(
         collection(db, "friendRequests"),
         where("fromUserId", "==", senderId),
@@ -314,7 +317,6 @@ export default function ChatRoomPage() {
         setPopoverLoading(false);
         return;
       }
-
       setFriendshipStatus("none");
     } catch (error) {
       console.error("Error fetching user info for popover:", error);
@@ -328,7 +330,7 @@ export default function ChatRoomPage() {
     if (!currentUser || !userData || !popoverTargetUser) return;
     setPopoverLoading(true);
     try {
-      await addDoc(collection(db, "friendRequests"), {
+      const newRequestRef = await addDoc(collection(db, "friendRequests"), {
         fromUserId: currentUser.uid,
         fromUsername: userData.displayName,
         fromAvatarUrl: userData.photoURL,
@@ -339,8 +341,19 @@ export default function ChatRoomPage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
-      setFriendshipStatus("request_sent"); // Update status locally
-      setPopoverOpenForUserId(null); // Close popover
+      setFriendshipStatus("request_sent"); 
+      setRelevantFriendRequest({ 
+        id: newRequestRef.id, 
+        fromUserId: currentUser.uid, 
+        fromUsername: userData.displayName || "", 
+        fromAvatarUrl: userData.photoURL || null,
+        toUserId: popoverTargetUser.uid,
+        toUsername: popoverTargetUser.displayName || "",
+        toAvatarUrl: popoverTargetUser.photoURL || null,
+        status: "pending",
+        createdAt: Timestamp.now() // Placeholder, actual value is serverTimestamp
+      });
+      // No need to close popover manually, onOpenChange handles it
     } catch (error) {
       console.error("Error sending friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği gönderilemedi.", variant: "destructive" });
@@ -374,7 +387,7 @@ export default function ChatRoomPage() {
       await batch.commit();
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} ile arkadaş oldunuz.` });
       setFriendshipStatus("friends");
-      setPopoverOpenForUserId(null);
+      setRelevantFriendRequest(null);
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -388,62 +401,69 @@ export default function ChatRoomPage() {
     return "PN"; 
   };
 
-
   if (loadingRoom || !roomDetails) {
     return (
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2">Oda yükleniyor...</p>
+        <p className="ml-2 text-lg">Oda yükleniyor...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.32))] max-h-[calc(100vh-theme(spacing.32))] md:h-[calc(100vh-theme(spacing.36))] md:max-h-[calc(100vh-theme(spacing.36))] bg-card rounded-xl shadow-xl overflow-hidden">
-      <header className="flex items-center justify-between gap-2 sm:gap-4 p-3 sm:p-4 border-b">
-        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0"> {/* flex-1 min-w-0 for left content to take space and truncate */}
-            <Button variant="ghost" size="icon" asChild className="md:hidden flex-shrink-0">
+    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] sm:h-[calc(100vh-theme(spacing.24))] md:h-[calc(100vh-theme(spacing.28))] bg-card rounded-xl shadow-lg overflow-hidden">
+      <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+            <Button variant="ghost" size="icon" asChild className="md:hidden flex-shrink-0 h-9 w-9">
             <Link href="/chat">
                 <ArrowLeft className="h-5 w-5" />
                 <span className="sr-only">Geri</span>
             </Link>
             </Button>
-            <Avatar className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
-            <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0,1)}`} data-ai-hint="group chat"/>
-            <AvatarFallback>{roomDetails.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+            <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+                <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0,1)}`} data-ai-hint="group chat"/>
+                <AvatarFallback>{roomDetails.name.substring(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0"> {/* min-w-0 for truncation of room name and details */}
-                <h2 className="text-md sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
-                <div className="flex items-center text-xs sm:text-sm text-muted-foreground flex-wrap gap-x-2 sm:gap-x-3">
+            <div className="flex-1 min-w-0">
+                <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
+                <div className="flex items-center text-xs text-muted-foreground gap-x-2">
                     <div className="flex items-center">
-                        <Users className="mr-1 h-3 w-3.5 sm:h-4 sm:w-4" />
-                        <span>{roomDetails.participantCount || 1} üye</span>
+                        <Users className="mr-1 h-3 w-3" />
+                        <span>{roomDetails.participantCount || 1}</span>
                     </div>
                     {roomDetails.expiresAt && (
                         <div className="flex items-center truncate">
-                            <Clock className="mr-1 h-3 w-3.5 sm:h-4 sm:w-4" />
+                            <Clock className="mr-1 h-3 w-3" />
                             <span className="truncate" title={getExpiryInfo()}>{getExpiryInfo()}</span>
                         </div>
                     )}
                 </div>
             </div>
         </div>
-        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            {currentUser && roomDetails.creatorId === currentUser.uid && !isRoomExpired && roomDetails.expiresAt && (
-                <Button variant="outline" size="xs" smSize="sm" onClick={handleExtendDuration} disabled={isExtending || isUserLoading} className="px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm">
-                    {isExtending ? <Loader2 className="mr-1 sm:mr-2 h-3 w-3.5 sm:h-4 sm:w-4 animate-spin" /> : <RefreshCw className="mr-1 sm:mr-2 h-3 w-3.5 sm:h-4 sm:w-4" />}
-                    Süre Uzat (2 <Gem className="inline h-2.5 w-2.5 sm:h-3 sm:w-3 ml-0.5 sm:ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
-                </Button>
-            )}
-            {currentUser && roomDetails.creatorId === currentUser.uid && (
-                <Button variant="destructive" size="xs" smSize="sm" onClick={handleDeleteRoom} className="px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm">
-                    <Trash2 className="mr-1 sm:mr-2 h-3 w-3.5 sm:h-4 sm:w-4" /> Odayı Sil
-                </Button>
-            )}
-        </div>
+        {currentUser && roomDetails.creatorId === currentUser.uid && (
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                        <MoreVertical className="h-5 w-5" />
+                        <span className="sr-only">Oda Seçenekleri</span>
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    {!isRoomExpired && roomDetails.expiresAt && (
+                        <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>
+                            {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                            Süre Uzat (2 <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                        </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                        <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        )}
       </header>
 
-      <ScrollArea className="flex-1 p-2 sm:p-4 space-y-3 sm:space-y-4" ref={scrollAreaRef}>
+      <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
         {loadingMessages && (
              <div className="flex flex-1 items-center justify-center py-10">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -451,9 +471,10 @@ export default function ChatRoomPage() {
             </div>
         )}
         {!loadingMessages && messages.length === 0 && !isRoomExpired && (
-            <div className="text-center text-muted-foreground py-10">
-                <p>Henüz hiç mesaj yok.</p>
-                <p>İlk mesajı sen gönder!</p>
+            <div className="text-center text-muted-foreground py-10 px-4">
+                <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" />
+                <p className="text-lg font-medium">Henüz hiç mesaj yok.</p>
+                <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p>
             </div>
         )}
         {isRoomExpired && (
@@ -463,19 +484,18 @@ export default function ChatRoomPage() {
             </div>
         )}
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex items-end gap-2 ${msg.isOwn ? "justify-end" : ""}`}>
+          <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
             {!msg.isOwn && (
                 <Popover open={popoverOpenForUserId === msg.senderId} onOpenChange={(isOpen) => {
                     if (!isOpen) setPopoverOpenForUserId(null);
-                    // handleOpenUserInfoPopover is called on trigger click
                 }}>
                     <PopoverTrigger asChild onClick={() => handleOpenUserInfoPopover(msg.senderId)}>
-                        <Avatar className="h-7 w-7 sm:h-8 sm:w-8 cursor-pointer">
+                        <Avatar className="h-7 w-7 cursor-pointer self-end mb-1">
                             <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-                            <AvatarFallback>{msg.senderName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
                         </Avatar>
                     </PopoverTrigger>
-                    <PopoverContent className="w-64 p-3">
+                    <PopoverContent className="w-64 p-3" side="top" align="start">
                         {popoverLoading && <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
                         {!popoverLoading && popoverTargetUser && popoverOpenForUserId === msg.senderId && (
                             <div className="space-y-2">
@@ -490,8 +510,8 @@ export default function ChatRoomPage() {
                                     </div>
                                 </div>
                                 <hr className="my-2"/>
-                                {friendshipStatus === "friends" && <p className="text-xs text-green-600">Arkadaşsınız.</p>}
-                                {friendshipStatus === "request_sent" && <p className="text-xs text-blue-600">Arkadaşlık isteği gönderildi.</p>}
+                                {friendshipStatus === "friends" && <p className="text-xs text-green-600 text-center py-1 px-2 rounded bg-green-500/10">Arkadaşsınız.</p>}
+                                {friendshipStatus === "request_sent" && <p className="text-xs text-blue-600 text-center py-1 px-2 rounded bg-blue-500/10">Arkadaşlık isteği gönderildi.</p>}
                                 {friendshipStatus === "request_received" && relevantFriendRequest && (
                                     <Button size="sm" className="w-full text-xs" onClick={handleAcceptFriendRequestPopover} disabled={popoverLoading}>
                                         <UserCircle className="mr-1.5 h-3.5 w-3.5" /> İsteği Kabul Et
@@ -510,63 +530,67 @@ export default function ChatRoomPage() {
                     </PopoverContent>
                 </Popover>
             )}
-            <div className={`max-w-[70%] p-2 sm:p-3 rounded-xl shadow ${
-                msg.isOwn 
-                ? "bg-primary text-primary-foreground rounded-br-none" 
-                : "bg-secondary text-secondary-foreground rounded-bl-none"
-            }`}>
-              {!msg.isOwn && (
-                <Popover open={popoverOpenForUserId === msg.senderId && !msg.isOwn} onOpenChange={(isOpen) => {
-                    if (!isOpen) setPopoverOpenForUserId(null);
-                }}>
-                    <PopoverTrigger asChild onClick={() => handleOpenUserInfoPopover(msg.senderId)}>
-                        <p className="text-xs font-medium mb-0.5 sm:mb-1 text-accent cursor-pointer hover:underline">{msg.senderName}</p>
-                    </PopoverTrigger>
-                    {/* PopoverContent is defined with Avatar trigger */}
-                </Popover>
-              )}
-              <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-              <p className={`text-xs mt-1 ${msg.isOwn ? "text-primary-foreground/70" : "text-muted-foreground/70"} text-right`}>
-                {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
-              </p>
+            <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
+                {!msg.isOwn && (
+                    <Popover open={popoverOpenForUserId === msg.senderId && !msg.isOwn} onOpenChange={(isOpen) => {
+                        if (!isOpen) setPopoverOpenForUserId(null);
+                    }}>
+                        <PopoverTrigger asChild onClick={() => handleOpenUserInfoPopover(msg.senderId)}>
+                             <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline self-start">{msg.senderName}</span>
+                        </PopoverTrigger>
+                    </Popover>
+                )}
+                <div className={`p-2.5 sm:p-3 shadow-md ${
+                    msg.isOwn 
+                    ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl" 
+                    : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl"
+                }`}>
+                  <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+                </div>
+                <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
+                    {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
+                </p>
             </div>
+
             {msg.isOwn && (
-              <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
+              <Avatar className="h-7 w-7 cursor-default self-end mb-1">
                 <AvatarImage src={currentUser?.photoURL || userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-                <AvatarFallback>{userData?.displayName?.substring(0, 2).toUpperCase() || currentUser?.displayName?.substring(0, 2).toUpperCase() || "SZ"}</AvatarFallback>
+                <AvatarFallback>{getAvatarFallbackText(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
               </Avatar>
             )}
           </div>
         ))}
       </ScrollArea>
 
-      <form onSubmit={handleSendMessage} className="p-2 sm:p-4 border-t bg-background/50 rounded-b-xl">
-        <div className="relative flex items-center gap-1 sm:gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={isRoomExpired} className="h-9 w-9 sm:h-10 sm:w-10">
-            <Smile className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground hover:text-accent" />
+      <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
+        <div className="relative flex items-center gap-2">
+          <Button variant="ghost" size="icon" type="button" disabled={isRoomExpired || isUserLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+            <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
           <Input
             placeholder={isRoomExpired ? "Oda süresi doldu" : "Mesajınızı yazın..."}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            className="flex-1 pr-16 sm:pr-20 rounded-full focus-visible:ring-accent h-9 sm:h-10 text-sm sm:text-base"
+            className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
             autoComplete="off"
             disabled={!currentUser || isSending || isRoomExpired || isUserLoading}
           />
-          <div className="absolute right-1 sm:right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={isRoomExpired} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
-              <Paperclip className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground hover:text-accent" />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+            <Button variant="ghost" size="icon" type="button" disabled={isRoomExpired || isUserLoading} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+              <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
-            <Button type="submit" size="icon" className="bg-accent hover:bg-accent/90 rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!currentUser || isSending || !newMessage.trim() || isRoomExpired || isUserLoading}>
-              {isSending ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin text-accent-foreground" /> : <Send className="h-4 w-4 sm:h-5 sm:w-5 text-accent-foreground" />}
+            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!currentUser || isSending || !newMessage.trim() || isRoomExpired || isUserLoading}>
+              {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               <span className="sr-only">Gönder</span>
             </Button>
           </div>
         </div>
-        {isRoomExpired && <p className="text-xs text-destructive text-center mt-1">Bu odanın süresi dolduğu için mesaj gönderemezsiniz.</p>}
+        {isRoomExpired && <p className="text-xs text-destructive text-center mt-1.5">Bu odanın süresi dolduğu için mesaj gönderemezsiniz.</p>}
       </form>
     </div>
   );
 }
+
+    
