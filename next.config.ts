@@ -1,6 +1,16 @@
 import type {NextConfig} from 'next';
+import withPWAInit from '@ducanh2912/next-pwa';
 
-const nextConfig: NextConfig = {
+const withPWA = withPWAInit({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development',
+  // Daha gelişmiş önbellekleme stratejileri için runtimeCaching gibi
+  // diğer PWA seçeneklerini buraya ekleyebilirsiniz.
+});
+
+const currentNextConfig: NextConfig = {
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,
@@ -16,8 +26,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      { // Firebase Storage'dan gelen resimler için eklendi
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+      },
     ],
   },
 };
 
-export default nextConfig;
+export default withPWA(currentNextConfig);
