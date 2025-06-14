@@ -117,7 +117,7 @@ export default function RandomChatRoomPage() {
                         shouldDelete = true;
                     }
                 }
-            } else if (roomData.status === 'closed') { // Generic closed status
+            } else if (roomData.status === 'closed') { 
                 shouldDelete = true;
             }
          }
@@ -148,13 +148,12 @@ export default function RandomChatRoomPage() {
   useEffect(() => {
     if (!roomId || !currentUser || authLoading) {
       if (!authLoading && !currentUser && !hasNavigatedAwayRef.current) {
-        // No user, and auth isn't loading, redirect.
         router.replace("/matchmaking");
       }
       return;
     }
     
-    setLoadingRoom(true); // Set loading true at the start of effect
+    setLoadingRoom(true); 
     const roomRef = doc(db, "oneOnOneChats", roomId);
 
     roomUnsubscribeRef.current = onSnapshot(roomRef, (docSnap) => {
@@ -186,16 +185,13 @@ export default function RandomChatRoomPage() {
           if (otherData) {
             setOtherParticipant(otherData);
           } else if (currentRoomData.status === 'active' && currentRoomData.participantUids.length === 2) {
-            // This is a critical state: room is active, two UIDs, but other user's data block is missing.
             cleanupRoomAndNavigate(roomId, "Rakip katılımcının detayları eksik, oda kapatılıyor.", true);
             return;
           }
         } else if (currentRoomData.status === 'active' && currentRoomData.participantUids.length === 2) {
-            // Active with 2 UIDs but couldn't find otherUid (means myUid might not be one of them, or uids are same)
             cleanupRoomAndNavigate(roomId, "Katılımcı yapısı tutarsız (aktif oda, diğer yok).", true);
             return;
         }
-
 
         if (['closed', 'closed_by_leave', 'closed_by_decline'].includes(currentRoomData.status)) {
           cleanupRoomAndNavigate(roomId, "Bu sohbet oturumu sona erdi.");
@@ -213,7 +209,6 @@ export default function RandomChatRoomPage() {
               [`participantsData.${myUid}.hasLeft`]: true,
               status: "closed_by_leave" 
             }).catch(e => console.error("[RandomChat] Error updating self as left after other left: ", e));
-            // The status change will trigger cleanupRoomAndNavigate in the next snapshot
             return;
           }
         }
@@ -253,10 +248,9 @@ export default function RandomChatRoomPage() {
                 }
               }
             }).catch(e => console.error("[RandomChat] Error updating to friends_chat: ", e));
-            // Friends_chat status change is handled by snapshot, no immediate return needed unless more logic here.
           }
         }
-        setLoadingRoom(false); // All checks passed for this snapshot, room is valid (for now)
+        setLoadingRoom(false); 
       } else { 
         cleanupRoomAndNavigate(roomId, "Sohbet odası bulunamadı veya silindi.", true);
       }
@@ -292,36 +286,7 @@ export default function RandomChatRoomPage() {
       if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
       if (waitingTimeoutRef.current) clearInterval(waitingTimeoutRef.current);
     };
-  }, [roomId, currentUser, authLoading, router, cleanupRoomAndNavigate, userData, otherParticipant]); // Removed toast, otherParticipant is needed if logic depends on it
-
-
-  useEffect(() => {
-    if (roomDetails?.status === 'waiting' && currentUser && roomDetails.participantUids[0] === currentUser.uid) {
-      setWaitingCountdown(WAITING_TIMEOUT_SECONDS);
-      waitingTimeoutRef.current = setInterval(() => {
-        setWaitingCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(waitingTimeoutRef.current!);
-            waitingTimeoutRef.current = null;
-            if (roomDetails?.status === 'waiting' && !hasNavigatedAwayRef.current) { 
-              toast({ title: "Eşleşme Bulunamadı", description: "Bekleme süresi doldu, eşleşme bulunamadı.", variant: "destructive"});
-              handleLeaveLogic(true); 
-            }
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (waitingTimeoutRef.current) {
-        clearInterval(waitingTimeoutRef.current);
-        waitingTimeoutRef.current = null;
-      }
-    }
-    return () => {
-      if (waitingTimeoutRef.current) clearInterval(waitingTimeoutRef.current);
-    };
-  }, [roomDetails, currentUser, handleLeaveLogic, toast]);
+  }, [roomId, currentUser, authLoading, router, cleanupRoomAndNavigate, userData, otherParticipant, toast]);
 
 
   const handleLeaveLogic = useCallback(async (isTimeout = false) => {
@@ -353,10 +318,7 @@ export default function RandomChatRoomPage() {
           [`participantsData.${currentUser.uid}.hasLeft`]: true,
           status: newStatus,
         });
-        // The main onSnapshot listener will see this change and should trigger cleanupRoomAndNavigate.
-        // However, if this client is the one causing the definitive closure, it can initiate cleanup.
         if(newStatus === 'closed_by_leave' && !hasNavigatedAwayRef.current) {
-             // If I was the only one or the other already left, my action makes it definitively closed.
             if (currentRoomData.participantUids.length === 1 || 
                 (currentRoomData.participantUids.length === 2 && currentRoomData.participantUids.every(uid => uid === currentUser.uid || currentRoomData.participantsData[uid]?.hasLeft))) {
                 cleanupRoomAndNavigate(roomId, isTimeout ? "Bekleme süresi doldu." : "Sohbetten ayrıldınız.");
@@ -371,30 +333,62 @@ export default function RandomChatRoomPage() {
     }
   }, [currentUser, roomId, cleanupRoomAndNavigate, router]);
 
+  const handleLeaveLogicRef = useRef(handleLeaveLogic);
+  useEffect(() => {
+    handleLeaveLogicRef.current = handleLeaveLogic;
+  }, [handleLeaveLogic]);
 
   useEffect(() => {
-    // This effect handles the 'beforeunload' scenario.
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (roomDetails?.status === 'waiting' && currentUser && roomDetails.participantUids[0] === currentUser.uid) {
+      setWaitingCountdown(WAITING_TIMEOUT_SECONDS);
+      waitingTimeoutRef.current = setInterval(() => {
+        setWaitingCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(waitingTimeoutRef.current!);
+            waitingTimeoutRef.current = null;
+            // Check status again inside timeout to ensure it's still 'waiting'
+            getDoc(doc(db, "oneOnOneChats", roomId)).then(currentRoomSnap => {
+              if (currentRoomSnap.exists() && currentRoomSnap.data()?.status === 'waiting' && !hasNavigatedAwayRef.current) {
+                toast({ title: "Eşleşme Bulunamadı", description: "Bekleme süresi doldu, eşleşme bulunamadı.", variant: "destructive"});
+                handleLeaveLogicRef.current(true); 
+              }
+            });
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (waitingTimeoutRef.current) {
+        clearInterval(waitingTimeoutRef.current);
+        waitingTimeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (waitingTimeoutRef.current) clearInterval(waitingTimeoutRef.current);
+    };
+  }, [roomDetails?.status, roomDetails?.participantUids, currentUser?.uid, roomId, toast]);
+
+
+  useEffect(() => {
+    const beforeUnloadHandler = (event: BeforeUnloadEvent) => {
         if (currentUser && roomId && roomDetails && !hasNavigatedAwayRef.current && ['active', 'friends_chat', 'waiting'].includes(roomDetails.status) ) {
-            // Fire-and-forget update. The main cleanup will be handled by other user's client or next load.
             const roomRef = doc(db, "oneOnOneChats", roomId);
             updateDoc(roomRef, {
               [`participantsData.${currentUser.uid}.hasLeft`]: true,
-              status: roomDetails.status === 'waiting' ? 'closed_by_leave' : 'closed_by_leave', // if waiting and I leave, it's closed.
+              status: roomDetails.status === 'waiting' ? 'closed_by_leave' : 'closed_by_leave', 
             }).catch(e => console.error("Error in beforeUnload update: ", e));
         }
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('beforeunload', beforeUnloadHandler);
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      // ComponentWillUnmount logic (actual cleanup)
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
       if (currentUser && roomId && !hasNavigatedAwayRef.current) {
-        // console.log(`[RandomChat ${roomId}] Unmount cleanup for user ${currentUser?.uid}`);
-        handleLeaveLogic();
+        handleLeaveLogicRef.current();
       }
     };
-  }, [currentUser, roomId, roomDetails, handleLeaveLogic]);
+  }, [currentUser, roomId, roomDetails]);
 
 
   const scrollToBottom = () => {
@@ -455,7 +449,7 @@ export default function RandomChatRoomPage() {
   const handleLeaveRoomButtonClick = async () => {
     if (hasNavigatedAwayRef.current) return;
     toast({ title: "Ayrılıyor...", description: "Sohbetten ayrılıyorsunuz..." });
-    await handleLeaveLogic(); 
+    await handleLeaveLogicRef.current(); 
   };
 
 
@@ -468,7 +462,7 @@ export default function RandomChatRoomPage() {
     );
   }
   
-  if (loadingRoom) { // Only show this if roomDetails is null AND loadingRoom is true
+  if (loadingRoom) { 
      return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -477,11 +471,7 @@ export default function RandomChatRoomPage() {
     );
   }
   
-  // If loading is false, but roomDetails is still null, it means cleanup should have happened or is in progress.
-  // This state should ideally be brief as cleanupRoomAndNavigate would redirect.
   if (!roomDetails && !loadingRoom && !hasNavigatedAwayRef.current) {
-    // This case indicates an issue if not caught by snapshot listener leading to cleanup.
-    // For safety, we can trigger a cleanup here if somehow missed.
     cleanupRoomAndNavigate(roomId, "Oda verileri yüklenemedi veya oda mevcut değil (fallback).", true);
      return ( 
         <div className="flex flex-1 items-center justify-center min-h-screen">
@@ -687,6 +677,4 @@ export default function RandomChatRoomPage() {
     </div>
   );
 }
-    
-
     
