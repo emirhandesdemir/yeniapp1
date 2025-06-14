@@ -25,11 +25,10 @@ import {
   updateDoc,
   writeBatch,
   getDocs,
-  // arrayRemove, // Not used
-  // arrayUnion // Not used
 } from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils"; // Added missing import
 
 type OneOnOneChatStatus = 'waiting' | 'active' | 'closed_by_leave' | 'closed_by_decline' | 'friends_chat' | 'closed';
 
@@ -71,7 +70,7 @@ export default function RandomChatRoomPage() {
   
   const [loadingRoom, setLoadingRoom] = useState(true);
   const [isSending, setIsSending] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false); // For friend decision buttons
+  const [actionLoading, setActionLoading] = useState(false); 
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const hasLeftRoomRef = useRef(false); 
@@ -90,7 +89,6 @@ export default function RandomChatRoomPage() {
       messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
       
       const roomDocRef = doc(db, "oneOnOneChats", currentRoomId);
-      // Check if doc exists before trying to delete, to avoid errors if already deleted
       const roomSnap = await getDoc(roomDocRef);
       if (roomSnap.exists()) {
         batch.delete(roomDocRef);
@@ -102,10 +100,13 @@ export default function RandomChatRoomPage() {
   }, []);
 
   useEffect(() => {
-    if (!roomId || !currentUser) return () => {};
-
+    if (!roomId || !currentUser) {
+      setLoadingRoom(false); // Ensure loading stops if essential params are missing
+      return () => {};
+    }
+    
+    hasLeftRoomRef.current = false; // Reset when roomId or currentUser changes
     setLoadingRoom(true);
-    hasLeftRoomRef.current = false; // Reset on room change or user change
     const roomRef = doc(db, "oneOnOneChats", roomId);
 
     const unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
@@ -118,12 +119,10 @@ export default function RandomChatRoomPage() {
         if (otherUid && currentRoomData.participantsData[otherUid]) {
           setOtherParticipant(currentRoomData.participantsData[otherUid]);
         } else if (currentRoomData.status !== 'waiting' && currentRoomData.participantUids.length === 2) {
-            console.warn("Other participant data missing in active room.");
-            setOtherParticipant(null);
+            setOtherParticipant(null); // Explicitly nullify if data is inconsistent
         }
 
-
-        if (currentRoomData.status === 'closed' || currentRoomData.status === 'closed_by_leave' || currentRoomData.status === 'closed_by_decline') {
+        if (['closed', 'closed_by_leave', 'closed_by_decline'].includes(currentRoomData.status)) {
           if (!hasLeftRoomRef.current) { 
             hasLeftRoomRef.current = true; 
             toast({ title: "Sohbet Kapandı", description: "Bu sohbet oturumu sona erdi.", variant: "default" });
@@ -133,20 +132,28 @@ export default function RandomChatRoomPage() {
           return;
         }
         
+        const myData = currentRoomData.participantsData[currentUser.uid];
+        if (myData?.hasLeft && currentRoomData.status !== 'friends_chat' && !hasLeftRoomRef.current) {
+             // If I am marked as left (e.g., by another tab/instance), treat it as left
+            hasLeftRoomRef.current = true;
+            toast({ title: "Ayrıldınız", description: "Bu sohbetten ayrıldınız.", variant: "default"});
+            router.replace("/matchmaking");
+            // No need to cleanup here, the instance that set hasLeft should handle it or the other user will.
+            return;
+        }
+        
         if (otherUid && currentRoomData.participantsData[otherUid]?.hasLeft && currentRoomData.status !== 'friends_chat') {
             if(!hasLeftRoomRef.current){
                 hasLeftRoomRef.current = true;
                 toast({ title: "Kullanıcı Ayrıldı", description: "Diğer kullanıcı sohbetten ayrıldı. Oda kapatılıyor.", variant: "default" });
                 updateDoc(roomRef, { status: "closed_by_leave", [`participantsData.${currentUser.uid}.hasLeft`]: true })
-                    .then(() => cleanupRoom(roomId)) // Cleanup will be called by the status change listener too
                     .catch(e => console.error("Error updating self as left and cleaning: ", e));
-                // router.replace("/matchmaking"); // This will be handled by status change
             }
             return;
         }
 
         if (currentRoomData.status === 'active' && otherUid) {
-            const myDecision = currentRoomData.participantsData[currentUser.uid]?.decision;
+            const myDecision = myData?.decision;
             const otherDecision = currentRoomData.participantsData[otherUid]?.decision;
 
             if (myDecision === 'no' || otherDecision === 'no') {
@@ -155,17 +162,16 @@ export default function RandomChatRoomPage() {
                     toast({ title: "Arkadaşlık Reddedildi", description: "Oda kapatılıyor.", variant: "default" });
                     updateDoc(roomRef, { status: "closed_by_decline" })
                         .catch(e => console.error("Error on decline: ", e));
-                    // router.replace("/matchmaking"); // Handled by status change
                 }
                 return;
             }
             if (myDecision === 'yes' && otherDecision === 'yes') {
                 updateDoc(roomRef, { status: "friends_chat" })
-                .then(() => {
-                     // Ensure friendship is created by this client if it wasn't already
-                    const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, otherParticipant?.uid as string);
-                    getDoc(myFriendRef).then(snap => {
-                        if(!snap.exists() && userData && otherParticipant) {
+                .then(async () => {
+                    if (otherParticipant && userData) { // Ensure otherParticipant and userData are available
+                        const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, otherParticipant.uid);
+                        const friendSnap = await getDoc(myFriendRef);
+                        if (!friendSnap.exists()) {
                             const batch = writeBatch(db);
                             batch.set(myFriendRef, {
                                 displayName: otherParticipant.displayName,
@@ -178,11 +184,10 @@ export default function RandomChatRoomPage() {
                                 photoURL: userData.photoURL,
                                 addedAt: serverTimestamp()
                             });
-                            batch.commit()
-                                .then(() => toast({title: "Arkadaş Eklendi!", description: `${otherParticipant.displayName} ile artık arkadaşsınız.`}))
-                                .catch(e => console.error("Error creating friendship in batch: ", e));
+                            await batch.commit();
+                            toast({title: "Arkadaş Eklendi!", description: `${otherParticipant.displayName} ile artık arkadaşsınız.`});
                         }
-                    });
+                    }
                 })
                 .catch(e => console.error("Error updating to friends_chat: ", e));
             }
@@ -200,17 +205,17 @@ export default function RandomChatRoomPage() {
       console.error("Error fetching 1v1 room details:", error);
       toast({ title: "Hata", description: "Oda bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
       setLoadingRoom(false);
-      if (!hasLeftRoomRef.current) router.replace("/matchmaking");
+      if (!hasLeftRoomRef.current && !loadingRoom) router.replace("/matchmaking"); // Prevent redirect if already loading
     });
 
     return () => {
       unsubscribeRoom();
     };
-  }, [roomId, currentUser, router, toast, cleanupRoom, userData, otherParticipant]);
+  }, [roomId, currentUser, router, toast, cleanupRoom, userData, otherParticipant, loadingRoom]);
 
 
   useEffect(() => {
-    if (!roomId || !currentUser?.uid) return; // Ensure currentUser.uid is available for mapping `isOwn`
+    if (!roomId || !currentUser?.uid) return; 
 
     const messagesQuery = query(collection(db, `oneOnOneChats/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
@@ -226,16 +231,15 @@ export default function RandomChatRoomPage() {
       });
       setMessages(fetchedMessages.map(msg => ({
         ...msg,
-        isOwn: msg.senderId === currentUser.uid, // currentUser is guaranteed here by the effect guard
+        isOwn: msg.senderId === currentUser.uid, 
       })));
-      setTimeout(() => scrollToBottom(), 0); // Scroll after messages are set
+      setTimeout(() => scrollToBottom(), 0); 
     }, (error) => {
       console.error("Error fetching messages:", error);
-      toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
     });
 
     return () => unsubscribeMessages();
-  }, [roomId, currentUser?.uid]); // Removed toast from dependencies
+  }, [roomId, currentUser?.uid]); 
 
 
   useEffect(() => {
@@ -243,28 +247,35 @@ export default function RandomChatRoomPage() {
         if (!roomId || !currentUser || !roomDetails || ['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status) || hasLeftRoomRef.current) {
             return;
         }
-        hasLeftRoomRef.current = true; 
+        // Mark as left, actual closing/cleanup handled by room status listener or other user
         const roomRef = doc(db, "oneOnOneChats", roomId);
         try {
-            await updateDoc(roomRef, {
-                [`participantsData.${currentUser.uid}.hasLeft`]: true,
-            });
-             // Smart cleanup: if I'm the last one or other also left, I'll clean up.
             const currentRoomSnap = await getDoc(roomRef);
-            if (currentRoomSnap.exists()) {
-                const currentRoomData = currentRoomSnap.data() as OneOnOneChatRoom;
-                const otherUid = currentRoomData.participantUids.find(uid => uid !== currentUser.uid);
-                
-                if (!otherUid || currentRoomData.participantsData[otherUid as string]?.hasLeft) {
-                    // If other user isn't there or has also left, this client can attempt cleanup
-                    await updateDoc(roomRef, { status: "closed_by_leave"}); // Mark as closed before deleting
-                    await cleanupRoom(roomId);
-                } else {
-                    // If other user is still there and hasn't left, just mark myself as left.
-                    // The other user's listener for roomData.participantsData[myUid].hasLeft will then trigger their cleanup.
-                    // To be more proactive, if I am leaving and other is still there, also set status to 'closed_by_leave'
-                    // so they are forced to see the "closed" state and also cleanup/redirect.
-                    await updateDoc(roomRef, { status: "closed_by_leave" });
+            if (currentRoomSnap.exists()) { // Check if room still exists
+                 const currentData = currentRoomSnap.data() as OneOnOneChatRoom;
+                 // Only update if not already marked as left by this instance
+                 if (!currentData.participantsData[currentUser.uid]?.hasLeft) {
+                    await updateDoc(roomRef, {
+                        [`participantsData.${currentUser.uid}.hasLeft`]: true,
+                        // if the other user has also left, or if only I was in a waiting room, then I can set status to closed_by_leave
+                        // otherwise, the other user's client will handle the status change when it detects I've left
+                    });
+                 }
+
+                // Smart cleanup logic
+                const updatedRoomSnap = await getDoc(roomRef); // Re-fetch to get the latest state
+                if (updatedRoomSnap.exists()) {
+                    const updatedRoomData = updatedRoomSnap.data() as OneOnOneChatRoom;
+                    const otherUid = updatedRoomData.participantUids.find(uid => uid !== currentUser.uid);
+                    const iAmLastOneEffectively = !otherUid || updatedRoomData.participantsData[otherUid]?.hasLeft;
+
+                    if (iAmLastOneEffectively && updatedRoomData.status !== 'closed' && updatedRoomData.status !== 'closed_by_leave' && updatedRoomData.status !== 'closed_by_decline') {
+                        await updateDoc(roomRef, { status: "closed_by_leave"});
+                        // cleanupRoom will be triggered by the status listener
+                    } else if (updatedRoomData.participantUids.length === 2 && updatedRoomData.participantsData[currentUser.uid]?.hasLeft && !updatedRoomData.participantsData[otherUid as string]?.hasLeft && updatedRoomData.status === 'active') {
+                        // If I'm leaving and the other person is still active, set to closed_by_leave so they get notified to cleanup
+                        await updateDoc(roomRef, { status: "closed_by_leave"});
+                    }
                 }
             }
         } catch (error) {
@@ -272,15 +283,24 @@ export default function RandomChatRoomPage() {
         }
     };
 
-    const handleBeforeUnload = () => {
-       performLeaveActions();
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+       if (roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status) && !hasLeftRoomRef.current) {
+            // performLeaveActions is async, but beforeunload must be sync.
+            // We can't reliably await it. We'll update Firestore, and the listeners will handle the rest.
+            if (currentUser && roomId) {
+                 const roomRef = doc(db, "oneOnOneChats", roomId);
+                 updateDoc(roomRef, { [`participantsData.${currentUser.uid}.hasLeft`]: true, status: 'closed_by_leave' }).catch(console.error);
+            }
+       }
     };
     
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      performLeaveActions(); 
+      if (!hasLeftRoomRef.current && roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status)) {
+        performLeaveActions(); 
+      }
     };
   }, [roomId, currentUser, roomDetails, cleanupRoom]); 
 
@@ -332,7 +352,6 @@ export default function RandomChatRoomPage() {
       await updateDoc(roomRef, {
         [`participantsData.${currentUser.uid}.decision`]: decision,
       });
-      // Further logic (creating friendship, closing room) is handled by the onSnapshot listener for the room document.
     } catch (error) {
       console.error("Error making friend decision:", error);
       toast({ title: "Hata", description: "Kararınız kaydedilirken bir sorun oluştu.", variant: "destructive" });
@@ -348,20 +367,19 @@ export default function RandomChatRoomPage() {
     
     const roomRef = doc(db, "oneOnOneChats", roomId);
     try {
-      await updateDoc(roomRef, {
-        [`participantsData.${currentUser.uid}.hasLeft`]: true,
-        status: 'closed_by_leave' 
-      });
-      // The useEffect snapshot listener will handle navigation and cleanup.
+        await updateDoc(roomRef, {
+            [`participantsData.${currentUser.uid}.hasLeft`]: true,
+            status: 'closed_by_leave' 
+        });
     } catch (error) {
-      console.error("Error leaving room via button:", error);
-      toast({ title: "Hata", description: "Odadan ayrılırken bir sorun oluştu.", variant: "destructive" });
-      router.replace("/matchmaking"); 
+        console.error("Error leaving room via button:", error);
+        toast({ title: "Hata", description: "Odadan ayrılırken bir sorun oluştu.", variant: "destructive" });
+        router.replace("/matchmaking"); 
     }
   };
 
 
-  if (loadingRoom || authLoading || !currentUser || !roomDetails) { // Added !roomDetails check
+  if (loadingRoom || authLoading || !currentUser || !roomDetails) { 
     return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -380,7 +398,12 @@ export default function RandomChatRoomPage() {
             <CardDescription>Sizin için birisi aranıyor. Lütfen bekleyin.</CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button variant="outline" onClick={() => router.push('/matchmaking')}>
+            <Button variant="outline" onClick={() => {
+                hasLeftRoomRef.current = true; // Mark as left before navigating
+                const roomRef = doc(db, "oneOnOneChats", roomId);
+                deleteDoc(roomRef).catch(e => console.error("Error deleting waiting room on cancel: ", e));
+                router.push('/matchmaking');
+            }}>
                  İptal Et ve Geri Dön
             </Button>
           </CardContent>
@@ -416,7 +439,7 @@ export default function RandomChatRoomPage() {
               <p className="text-xs text-muted-foreground truncate">ile rastgele sohbet</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 h-9 px-2.5" onClick={handleLeaveRoomButtonClick} disabled={hasLeftRoomRef.current}>
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 h-9 px-2.5" onClick={handleLeaveRoomButtonClick} disabled={hasLeftRoomRef.current || actionLoading}>
             <LogOut className="mr-1.5 h-4 w-4" /> Ayrıl
           </Button>
         </header>
@@ -498,7 +521,8 @@ export default function RandomChatRoomPage() {
       {roomDetails.status !== 'closed' && roomDetails.status !== 'closed_by_leave' && roomDetails.status !== 'closed_by_decline' && otherParticipant && (
         <Card className={cn(
             "bg-card flex flex-col sm:rounded-r-xl sm:border-l",
-            roomDetails.status === 'friends_chat' ? "p-3 sm:p-4 w-full sm:w-52 md:w-60" : "p-3 sm:p-4 w-full sm:w-60 md:w-72" // Different width if friends
+            "sm:max-w-[220px] md:max-w-[240px] lg:max-w-[280px]", // Responsive max width
+            roomDetails.status === 'friends_chat' ? "p-3 sm:p-4" : "p-3 sm:p-4" 
         )}>
           <CardHeader className="text-center border-b pb-3 pt-2 sm:pb-4">
             <Avatar className="h-16 w-16 sm:h-20 sm:w-20 mx-auto mb-2 sm:mb-3">
