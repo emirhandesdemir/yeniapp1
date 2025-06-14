@@ -16,7 +16,9 @@ import {
   Settings,
   Bell,
   Loader2,
-  Gem // Gem ikonu eklendi
+  Gem,
+  Sun, // Sun ikonu eklendi
+  Moon // Moon ikonu eklendi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -32,6 +34,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useTheme } from '@/contexts/ThemeContext'; // useTheme hook'u import edildi
 
 
 interface NavItem {
@@ -108,8 +111,9 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const router = useRouter();
-  const { currentUser, userData, logOut, isUserLoading } = useAuth(); // userData eklendi
+  const { currentUser, userData, logOut, isUserLoading } = useAuth();
   const { toast } = useToast();
+  const { theme, setTheme, resolvedTheme } = useTheme(); // Theme context'i kullanıldı
 
   const handleLogoutFromDropdown = async () => {
     try {
@@ -130,13 +134,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return "SK";
   };
 
+  const toggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
+  };
+
   return (
     <div className="grid min-h-screen w-full lg:grid-cols-[280px_1fr]">
       <div className="hidden border-r bg-card lg:block">
         <SidebarContent />
       </div>
       <div className="flex flex-col">
-        <header className="flex h-16 items-center gap-4 border-b bg-card px-6 sticky top-0 z-10">
+        <header className="flex h-16 items-center gap-2 sm:gap-4 border-b bg-card px-4 sm:px-6 sticky top-0 z-10">
           <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon" className="shrink-0 lg:hidden">
@@ -144,7 +152,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <span className="sr-only">Navigasyon menüsünü aç/kapat</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
+            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px]">
                <SheetHeader className="p-4 border-b">
                 <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
@@ -155,51 +163,57 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <div className="w-full flex-1">
             {/* Header content like search can go here */}
           </div>
+          
+          <div className="flex items-center gap-2 sm:gap-3">
+            {userData && (
+              <div className="flex items-center gap-1 sm:gap-2 text-sm font-medium text-primary">
+                <Gem className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500" />
+                <span>{userData.diamonds}</span>
+              </div>
+            )}
 
-          {userData && (
-            <div className="flex items-center gap-2 text-sm font-medium text-primary mr-2">
-              <Gem className="h-5 w-5 text-yellow-500" />
-              <span>{userData.diamonds}</span>
-            </div>
-          )}
+            <Button variant="ghost" size="icon" className="rounded-full" onClick={toggleTheme}>
+              {resolvedTheme === 'dark' ? <Sun className="h-5 w-5 text-muted-foreground" /> : <Moon className="h-5 w-5 text-muted-foreground" />}
+              <span className="sr-only">Temayı Değiştir</span>
+            </Button>
 
-          <Button variant="ghost" size="icon" className="rounded-full">
-            <Bell className="h-5 w-5 text-muted-foreground" />
-            <span className="sr-only">Bildirimler</span>
-          </Button>
+            <Button variant="ghost" size="icon" className="rounded-full">
+              <Bell className="h-5 w-5 text-muted-foreground" />
+              <span className="sr-only">Bildirimler</span>
+            </Button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
-                <Avatar className="h-9 w-9">
-                  <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
-                  <AvatarFallback>{getAvatarFallback()}</AvatarFallback>
-                </Avatar>
-                <span className="sr-only">Kullanıcı menüsünü aç/kapat</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{currentUser?.displayName || userData?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/profile')}>
-                <UserCircle className="mr-2 h-4 w-4" /> Profili Görüntüle
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => toast({title: "Ayarlar", description:"Bu özellik yakında eklenecektir."})}>
-                <Settings className="mr-2 h-4 w-4" /> Ayarlar
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogoutFromDropdown} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive">
-                {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />} 
-                Çıkış Yap
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
+                  <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
+                    <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
+                    <AvatarFallback>{getAvatarFallback()}</AvatarFallback>
+                  </Avatar>
+                  <span className="sr-only">Kullanıcı menüsünü aç/kapat</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>{currentUser?.displayName || userData?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push('/profile')}>
+                  <UserCircle className="mr-2 h-4 w-4" /> Profili Görüntüle
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => toast({title: "Ayarlar", description:"Bu özellik yakında eklenecektir."})}>
+                  <Settings className="mr-2 h-4 w-4" /> Ayarlar
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogoutFromDropdown} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive">
+                  {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />} 
+                  Çıkış Yap
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
-        <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6 bg-background overflow-auto">
+        <main className="flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 bg-background overflow-auto">
           {children}
         </main>
       </div>
     </div>
   );
 }
-

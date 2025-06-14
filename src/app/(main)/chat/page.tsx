@@ -3,12 +3,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem } from "lucide-react"; // Clock ve Gem eklendi
+import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc } from "firebase/firestore"; // Timestamp ve updateDoc eklendi
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -24,8 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast } from 'date-fns'; // date-fns importları
-import { tr } from 'date-fns/locale'; // Türkçe lokasyon için
+import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
+import { tr } from 'date-fns/locale';
 
 interface ChatRoom {
   id: string;
@@ -34,7 +34,7 @@ interface ChatRoom {
   creatorId: string;
   creatorName: string;
   createdAt: Timestamp;
-  expiresAt: Timestamp; // Oda son geçerlilik tarihi eklendi
+  expiresAt: Timestamp;
   image: string;
   imageAiHint: string;
   participantCount?: number;
@@ -48,8 +48,8 @@ const placeholderImages = [
   { url: "https://placehold.co/600x400.png", hint: "group chat" },
 ];
 
-const ROOM_CREATION_COST = 1; // Elmas maliyeti
-const ROOM_DEFAULT_DURATION_MINUTES = 20; // Dakika cinsinden
+const ROOM_CREATION_COST = 1;
+const ROOM_DEFAULT_DURATION_MINUTES = 20;
 
 
 export default function ChatRoomsPage() {
@@ -59,14 +59,14 @@ export default function ChatRoomsPage() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-  const { currentUser, userData, updateUserDiamonds, isUserLoading } = useAuth(); // userData ve updateUserDiamonds eklendi
+  const { currentUser, userData, updateUserDiamonds, isUserLoading } = useAuth();
   const { toast } = useToast();
-  const [now, setNow] = useState(new Date()); // Zamanı güncellemek için
+  const [now, setNow] = useState(new Date()); 
 
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
-    }, 60000); // Her dakika güncelle
+    }, 60000); 
     return () => clearInterval(timer);
   }, []);
 
@@ -77,13 +77,7 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        // Süresi dolmuş odaları filtrele (istemci tarafında - idealde sunucu yapar)
         const roomData = doc.data() as ChatRoom;
-        if (roomData.expiresAt && isPast(roomData.expiresAt.toDate())) {
-          // İsteğe bağlı: Süresi dolan odaları silmek yerine, kullanıcıya bilgi verilebilir veya gizlenebilir.
-          // Şimdilik listelemeye devam edelim, kartta belirteceğiz.
-          // console.log(`Oda "${roomData.name}" süresi doldu, normalde silinmeli.`);
-        }
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -123,7 +117,7 @@ export default function ChatRoomsPage() {
         creatorId: currentUser.uid,
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAtDate), // Son geçerlilik tarihi
+        expiresAt: Timestamp.fromDate(expiresAtDate),
         image: randomImage.url,
         imageAiHint: randomImage.hint,
         participantCount: 1,
@@ -191,9 +185,9 @@ export default function ChatRoomsPage() {
         </div>
         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse" disabled={!currentUser || isUserLoading}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto" disabled={!currentUser || isUserLoading}>
               <PlusCircle className="mr-2 h-5 w-5" />
-              Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300" />)
+              Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
@@ -260,10 +254,10 @@ export default function ChatRoomsPage() {
             </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {chatRooms.map((room) => (
             <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card ${room.expiresAt && isPast(room.expiresAt.toDate()) ? 'opacity-60' : ''}`}>
-              <div className="relative h-48 w-full">
+              <div className="relative h-40 sm:h-48 w-full">
                 <Image
                   src={room.image || "https://placehold.co/600x400.png"}
                   alt={room.name}
@@ -277,7 +271,7 @@ export default function ChatRoomsPage() {
                   <Button
                     variant="destructive"
                     size="icon"
-                    className="absolute top-2 right-2 z-10 opacity-70 hover:opacity-100"
+                    className="absolute top-2 right-2 z-10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 hover:opacity-100"
                     onClick={(e) => {
                       e.preventDefault(); 
                       e.stopPropagation();
@@ -285,26 +279,26 @@ export default function ChatRoomsPage() {
                     }}
                     aria-label="Odayı Sil"
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
                 )}
               </div>
-              <CardHeader className="pt-4">
-                <CardTitle className="text-xl font-semibold text-primary-foreground/90">{room.name}</CardTitle>
-                <CardDescription className="h-10 overflow-hidden text-ellipsis">{room.description || "Açıklama yok."}</CardDescription>
+              <CardHeader className="pt-3 sm:pt-4 pb-2 sm:pb-3">
+                <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground/90 truncate">{room.name}</CardTitle>
+                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis">{room.description || "Açıklama yok."}</CardDescription>
               </CardHeader>
-              <CardContent className="flex-grow">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Users className="mr-2 h-4 w-4" />
+              <CardContent className="flex-grow pt-1 sm:pt-2 pb-3 sm:pb-4">
+                <div className="flex items-center text-xs sm:text-sm text-muted-foreground">
+                  <Users className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   {room.participantCount || 1} katılımcı
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Oluşturan: {room.creatorName}</p>
-                <div className="flex items-center text-xs text-muted-foreground mt-2">
-                  <Clock className="mr-1 h-3 w-3" />
+                <p className="text-xs text-muted-foreground mt-1 truncate">Oluşturan: {room.creatorName}</p>
+                <div className="flex items-center text-xs text-muted-foreground mt-1.5 sm:mt-2">
+                  <Clock className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   {getExpiryInfo(room.expiresAt)}
                 </div>
               </CardContent>
-              <CardFooter>
+              <CardFooter className="p-3 sm:p-4">
                 <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={room.expiresAt && isPast(room.expiresAt.toDate())}>
                   <Link href={`/chat/${room.id}`}>
                     <LogIn className="mr-2 h-4 w-4" /> 

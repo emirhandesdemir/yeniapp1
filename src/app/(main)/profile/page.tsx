@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, type ChangeEvent } from "react";
@@ -14,11 +15,10 @@ import { useToast } from "@/hooks/use-toast";
 interface UserProfileForm {
   username: string;
   bio: string;
-  // email and avatarUrl will be handled by auth context or a future backend
 }
 
 export default function ProfilePage() {
-  const { currentUser, updateUserProfile, isUserLoading } = useAuth();
+  const { currentUser, userData, updateUserProfile, isUserLoading } = useAuth(); // userData eklendi
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -28,17 +28,16 @@ export default function ProfilePage() {
     document.title = 'Profilim - Sohbet Küresi';
     if (currentUser) {
       setTempProfile({
-        username: currentUser.displayName || "",
-        bio: "", // Bio needs to be fetched from a DB in a real app
+        username: userData?.displayName || currentUser.displayName || "",
+        bio: "", // Bio needs to be fetched from a DB (e.g., users/{uid}/profile)
       });
     }
-  }, [currentUser]);
+  }, [currentUser, userData]);
 
   const handleEditToggle = () => {
     if (isEditing) {
-      // Cancel edit, revert to current user's data
       if (currentUser) {
-        setTempProfile({ username: currentUser.displayName || "", bio: "" });
+        setTempProfile({ username: userData?.displayName || currentUser.displayName || "", bio: "" });
       }
     }
     setIsEditing(!isEditing);
@@ -55,9 +54,10 @@ export default function ProfilePage() {
       return;
     }
     try {
-      await updateUserProfile({ displayName: tempProfile.username });
-      // photoURL update would go here if we had avatar upload
-      toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+      // updateUserProfile AuthContext'te hem Auth hem Firestore'u güncelliyor
+      await updateUserProfile({ displayName: tempProfile.username }); 
+      // photoURL ve bio için benzer bir güncelleme mekanizması eklenebilir.
+      toast({ title: "Başarılı", description: "Kullanıcı adınız güncellendi." });
       setIsEditing(false);
     } catch (error: any) {
       toast({ title: "Profil Güncelleme Hatası", description: error.message, variant: "destructive" });
@@ -65,13 +65,14 @@ export default function ProfilePage() {
   };
   
   const getAvatarFallbackText = () => {
-    if (currentUser?.displayName) return currentUser.displayName.substring(0, 2).toUpperCase();
+    const nameToUse = userData?.displayName || currentUser?.displayName;
+    if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "PN"; // Profile Name
+    return "PN"; 
   };
 
 
-  if (!currentUser) {
+  if (!currentUser && isUserLoading) { // Sadece isUserLoading değil, currentUser yoksa ve yükleniyorsa
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -79,46 +80,56 @@ export default function ProfilePage() {
       </div>
     );
   }
+  
+  if (!currentUser && !isUserLoading) { // Yükleme bitti ama kullanıcı hala yoksa (örn. yönlendirme bekleniyor)
+     return (
+      <div className="flex flex-1 items-center justify-center">
+        <p className="text-muted-foreground">Giriş yapmış kullanıcı bulunamadı. Yönlendiriliyor...</p>
+         <Loader2 className="h-8 w-8 animate-spin text-primary ml-2" />
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-6">
-      <Card className="shadow-xl overflow-hidden bg-gradient-to-br from-primary/5 via-card to-accent/5">
-        <div className="h-32 bg-gradient-to-r from-primary to-accent" />
-        <CardHeader className="flex flex-col items-center text-center -mt-16">
+      <Card className="shadow-xl overflow-hidden bg-gradient-to-br from-primary/5 via-card to-accent/5 dark:from-primary/10 dark:via-card dark:to-accent/10">
+        <div className="h-24 sm:h-32 bg-gradient-to-r from-primary to-accent" />
+        <CardHeader className="flex flex-col items-center text-center -mt-12 sm:-mt-16">
           <div className="relative group">
-            <Avatar className="h-32 w-32 border-4 border-card shadow-lg">
-              <AvatarImage src={currentUser.photoURL || "https://placehold.co/128x128.png"} alt={currentUser.displayName || "Kullanıcı"} data-ai-hint="user portrait" />
+            <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
+              <AvatarImage src={userData?.photoURL || currentUser?.photoURL || "https://placehold.co/128x128.png"} alt={userData?.displayName || currentUser?.displayName || "Kullanıcı"} data-ai-hint="user portrait" />
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
             {isEditing && (
               <label htmlFor="avatarUpload" className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera className="h-8 w-8 text-white" />
+                <Camera className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                 <input 
                   type="file" 
                   id="avatarUpload" 
                   className="hidden" 
                   accept="image/*" 
                   onChange={() => toast({description: "Avatar yükleme özelliği yakında eklenecektir."})}
-                  disabled // Placeholder for future functionality
+                  disabled 
                 />
               </label>
             )}
           </div>
-          <CardTitle className="mt-4 text-3xl font-headline text-primary-foreground/90">
-            {isEditing ? tempProfile.username : currentUser.displayName || "Kullanıcı Adı Yok"}
+          <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-primary-foreground/90">
+            {isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName || "Kullanıcı Adı Yok")}
           </CardTitle>
-          <CardDescription className="text-muted-foreground">{currentUser.email}</CardDescription>
+          <CardDescription className="text-muted-foreground">{currentUser?.email}</CardDescription>
         </CardHeader>
-        <CardContent className="px-6 pb-6">
+        <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
           {isEditing ? (
-            <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
+            <form className="space-y-4 sm:space-y-6" onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
               <div>
                 <Label htmlFor="username">Kullanıcı Adı</Label>
                 <Input id="username" name="username" value={tempProfile.username} onChange={handleInputChange} className="mt-1" disabled={isUserLoading}/>
               </div>
               <div>
                 <Label htmlFor="email">E-posta (Değiştirilemez)</Label>
-                <Input id="email" name="email" value={currentUser.email || ""} readOnly disabled className="mt-1 bg-muted/50"/>
+                <Input id="email" name="email" value={currentUser?.email || ""} readOnly disabled className="mt-1 bg-muted/50 dark:bg-muted/30"/>
               </div>
               <div>
                 <Label htmlFor="bio">Hakkımda</Label>
@@ -127,17 +138,17 @@ export default function ProfilePage() {
                   name="bio" 
                   value={tempProfile.bio} 
                   onChange={handleInputChange} 
-                  rows={4} 
+                  rows={3} 
                   className="mt-1" 
                   placeholder="Kendinizden bahsedin... (Bu özellik yakında eklenecektir)"
-                  disabled // Placeholder for future functionality
+                  disabled 
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="outline" onClick={handleEditToggle} disabled={isUserLoading}>
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 sm:pt-4">
+                <Button type="button" variant="outline" onClick={handleEditToggle} disabled={isUserLoading} className="w-full sm:w-auto">
                   <XCircle className="mr-2 h-4 w-4" /> Vazgeç
                 </Button>
-                <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isUserLoading}>
+                <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground w-full sm:w-auto" disabled={isUserLoading}>
                   {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   Kaydet
                 </Button>
@@ -147,12 +158,12 @@ export default function ProfilePage() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold text-primary-foreground/80">Hakkımda</h3>
-                <p className="text-muted-foreground whitespace-pre-wrap">
+                <p className="text-muted-foreground whitespace-pre-wrap text-sm sm:text-base">
                   {tempProfile.bio || "Henüz bir biyografi eklenmemiş. Bu özellik yakında eklenecektir."}
                 </p>
               </div>
               <div className="flex justify-end pt-4">
-                <Button onClick={handleEditToggle} variant="outline" className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                <Button onClick={handleEditToggle} variant="outline" className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto">
                   <Edit3 className="mr-2 h-4 w-4" /> Profili Düzenle
                 </Button>
               </div>
@@ -163,7 +174,7 @@ export default function ProfilePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Aktiviteler</CardTitle>
+          <CardTitle className="text-xl sm:text-2xl">Aktiviteler</CardTitle>
           <CardDescription>Son aktiviteleriniz burada görünecek.</CardDescription>
         </CardHeader>
         <CardContent>
