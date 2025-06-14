@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Gem, MessagesSquare, UserCog, Users, PlusCircle, Loader2, Compass } from "lucide-react";
+import { Gem, MessagesSquare, UserCog, Users, PlusCircle, Loader2, Compass, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
@@ -17,10 +17,13 @@ export default function DashboardPage() {
   const [friendsCount, setFriendsCount] = useState<number | null>(null);
   const [loadingActiveRooms, setLoadingActiveRooms] = useState(true);
   const [loadingFriendsCount, setLoadingFriendsCount] = useState(true);
+  const [currentDate, setCurrentDate] = useState('');
 
   const greetingName = userData?.displayName || currentUser?.displayName || "Kullanıcı";
 
   useEffect(() => {
+    setCurrentDate(new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+
     const q = query(
       collection(db, "chatRooms"),
       where("expiresAt", ">", Timestamp.now()) 
@@ -70,12 +73,22 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <Card className="shadow-lg bg-gradient-to-r from-primary/10 via-transparent to-accent/10 border-primary/20 overflow-hidden">
         <CardHeader className="p-6">
-          <CardTitle className="text-3xl font-headline text-primary-foreground/90">
-            Merhaba, {greetingName}!
-          </CardTitle>
-          <CardDescription className="text-lg text-muted-foreground mt-1">
-            Sohbet Küresi'ne tekrar hoş geldin. Macerana kaldığın yerden devam et.
-          </CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-3xl font-headline text-primary-foreground/90">
+                Tekrar Hoş Geldin, {greetingName}!
+              </CardTitle>
+              <CardDescription className="text-lg text-muted-foreground mt-1">
+                Bugün yeni bağlantılar kurmaya veya keyifli sohbetlere katılmaya ne dersin?
+              </CardDescription>
+            </div>
+            {currentDate && (
+              <div className="flex items-center text-sm text-muted-foreground bg-card/50 dark:bg-card/30 px-3 py-1.5 rounded-lg shadow-sm">
+                <CalendarDays className="h-4 w-4 mr-2 text-primary" />
+                {currentDate}
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-6 pt-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
@@ -148,7 +161,7 @@ export default function DashboardPage() {
 
         <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl font-medium">Profil Ayarları</CardTitle>
+            <CardTitle className="text-xl font-medium">Hesabım</CardTitle>
             <UserCog className="h-6 w-6 text-accent" />
           </CardHeader>
           <CardContent className="flex-grow">
@@ -158,7 +171,7 @@ export default function DashboardPage() {
           </CardContent>
           <CardContent className="pt-0">
             <Button asChild className="w-full" variant="outline">
-              <Link href="/profile">Profile Git</Link>
+              <Link href="/profile">Hesabımı Görüntüle</Link>
             </Button>
           </CardContent>
         </Card>
