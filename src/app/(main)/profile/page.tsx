@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent, useRef } from "react";
+import { useState, useEffect, type ChangeEvent } from "react"; // Removed useRef
 import Image from "next/image"; 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Camera, Loader2, UploadCloud } from "lucide-react";
+import { User, Mail, Edit3, Save, XCircle, Loader2 } from "lucide-react"; // Removed Camera, UploadCloud
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,28 +24,30 @@ export default function ProfilePage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Removed selectedFile and previewImage state, and fileInputRef as photo upload is disabled
 
   useEffect(() => {
     document.title = 'Profilim - Sohbet Küresi';
-    if (currentUser) {
+    if (currentUser && userData) { // Ensure userData is also available
       setTempProfile({
-        username: userData?.displayName || currentUser.displayName || "",
-        bio: "", 
+        username: userData.displayName || currentUser.displayName || "",
+        bio: "", // Assuming bio is not yet implemented or stored in userData
       });
-      setPreviewImage(userData?.photoURL || currentUser.photoURL || null);
+    } else if (currentUser) { // Fallback if userData is somehow not loaded yet but currentUser is
+        setTempProfile({
+            username: currentUser.displayName || "",
+            bio: "",
+        });
     }
   }, [currentUser, userData]);
 
   const handleEditToggle = () => {
     if (isEditing) {
       // Cancel editing
-      if (currentUser) {
-        setTempProfile({ username: userData?.displayName || currentUser.displayName || "", bio: "" });
-        setPreviewImage(userData?.photoURL || currentUser.photoURL || null);
-        setSelectedFile(null);
+      if (currentUser && userData) {
+        setTempProfile({ username: userData.displayName || currentUser.displayName || "", bio: "" });
+      } else if (currentUser) {
+        setTempProfile({ username: currentUser.displayName || "", bio: "" });
       }
     }
     setIsEditing(!isEditing);
@@ -56,29 +58,12 @@ export default function ProfilePage() {
     setTempProfile(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast({ title: "Dosya Çok Büyük", description: "Lütfen 5MB'den küçük bir resim seçin.", variant: "destructive"});
-        return;
-      }
-      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
-        toast({ title: "Geçersiz Dosya Türü", description: "Lütfen bir resim dosyası (JPEG, PNG, GIF, WebP) seçin.", variant: "destructive"});
-        return;
-      }
-      setSelectedFile(file);
-      setPreviewImage(URL.createObjectURL(file));
-    }
-  };
+  // handleFileChange is removed as photo upload is disabled
 
   const handleSave = async () => {
-    if (!currentUser) {
-      // AuthContext updateUserProfile already checks this and toasts, but good to have a guard.
-      return;
-    }
+    if (!currentUser) return;
     
-    const updates: { displayName?: string, photoFile?: File | null } = {};
+    const updates: { displayName?: string } = {}; // photoFile removed
     let profileChanged = false;
 
     const currentDisplayName = userData?.displayName || currentUser.displayName || "";
@@ -90,10 +75,7 @@ export default function ProfilePage() {
         updates.displayName = tempProfile.username.trim();
         profileChanged = true;
     }
-    if (selectedFile) {
-        updates.photoFile = selectedFile;
-        profileChanged = true;
-    }
+    // Logic for selectedFile removed
 
     if (!profileChanged) {
         setIsEditing(false); 
@@ -101,13 +83,12 @@ export default function ProfilePage() {
         return;
     }
 
-    const success = await updateUserProfile(updates);
+    const success = await updateUserProfile(updates); // Pass only displayName update
     if (success) {
       setIsEditing(false);
-      setSelectedFile(null); 
-      // previewImage will be updated by useEffect when userData/currentUser changes from AuthContext
+      // Toast for success is handled by updateUserProfile in AuthContext
     }
-    // Toasts for success/failure are handled by updateUserProfile in AuthContext
+    // Toast for failure is also handled by updateUserProfile
   };
   
   const getAvatarFallbackText = () => {
@@ -118,7 +99,7 @@ export default function ProfilePage() {
   };
 
 
-  if (!currentUser && isUserLoading) {
+  if (isUserLoading && !currentUser && !userData) { // Show loading if everything is still loading
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -136,6 +117,8 @@ export default function ProfilePage() {
     );
   }
 
+  const displayPhotoUrl = userData?.photoURL || currentUser?.photoURL || "https://placehold.co/128x128.png";
+
 
   return (
     <div className="space-y-6">
@@ -145,33 +128,13 @@ export default function ProfilePage() {
           <div className="relative group">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
               <AvatarImage 
-                src={previewImage || "https://placehold.co/128x128.png"} 
+                src={displayPhotoUrl} 
                 alt={tempProfile.username || "Kullanıcı"} 
                 data-ai-hint="user portrait" 
               />
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
-            {isEditing && (
-              <Button 
-                type="button"
-                variant="outline"
-                size="icon"
-                className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-background/80 hover:bg-background border-2 border-primary/50 hover:border-primary text-primary"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUserLoading}
-                aria-label="Profil fotoğrafını değiştir"
-              >
-                <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
-              </Button>
-            )}
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              className="hidden" 
-              accept="image/jpeg,image/png,image/gif,image/webp" 
-              onChange={handleFileChange}
-              disabled={!isEditing || isUserLoading}
-            />
+            {/* Camera icon and file input removed */}
           </div>
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-primary-foreground/90">
             {isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName || "Kullanıcı Adı Yok")}
@@ -202,14 +165,7 @@ export default function ProfilePage() {
                   disabled // Şimdilik bio düzenleme devre dışı
                 />
               </div>
-              {selectedFile && previewImage && (
-                <div className="space-y-2">
-                    <Label>Yeni Profil Fotoğrafı Önizlemesi</Label>
-                    <div className="flex justify-center">
-                        <Image src={previewImage} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md border object-cover" data-ai-hint="profile preview"/>
-                    </div>
-                </div>
-              )}
+              {/* Image preview removed */}
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 sm:pt-4">
                 <Button type="button" variant="outline" onClick={handleEditToggle} disabled={isUserLoading} className="w-full sm:w-auto">
                   <XCircle className="mr-2 h-4 w-4" /> Vazgeç

@@ -4,12 +4,12 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, UploadCloud } from "lucide-react";
+import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react"; // Removed UploadCloud
 import Link from "next/link";
-import { useEffect, useState, useRef, ChangeEvent } from "react";
-import { db, storage } from "@/lib/firebase";
+import { useEffect, useState, ChangeEvent } from "react"; // Removed useRef
+import { db } from "@/lib/firebase"; // Removed storage
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
-import { ref as storageRefFunction, uploadBytesResumable, getDownloadURL, type UploadTaskSnapshot } from "firebase/storage"; // Renamed ref to storageRefFunction
+// Removed storageRefFunction, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -61,9 +61,7 @@ export default function ChatRoomsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
-  const [newRoomImageFile, setNewRoomImageFile] = useState<File | null>(null);
-  const [newRoomImagePreview, setNewRoomImagePreview] = useState<string | null>(defaultRoomImage.url);
-  const roomImageInputRef = useRef<HTMLInputElement>(null);
+  // Removed newRoomImageFile, newRoomImagePreview, roomImageInputRef as room image upload is disabled
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
@@ -97,30 +95,12 @@ export default function ChatRoomsPage() {
     return () => unsubscribe();
   }, [toast]);
 
-  const handleRoomImageChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast({ title: "Dosya Çok Büyük", description: "Lütfen 5MB'den küçük bir resim seçin.", variant: "destructive"});
-        return;
-      }
-      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
-        toast({ title: "Geçersiz Dosya Türü", description: "Lütfen bir resim dosyası (JPEG, PNG, GIF, WebP) seçin.", variant: "destructive"});
-        return;
-      }
-      setNewRoomImageFile(file);
-      setNewRoomImagePreview(URL.createObjectURL(file));
-    }
-  };
+  // handleRoomImageChange removed as room image upload is disabled
 
   const resetCreateRoomForm = () => {
     setNewRoomName("");
     setNewRoomDescription("");
-    setNewRoomImageFile(null);
-    setNewRoomImagePreview(defaultRoomImage.url);
-    if (roomImageInputRef.current) {
-      roomImageInputRef.current.value = "";
-    }
+    // newRoomImageFile and newRoomImagePreview reset removed
   };
 
 
@@ -139,70 +119,13 @@ export default function ChatRoomsPage() {
       return;
     }
     setIsCreatingRoom(true);
-    console.log("[ChatPage] Starting room creation...");
+    console.log("[ChatPage] Starting room creation (image upload disabled)...");
 
-    let imageUrl = defaultRoomImage.url;
-    let imageHint = defaultRoomImage.hint;
+    // Image upload logic removed, always use default image
+    const imageUrl = defaultRoomImage.url;
+    const imageHint = defaultRoomImage.hint;
 
     try {
-      if (newRoomImageFile) {
-        console.log("[ChatPage] Room image file provided, attempting upload...");
-        const file = newRoomImageFile;
-        const fileExtension = file.name.split('.').pop();
-        const imageFileName = `${currentUser.uid}_${Date.now()}.${fileExtension}`;
-        const roomImageStorageRef = storageRefFunction(storage, `chat_room_images/${imageFileName}`); // Renamed storageRef to storageRefFunction
-        
-        console.log("[ChatPage] Room image ref:", roomImageStorageRef.toString());
-
-        try {
-            const uploadTask = uploadBytesResumable(roomImageStorageRef, file);
-            console.log("[ChatPage] Room image upload task created.");
-
-            await new Promise<void>((resolve, reject) => {
-            uploadTask.on('state_changed',
-                (snapshot: UploadTaskSnapshot) => {
-                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                console.log('[ChatPage] Room image upload is ' + progress + '% done. State: ' + snapshot.state);
-                },
-                (error) => {
-                console.error("[ChatPage] Room image upload Firebase error (uploadTask.on error callback):", error);
-                toast({ 
-                    title: "Oda Resmi Yükleme Hatası", 
-                    description: `Firebase hatası: ${error.code || error.message}`, 
-                    variant: "destructive" 
-                });
-                reject(error);
-                },
-                async () => {
-                console.log("[ChatPage] Room image upload task completed. Attempting to get download URL...");
-                try {
-                    imageUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                    imageHint = "custom room image";
-                    console.log("[ChatPage] Room image uploaded. Download URL obtained:", imageUrl);
-                    resolve();
-                } catch (urlError: any) {
-                    console.error("[ChatPage] Room image getDownloadURL error:", urlError);
-                    toast({ 
-                    title: "Oda Resmi URL Hatası", 
-                    description: `URL alınamadı: ${urlError.code || urlError.message}`, 
-                    variant: "destructive" 
-                    });
-                    reject(urlError);
-                }
-                }
-            );
-            });
-        } catch (uploadInitiationError: any) {
-            console.error("[ChatPage] Error initiating or during room image upload promise:", uploadInitiationError);
-            toast({ 
-            title: "Oda Resmi Yükleme Başlatma Hatası", 
-            description: `Hata: ${uploadInitiationError.code || uploadInitiationError.message}`, 
-            variant: "destructive" 
-            });
-            throw uploadInitiationError; // Re-throw to be caught by the outer try-catch
-        }
-      }
-
       const currentTime = new Date();
       const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
@@ -213,8 +136,8 @@ export default function ChatRoomsPage() {
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAtDate),
-        image: imageUrl,
-        imageAiHint: imageHint,
+        image: imageUrl, // Always use default image
+        imageAiHint: imageHint, // Always use default hint
         participantCount: 0,
         maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
       };
@@ -227,11 +150,8 @@ export default function ChatRoomsPage() {
       setIsCreateModalOpen(false);
       console.log("[ChatPage] Room creation successful.");
     } catch (error: any) {
-      console.error("[ChatPage] Error creating room (outer catch):", error);
-      // Avoid double-toasting if it's already handled by specific upload error toasts
-      if (!(error.message?.includes("Oda Resmi Yükleme Hatası") || error.message?.includes("Oda Resmi URL Hatası") || error.message?.includes("Oda Resmi Yükleme Başlatma Hatası"))) {
-         toast({ title: "Hata", description: `Oda oluşturulurken bir sorun oluştu: ${error.code || error.message}`, variant: "destructive" });
-      }
+      console.error("[ChatPage] Error creating room:", error);
+      toast({ title: "Hata", description: `Oda oluşturulurken bir sorun oluştu: ${error.code || error.message}`, variant: "destructive" });
     } finally {
       console.log("[ChatPage] Ending room creation process. Setting isCreatingRoom to false.");
       setIsCreatingRoom(false);
@@ -309,7 +229,7 @@ export default function ChatRoomsPage() {
               <DialogHeader>
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
-                  Odanız için bir ad, açıklama ve resim belirleyin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
+                  Odanız için bir ad ve açıklama belirleyin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
                   Maksimum katılımcı sayısı {MAX_PARTICIPANTS_PER_ROOM} kişidir. Mevcut elmasınız: {userData?.diamonds ?? 0}
                 </DialogDescription>
               </DialogHeader>
@@ -334,34 +254,7 @@ export default function ChatRoomsPage() {
                     disabled={isCreatingRoom}
                   />
                 </div>
-                <div className="space-y-2">
-                    <Label htmlFor="roomImage">Oda Resmi (İsteğe Bağlı)</Label>
-                    <div className="flex items-center gap-4">
-                        {newRoomImagePreview && (
-                            <Image
-                                src={newRoomImagePreview}
-                                alt="Oda resmi önizlemesi"
-                                width={80}
-                                height={80}
-                                className="rounded-md border object-cover aspect-square"
-                                data-ai-hint="room preview image"
-                            />
-                        )}
-                        <Button type="button" variant="outline" onClick={() => roomImageInputRef.current?.click()} disabled={isCreatingRoom}>
-                            <UploadCloud className="mr-2 h-4 w-4" /> Resim Seç
-                        </Button>
-                    </div>
-                    <input
-                        type="file"
-                        id="roomImage"
-                        ref={roomImageInputRef}
-                        className="hidden"
-                        accept="image/jpeg,image/png,image/gif,image/webp"
-                        onChange={handleRoomImageChange}
-                        disabled={isCreatingRoom}
-                    />
-                    <p className="text-xs text-muted-foreground">Max 5MB. Önerilen boyut: 600x400.</p>
-                </div>
+                {/* Room image input and preview removed */}
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -405,7 +298,7 @@ export default function ChatRoomsPage() {
             <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card`}>
               <div className="relative h-40 sm:h-48 w-full">
                 <Image
-                  src={room.image || defaultRoomImage.url}
+                  src={room.image || defaultRoomImage.url} // Will show existing image or default
                   alt={room.name}
                   layout="fill"
                   objectFit="cover"
@@ -461,5 +354,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
-    

@@ -13,9 +13,9 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, db, storage } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase'; // Removed storage import as it's not used here anymore
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL, type UploadTaskSnapshot } from "firebase/storage";
+// Removed storageRef, uploadBytesResumable, getDownloadURL as they are no longer used for profile pictures here
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -41,7 +41,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string) => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string, photoFile?: File | null }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string }) => Promise<boolean>; // Removed photoFile
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
 }
@@ -75,36 +75,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (user) {
         setIsUserDataLoading(true);
         const userDocRef = doc(db, "users", user.uid);
-        const docSnap = await getDoc(userDocRef);
-        if (docSnap.exists()) {
-          setUserData(docSnap.data() as UserData);
-        } else {
-          const newUserProfileData: UserData = {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName,
-            photoURL: user.photoURL,
-            diamonds: INITIAL_DIAMONDS,
-            createdAt: serverTimestamp() as Timestamp,
-            role: "user",
-          };
-          try {
-            await setDoc(userDocRef, {
-              ...newUserProfileData,
-              createdAt: serverTimestamp()
-            });
+        try {
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+            setUserData(docSnap.data() as UserData);
+            } else {
+            // This case should ideally be handled during sign-up or first Google sign-in
+            // For robustness, we can try to create it here if it's missing
+            const newUserProfileData: UserData = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName,
+                photoURL: user.photoURL,
+                diamonds: INITIAL_DIAMONDS,
+                createdAt: serverTimestamp() as Timestamp, // This will be a server-side timestamp
+                role: "user",
+            };
+            await setDoc(userDocRef, { ...newUserProfileData, createdAt: serverTimestamp() });
+            // Fetch again to get the server-generated timestamp or use local for immediate UI
             const freshSnap = await getDoc(userDocRef);
-            if (freshSnap.exists()){
+             if (freshSnap.exists()){
                 setUserData(freshSnap.data() as UserData);
             } else {
+                // Fallback if re-fetch fails, use local timestamp for UI consistency
                 setUserData({...newUserProfileData, createdAt: Timestamp.now() });
             }
-          } catch (error) {
-            console.error("Error creating user document in Firestore:", error);
-            toast({ title: "Kullanıcı Verisi Hatası", description: "Kullanıcı verileri oluşturulurken bir sorun oluştu.", variant: "destructive" });
-          }
+            }
+        } catch (error) {
+             console.error("Error fetching/creating user document on auth state change:", error);
+             toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
+        } finally {
+            setIsUserDataLoading(false);
         }
-        setIsUserDataLoading(false);
       } else {
         setUserData(null);
         setIsUserDataLoading(false);
@@ -125,10 +127,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       createdAt: serverTimestamp(),
       role: "user",
     };
-    await setDoc(userDocRef, userDataToSet);
-    const docSnap = await getDoc(userDocRef);
-    if (docSnap.exists()) {
-      setUserData(docSnap.data() as UserData);
+    try {
+        await setDoc(userDocRef, userDataToSet);
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+        setUserData(docSnap.data() as UserData);
+        } else {
+             // Fallback if docSnap doesn't exist immediately (should be rare)
+            setUserData({...userDataToSet, createdAt: Timestamp.now()} as UserData);
+        }
+    } catch (error) {
+        console.error("Error in createUserDocument:", error);
+        toast({ title: "Hesap Oluşturma Hatası", description: "Kullanıcı veritabanı kaydı oluşturulurken bir sorun oluştu.", variant: "destructive" });
     }
   };
 
@@ -219,7 +229,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const updateUserProfile = async (updates: { displayName?: string, photoFile?: File | null }): Promise<boolean> => {
+  const updateUserProfile = async (updates: { displayName?: string }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
@@ -228,78 +238,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", updates);
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
-    let authUpdates: { displayName?: string; photoURL?: string } = {};
+    let authUpdates: { displayName?: string } = {}; // photoURL update removed
 
     try {
-      if (updates.photoFile) {
-        console.log("[AuthContext] Photo file provided, starting upload process...");
-        const file = updates.photoFile;
-        const fileExtension = file.name.split('.').pop();
-        const profileImageRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
-        
-        console.log("[AuthContext] Profile image ref:", profileImageRef.toString());
-
-        try {
-          const uploadTask = uploadBytesResumable(profileImageRef, file);
-          console.log("[AuthContext] Upload task created.");
-
-          await new Promise<void>((resolve, reject) => {
-            uploadTask.on('state_changed',
-              (snapshot: UploadTaskSnapshot) => {
-                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                console.log('[AuthContext] Upload is ' + progress + '% done. State: ' + snapshot.state);
-                switch (snapshot.state) {
-                  case 'paused':
-                    console.log('[AuthContext] Upload is paused');
-                    break;
-                  case 'running':
-                    console.log('[AuthContext] Upload is running');
-                    break;
-                }
-              },
-              (error) => {
-                console.error("[AuthContext] Firebase Storage upload error (uploadTask.on error callback):", error);
-                console.error("Error Code:", error.code);
-                console.error("Error Message:", error.message);
-                console.error("Error ServerResponse:", error.serverResponse);
-                toast({ 
-                  title: "Fotoğraf Yükleme Başarısız", 
-                  description: `Yükleme sırasında hata: ${error.code || error.message}`, 
-                  variant: "destructive" 
-                });
-                reject(error);
-              },
-              async () => {
-                console.log("[AuthContext] Upload task completed. Attempting to get download URL...");
-                try {
-                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                  console.log("[AuthContext] Profile image uploaded. Download URL:", downloadURL);
-                  authUpdates.photoURL = downloadURL;
-                  firestoreUpdates.photoURL = downloadURL;
-                  resolve();
-                } catch (urlError: any) {
-                  console.error("[AuthContext] Failed to get download URL:", urlError);
-                  toast({ 
-                    title: "Fotoğraf URL Hatası", 
-                    description: `URL alınamadı: ${urlError.code || urlError.message}`, 
-                    variant: "destructive" 
-                  });
-                  reject(urlError);
-                }
-              }
-            );
-          });
-        } catch (uploadInitiationError: any) {
-          console.error("[AuthContext] Error initiating or during photo upload promise:", uploadInitiationError);
-          toast({ 
-            title: "Fotoğraf Yükleme Başlatma Hatası", 
-            description: `Hata: ${uploadInitiationError.code || uploadInitiationError.message}`, 
-            variant: "destructive" 
-          });
-          throw uploadInitiationError; // Re-throw to be caught by the outer try-catch
-        }
-      }
-
       if (updates.displayName && updates.displayName !== (userData?.displayName || auth.currentUser.displayName || "")) {
         console.log("[AuthContext] Display name update provided:", updates.displayName);
         authUpdates.displayName = updates.displayName;
@@ -312,7 +253,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         console.log("[AuthContext] No actual changes to apply to profile.");
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
-        setIsUserLoading(false); // Ensure loading state is reset
+        setIsUserLoading(false);
         return true;
       }
 
@@ -327,25 +268,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       console.log("[AuthContext] Reloading Firebase user data...");
-      await auth.currentUser?.reload();
-      const refreshedUser = auth.currentUser;
+      await auth.currentUser?.reload(); // Reload to get the latest auth profile
+      const refreshedUser = auth.currentUser; // Get the refreshed user
 
-      setCurrentUser(refreshedUser ? { ...refreshedUser } : null);
+      // Update local state based on refreshedUser and firestoreUpdates
+      setCurrentUser(refreshedUser ? { ...refreshedUser } : null); // Update currentUser state
       setUserData(prev => {
           const newLocalData: Partial<UserData> = {};
           if (firestoreUpdates.displayName) newLocalData.displayName = firestoreUpdates.displayName;
-          if (firestoreUpdates.photoURL) newLocalData.photoURL = firestoreUpdates.photoURL;
+          // Ensure local state reflects Auth profile if Firestore didn't update it (or vice-versa)
           if (refreshedUser?.displayName && !newLocalData.displayName) newLocalData.displayName = refreshedUser.displayName;
-          if (refreshedUser?.photoURL && !newLocalData.photoURL) newLocalData.photoURL = refreshedUser.photoURL;
+          
           return prev ? { ...prev, ...newLocalData } : null
       });
+
 
       console.log("[AuthContext] Profile update successful.");
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
       return true;
 
     } catch (error: any) {
-      console.error("[AuthContext] Profile update failed (outer catch):", error);
+      console.error("[AuthContext] Profile update failed:", error);
       toast({ 
         title: "Profil Güncelleme Hatası", 
         description: `Bir sorun oluştu: ${error.code || error.message}`, 
@@ -368,6 +311,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userDocRef = doc(db, "users", currentUser.uid);
       await updateDoc(userDocRef, { diamonds: newDiamondCount });
       setUserData(prev => prev ? { ...prev, diamonds: newDiamondCount } : null);
+      // toast({ title: "Başarılı", description: "Elmaslarınız güncellendi." }); // Optional: Can be too noisy
       return Promise.resolve();
     } catch (error) {
       console.error("Error updating diamonds:", error);
@@ -387,6 +331,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     );
   }
 
+
   const value = {
     currentUser,
     userData,
@@ -403,5 +348,3 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-    
