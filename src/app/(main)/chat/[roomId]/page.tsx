@@ -103,7 +103,7 @@ export default function ChatRoomPage() {
 
   const [activeParticipants, setActiveParticipants] = useState<ActiveParticipant[]>([]);
   const [isRoomFullError, setIsRoomFullError] = useState(false);
-  const [isProcessingJoinLeave, setIsProcessingJoinLeave] = useState(true);
+  const [isProcessingJoinLeave, setIsProcessingJoinLeave] = useState(false); // Başlangıç değeri false olarak değiştirildi
   const [isCurrentUserParticipant, setIsCurrentUserParticipant] = useState(false);
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
