@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from 'react'; // Added React import
+import * as React from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -16,7 +16,7 @@ import {
   Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -113,6 +113,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
+              <SheetHeader className="sr-only"> {/* Visually hide if not needed, but present for accessibility */}
+                <SheetTitle>Navigasyon Menüsü</SheetTitle>
+              </SheetHeader>
               <SidebarContent onLinkClick={() => setMobileSheetOpen(false)} />
             </SheetContent>
           </Sheet>
