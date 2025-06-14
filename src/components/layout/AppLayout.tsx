@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   Settings,
-  Bell
+  Bell,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -27,6 +28,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+
 
 interface NavItem {
   href: string;
@@ -61,12 +65,17 @@ function NavLink({ item, onClick }: { item: NavItem, onClick?: () => void }) {
 }
 
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
-  const router = useRouter();
-  const handleLogout = () => {
-    // Placeholder for logout logic
-    console.log("Logout clicked");
-    router.push('/login');
-    if (onLinkClick) onLinkClick();
+  const { logOut, isUserLoading } = useAuth();
+  const { toast } = useToast();
+
+  const handleLogout = async () => {
+    try {
+      await logOut();
+      toast({ title: "Başarıyla çıkış yapıldı."});
+      if (onLinkClick) onLinkClick();
+    } catch (error: any) {
+      toast({ title: "Çıkış Hatası", description: error.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -85,8 +94,8 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
         </nav>
       </div>
       <div className="mt-auto p-4 border-t">
-        <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive" onClick={handleLogout}>
-          <LogOut className="h-5 w-5" />
+        <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive" onClick={handleLogout} disabled={isUserLoading}>
+          {isUserLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogOut className="h-5 w-5" />}
           Çıkış Yap
         </Button>
       </div>
@@ -97,6 +106,27 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const router = useRouter();
+  const { currentUser, logOut, isUserLoading } = useAuth();
+  const { toast } = useToast();
+
+  const handleLogoutFromDropdown = async () => {
+    try {
+      await logOut();
+      toast({ title: "Başarıyla çıkış yapıldı."});
+    } catch (error: any) {
+      toast({ title: "Çıkış Hatası", description: error.message, variant: "destructive" });
+    }
+  };
+  
+  const getAvatarFallback = () => {
+    if (currentUser?.displayName) {
+      return currentUser.displayName.substring(0, 2).toUpperCase();
+    }
+    if (currentUser?.email) {
+      return currentUser.email.substring(0, 2).toUpperCase();
+    }
+    return "SK";
+  };
 
   return (
     <div className="grid min-h-screen w-full lg:grid-cols-[280px_1fr]">
@@ -113,8 +143,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
-              <SheetHeader className="sr-only"> {/* Visually hide if not needed, but present for accessibility */}
-                <SheetTitle>Navigasyon Menüsü</SheetTitle>
+               <SheetHeader className="p-4 border-b"> {/* Added SheetHeader and Title for accessibility */}
+                <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
               <SidebarContent onLinkClick={() => setMobileSheetOpen(false)} />
             </SheetContent>
@@ -131,26 +161,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full">
+              <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
                 <Avatar className="h-9 w-9">
-                  <AvatarImage src="https://placehold.co/100x100.png" alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
-                  <AvatarFallback>SK</AvatarFallback>
+                  <AvatarImage src={currentUser?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
+                  <AvatarFallback>{getAvatarFallback()}</AvatarFallback>
                 </Avatar>
                 <span className="sr-only">Kullanıcı menüsünü aç/kapat</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Hesabım</DropdownMenuLabel>
+              <DropdownMenuLabel>{currentUser?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => router.push('/profile')}>
                 <UserCircle className="mr-2 h-4 w-4" /> Profili Görüntüle
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => toast({title: "Ayarlar", description:"Bu özellik yakında eklenecektir."})}>
                 <Settings className="mr-2 h-4 w-4" /> Ayarlar
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/login')} className="text-destructive hover:!text-destructive focus:!text-destructive">
-                <LogOut className="mr-2 h-4 w-4" /> Çıkış Yap
+              <DropdownMenuItem onClick={handleLogoutFromDropdown} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive">
+                {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />} 
+                Çıkış Yap
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
