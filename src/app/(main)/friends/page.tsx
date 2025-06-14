@@ -82,14 +82,25 @@ export default function FriendsPage() {
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
         const friendData = friendDoc.data();
+        // Ensure user profile is fetched, even if minimal data exists in confirmedFriends
         const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
         if (userProfileDoc.exists()) {
           return { 
-            ...userProfileDoc.data() as UserData, 
+            uid: friendDoc.id, // Make sure uid is set from friendDoc.id
+            ...userProfileDoc.data(), 
             addedAt: friendData.addedAt 
           } as Friend;
         }
-        return null;
+        // Fallback if user profile doesn't exist (should be rare if data is consistent)
+        return {
+          uid: friendDoc.id,
+          displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
+          photoURL: friendData.photoURL || null,
+          email: null, // Or fetch if available/needed
+          diamonds: 0, // Or a default
+          createdAt: friendData.addedAt || Timestamp.now(),
+          addedAt: friendData.addedAt
+        } as Friend;
       });
       const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
       setMyFriends(resolvedFriends);
@@ -104,17 +115,18 @@ export default function FriendsPage() {
 
   useEffect(() => {
     if (!currentUser?.uid) {
-      setLoadingRequests(false);
       setIncomingRequests([]);
       setOutgoingRequests([]);
+      setLoadingRequests(false);
       return;
     }
-    setLoadingRequests(true);
-    let initialIncomingSnapshotReceived = false;
-    let initialOutgoingSnapshotReceived = false;
 
-    const trySetLoadingFalse = () => {
-      if (initialIncomingSnapshotReceived && initialOutgoingSnapshotReceived) {
+    setLoadingRequests(true);
+    let incomingInitialized = false;
+    let outgoingInitialized = false;
+
+    const checkBothInitialized = () => {
+      if (incomingInitialized && outgoingInitialized) {
         setLoadingRequests(false);
       }
     };
@@ -133,20 +145,20 @@ export default function FriendsPage() {
           id: reqDoc.id,
           ...data,
           processedType: "incoming",
-          userProfile: senderProfileDoc.exists() ? senderProfileDoc.data() as UserData : undefined,
+          userProfile: senderProfileDoc.exists() ? { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData : undefined,
         } as FriendRequest;
       });
       setIncomingRequests(await Promise.all(reqPromises));
-      if (!initialIncomingSnapshotReceived) {
-        initialIncomingSnapshotReceived = true;
-        trySetLoadingFalse();
+      if (!incomingInitialized) {
+        incomingInitialized = true;
+        checkBothInitialized();
       }
     }, (error) => {
       console.error("Error fetching incoming requests:", error);
       toast({ title: "Hata", description: "Gelen arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      if (!initialIncomingSnapshotReceived) {
-        initialIncomingSnapshotReceived = true;
-        trySetLoadingFalse();
+      if (!incomingInitialized) {
+        incomingInitialized = true;
+        checkBothInitialized();
       }
     });
 
@@ -164,20 +176,20 @@ export default function FriendsPage() {
           id: reqDoc.id,
           ...data,
           processedType: "outgoing",
-          userProfile: receiverProfileDoc.exists() ? receiverProfileDoc.data() as UserData : undefined,
+          userProfile: receiverProfileDoc.exists() ? { uid: receiverProfileDoc.id, ...receiverProfileDoc.data() } as UserData : undefined,
         } as FriendRequest;
       });
       setOutgoingRequests(await Promise.all(reqPromises));
-      if (!initialOutgoingSnapshotReceived) {
-        initialOutgoingSnapshotReceived = true;
-        trySetLoadingFalse();
+      if (!outgoingInitialized) {
+        outgoingInitialized = true;
+        checkBothInitialized();
       }
     }, (error) => {
       console.error("Error fetching outgoing requests:", error);
       toast({ title: "Hata", description: "Giden arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      if (!initialOutgoingSnapshotReceived) {
-        initialOutgoingSnapshotReceived = true;
-        trySetLoadingFalse();
+      if (!outgoingInitialized) {
+        outgoingInitialized = true;
+        checkBothInitialized();
       }
     });
     
@@ -194,6 +206,9 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
+      // Firestore does not support case-insensitive search or 'starts with' for multiple fields easily.
+      // For a production app, a dedicated search solution (e.g., Algolia, Elasticsearch) is better.
+      // Simple exact match for email, and prefix match for displayName for this prototype.
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
@@ -203,13 +218,14 @@ export default function FriendsPage() {
       ]);
       
       const resultsMap = new Map<string, UserData>();
-      nameSnapshot.forEach(doc => resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData));
-      emailSnapshot.forEach(doc => resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData));
+      nameSnapshot.forEach(doc => {
+        if (doc.id !== currentUser.uid) resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData)
+      });
+      emailSnapshot.forEach(doc => {
+         if (doc.id !== currentUser.uid) resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData)
+      });
       
-      const allResults = Array.from(resultsMap.values())
-        .filter(user => user.uid !== currentUser.uid);
-
-      setSearchResults(allResults);
+      setSearchResults(Array.from(resultsMap.values()));
 
     } catch (error) {
       console.error("Error searching users:", error);
@@ -227,17 +243,25 @@ export default function FriendsPage() {
     if (!currentUser || !userData || !targetUser) return;
     setActionLoading(targetUser.uid, true);
     try {
-      const existingRequestQuery = query(collection(db, "friendRequests"),
-        where("fromUserId", "==", currentUser.uid),
-        where("toUserId", "==", targetUser.uid),
-        where("status", "==", "pending")
-      );
-      const existingRequestSnapshot = await getDocs(existingRequestQuery);
-      if(!existingRequestSnapshot.empty) {
-        toast({ description: "Bu kullanıcıya zaten bir arkadaşlık isteği göndermişsiniz.", variant: "default" });
-        setActionLoading(targetUser.uid, false);
-        return;
+      // Check if a request already exists (either way) or if they are already friends
+      const q1 = query(collection(db, "friendRequests"), where("fromUserId", "==", currentUser.uid), where("toUserId", "==", targetUser.uid));
+      const q2 = query(collection(db, "friendRequests"), where("fromUserId", "==", targetUser.uid), where("toUserId", "==", currentUser.uid));
+      
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+
+      if (!snap1.empty || !snap2.empty) {
+          const existingRequest = !snap1.empty ? snap1.docs[0].data() : snap2.docs[0].data();
+          if (existingRequest.status === "pending") {
+            toast({ description: "Bu kullanıcıyla zaten beklemede olan bir arkadaşlık isteğiniz var.", variant: "default" });
+            setActionLoading(targetUser.uid, false);
+            return;
+          } else if (existingRequest.status === "accepted") {
+             toast({ description: "Bu kullanıcı zaten arkadaşınız.", variant: "default" });
+             setActionLoading(targetUser.uid, false);
+             return;
+          }
       }
+      
       const isAlreadyFriend = myFriends.some(friend => friend.uid === targetUser.uid);
       if(isAlreadyFriend) {
         toast({ description: "Bu kullanıcı zaten arkadaşınız.", variant: "default" });
@@ -272,13 +296,15 @@ export default function FriendsPage() {
       const requestRef = doc(db, "friendRequests", request.id);
       batch.update(requestRef, { status: "accepted" });
 
+      // Add to current user's friends
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
       batch.set(myFriendRef, { 
-        displayName: request.fromUsername, 
-        photoURL: request.fromAvatarUrl,
+        displayName: request.userProfile?.displayName || request.fromUsername, 
+        photoURL: request.userProfile?.photoURL || request.fromAvatarUrl,
         addedAt: serverTimestamp() 
       });
 
+      // Add to the other user's friends
       const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
       batch.set(theirFriendRef, { 
         displayName: userData.displayName, 
@@ -299,7 +325,9 @@ export default function FriendsPage() {
   const handleDeclineFriendRequest = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
-      await updateDoc(doc(db, "friendRequests", requestId), { status: "declined" });
+      // Instead of just updating, we can delete declined requests to keep the collection clean
+      // await updateDoc(doc(db, "friendRequests", requestId), { status: "declined" });
+      await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
     } catch (error) {
       console.error("Error declining friend request:", error);
@@ -327,10 +355,22 @@ export default function FriendsPage() {
     setActionLoading(friendId, true);
     try {
       const batch = writeBatch(db);
+      // Remove from current user's confirmedFriends
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, friendId);
       batch.delete(myFriendRef);
+      // Remove current user from the other user's confirmedFriends
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
+      
+      // Optional: Delete any related friendRequest documents (accepted status)
+      const q = query(collection(db, "friendRequests"), 
+        where("fromUserId", "in", [currentUser.uid, friendId]), 
+        where("toUserId", "in", [currentUser.uid, friendId]),
+        where("status", "==", "accepted")
+      );
+      const oldRequestsSnap = await getDocs(q);
+      oldRequestsSnap.forEach(doc => batch.delete(doc.ref));
+
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
     } catch (error) {
@@ -449,10 +489,10 @@ export default function FriendsPage() {
                           <li key={req.id} className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
-                                 <AvatarImage src={req.fromAvatarUrl || `https://placehold.co/40x40.png`} data-ai-hint="person avatar request" />
-                                 <AvatarFallback>{getAvatarFallback(req.fromUsername)}</AvatarFallback>
+                                 <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || `https://placehold.co/40x40.png`} data-ai-hint="person avatar request" />
+                                 <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
                               </Avatar>
-                              <p className="font-medium text-sm sm:text-base">{req.fromUsername || "İsimsiz"}</p>
+                              <p className="font-medium text-sm sm:text-base">{req.userProfile?.displayName || req.fromUsername || "İsimsiz"}</p>
                             </div>
                             <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
                               <Button 
@@ -487,10 +527,10 @@ export default function FriendsPage() {
                           <li key={req.id} className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
-                                 <AvatarImage src={req.toAvatarUrl || `https://placehold.co/40x40.png`} data-ai-hint="person avatar request" />
-                                 <AvatarFallback>{getAvatarFallback(req.toUsername)}</AvatarFallback>
+                                 <AvatarImage src={req.userProfile?.photoURL || req.toAvatarUrl || `https://placehold.co/40x40.png`} data-ai-hint="person avatar request" />
+                                 <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.toUsername)}</AvatarFallback>
                               </Avatar>
-                              <p className="font-medium text-sm sm:text-base">{req.toUsername || "İsimsiz"}</p>
+                              <p className="font-medium text-sm sm:text-base">{req.userProfile?.displayName || req.toUsername || "İsimsiz"}</p>
                             </div>
                             <Button 
                               variant="outline" 
@@ -560,9 +600,9 @@ export default function FriendsPage() {
                                 const request = incomingRequests.find(req => req.fromUserId === user.uid);
                                 if (request) handleAcceptFriendRequest(request);
                               }}
-                              disabled={performingAction[incomingRequests.find(req => req.fromUserId === user.uid)?.id || '']}
+                              disabled={performingAction[incomingRequests.find(req => req.fromUserId === user.uid)?.id || user.uid]}
                             >
-                              {performingAction[incomingRequests.find(req => req.fromUserId === user.uid)?.id || ''] ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserCheck className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />} İsteği Kabul Et
+                              {performingAction[incomingRequests.find(req => req.fromUserId === user.uid)?.id || user.uid] ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserCheck className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />} İsteği Kabul Et
                             </Button>
                         ) : (
                             <Button 
