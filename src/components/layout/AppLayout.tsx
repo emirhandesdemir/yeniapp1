@@ -22,6 +22,8 @@ import {
   ShieldCheck,
   UserCheck, 
   UserX, 
+  ChevronDown,
+  UsersCog
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -33,6 +35,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
@@ -51,14 +57,16 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  // orderBy, // orderBy kaldırıldı
 } from "firebase/firestore";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ElementType;
   adminOnly?: boolean;
+  subItems?: NavItem[];
 }
 
 const navItems: NavItem[] = [
@@ -66,7 +74,17 @@ const navItems: NavItem[] = [
   { href: '/chat', label: 'Sohbet Odaları', icon: MessageSquare },
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
-  { href: '/admin/dashboard', label: 'Admin Paneli', icon: ShieldCheck, adminOnly: true },
+  { 
+    href: '/admin/dashboard', 
+    label: 'Admin Paneli', 
+    icon: ShieldCheck, 
+    adminOnly: true,
+    subItems: [
+      { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
+      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UsersCog },
+      // Gelecekteki admin sayfaları buraya eklenebilir
+    ] 
+  },
 ];
 
 interface FriendRequestForPopover {
@@ -78,12 +96,44 @@ interface FriendRequestForPopover {
   userProfile?: UserData; 
 }
 
-function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => void, isAdmin?: boolean }) {
-  const pathname = usePathname();
-  const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
+  const isActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href));
 
   if (item.adminOnly && !isAdmin) {
     return null;
+  }
+
+  if (item.subItems && item.subItems.length > 0) {
+    const isParentActive = item.subItems.some(subItem => currentPathname.startsWith(subItem.href));
+    return (
+      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive ? item.href : undefined}>
+        <AccordionItem value={item.href} className="border-b-0">
+          <AccordionTrigger 
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm w-full justify-between hover:no-underline",
+              isParentActive 
+                ? "bg-primary/10 text-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary" 
+                : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
+              "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
+              "[&[data-state=open]>svg:last-child]:rotate-180" // Chevron icon rotation
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <item.icon className="h-5 w-5" />
+              {item.label}
+            </div>
+            {/* ChevronDown is automatically added by AccordionTrigger from shadcn */}
+          </AccordionTrigger>
+          <AccordionContent className="pb-0 pl-5 pr-1 pt-1">
+            <nav className="grid items-start gap-1">
+              {item.subItems.map((subItem) => (
+                <NavLink key={subItem.href} item={subItem} onClick={onClick} isAdmin={isAdmin} currentPathname={currentPathname}/>
+              ))}
+            </nav>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    );
   }
 
   return (
@@ -91,7 +141,7 @@ function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => vo
       href={item.href}
       onClick={onClick}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm", // py-2.5 for slightly more padding
+        "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm",
         isActive 
           ? "bg-primary text-primary-foreground font-semibold shadow-sm" 
           : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
@@ -109,6 +159,7 @@ function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => vo
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const { logOut, isUserLoading, userData } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
 
   const handleLogout = async () => {
     try {
@@ -124,16 +175,16 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 
   return (
     <div className="flex h-full max-h-screen flex-col gap-2 bg-sidebar border-r border-sidebar-border">
-      <div className="flex h-20 items-center border-b border-sidebar-border px-6"> {/* Increased header height */}
+      <div className="flex h-20 items-center border-b border-sidebar-border px-6">
         <Link href="/" className="flex items-center gap-2.5 font-semibold text-primary dark:text-sidebar-primary">
-          <Globe className="h-8 w-8" /> {/* Slightly larger icon */}
+          <Globe className="h-8 w-8" />
           <span className="text-xl font-headline">Sohbet Küresi</span>
         </Link>
       </div>
-      <div className="flex-1 overflow-auto py-4"> {/* Increased py for more spacing */}
-        <nav className="grid items-start px-4 text-sm font-medium gap-1"> {/* Added gap-1 for nav items */}
+      <div className="flex-1 overflow-auto py-4">
+        <nav className="grid items-start px-4 text-sm font-medium gap-1">
           {navItems.map((item) => (
-            <NavLink key={item.href} item={item} onClick={onLinkClick} isAdmin={isAdmin} />
+            <NavLink key={item.href} item={item} onClick={onLinkClick} isAdmin={isAdmin} currentPathname={pathname} />
           ))}
         </nav>
       </div>
@@ -157,7 +208,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [incomingRequests, setIncomingRequests] = React.useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = React.useState(true);
   const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
-  // Track initialization of request streams
   const [incomingInitialized, setIncomingInitialized] = React.useState(false);
 
 
@@ -165,18 +215,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
       setLoadingRequests(false);
-      setIncomingInitialized(true); // Mark as initialized even if no user
+      setIncomingInitialized(true); 
       return () => {}; 
     }
   
     setLoadingRequests(true);
-    setIncomingInitialized(false); // Reset for new user/login
+    setIncomingInitialized(false); 
     
     const incomingQuery = query(
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
-      // orderBy("createdAt", "desc") // Temporarily removed for simplicity
+      // orderBy("createdAt", "desc") // Dizin sorunu için kaldırıldı, gerekirse eklenebilir.
     );
   
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -190,7 +240,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             }
         } catch (profileError) {
             console.error(`Error fetching profile for sender ${data.fromUserId}:`, profileError);
-            // Do not toast here for individual profile errors, let the UI handle missing profile gracefully
         }
         return {
           id: reqDoc.id,
@@ -207,23 +256,21 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises:", error);
-        toast({ title: "Bildirim Yükleme Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" });
+        // toast({ title: "Bildirim Yükleme Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" }); // Bu toast'u daha genel bir yere taşıyabiliriz
       } finally {
         if (!incomingInitialized) setIncomingInitialized(true);
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
-      toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu. Lütfen daha sonra tekrar deneyin.", variant: "destructive" });
+      toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
       if (!incomingInitialized) setIncomingInitialized(true);
     });
     
     return () => {
         unsubscribeIncoming();
     }; 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.uid, toast]); // Removed incomingInitialized from deps as it's set inside
+  }, [currentUser?.uid, toast, incomingInitialized]); // incomingInitialized eklendi
 
-  // Update loading state based on initialization
   React.useEffect(() => {
     if (incomingInitialized) {
       setLoadingRequests(false);
@@ -294,12 +341,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="grid min-h-screen w-full lg:grid-cols-[280px_1fr] bg-background"> {/* Added bg-background here */}
+    <div className="grid min-h-screen w-full lg:grid-cols-[280px_1fr] bg-background">
       <div className="hidden border-r border-sidebar-border bg-sidebar lg:block">
         <SidebarContent />
       </div>
       <div className="flex flex-col">
-        <header className="flex h-20 items-center gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30"> {/* Increased header height */}
+        <header className="flex h-20 items-center gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
           <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon" className="shrink-0 lg:hidden">
@@ -307,7 +354,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <span className="sr-only">Navigasyon menüsünü aç/kapat</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50 bg-sidebar border-r border-sidebar-border"> {/* Added bg-sidebar */}
+            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50 bg-sidebar border-r border-sidebar-border">
                <SheetHeader className="p-4 border-b border-sidebar-border"> 
                 <SheetTitle className="text-lg font-semibold text-sidebar-foreground">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
@@ -316,7 +363,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Sheet>
           
           <div className="w-full flex-1">
-            {/* Optional: Breadcrumbs or page title can go here */}
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3">
@@ -396,14 +442,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
-                  <Avatar className="h-9 w-9 sm:h-10 sm:w-10"> {/* Slightly larger avatar */}
+                  <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                     <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
                     <AvatarFallback>{getAvatarFallback(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
                   </Avatar>
                   <span className="sr-only">Kullanıcı menüsünü aç/kapat</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56"> {/* Wider dropdown */}
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium leading-none">
@@ -437,4 +483,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
