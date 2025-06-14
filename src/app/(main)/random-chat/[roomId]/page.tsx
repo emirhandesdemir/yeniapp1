@@ -28,9 +28,9 @@ import {
 } from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils"; // Added missing import
+import { cn } from "@/lib/utils";
 
-type OneOnOneChatStatus = 'waiting' | 'active' | 'closed_by_leave' | 'closed_by_decline' | 'friends_chat' | 'closed';
+type OneOnOneChatRoomStatus = 'waiting' | 'active' | 'closed_by_leave' | 'closed_by_decline' | 'friends_chat' | 'closed';
 
 interface ParticipantData {
   uid: string;
@@ -44,7 +44,7 @@ interface OneOnOneChatRoom {
   id: string;
   participantUids: string[];
   participantsData: { [key: string]: ParticipantData }; // key is uid
-  status: OneOnOneChatStatus;
+  status: OneOnOneChatRoomStatus;
   createdAt: Timestamp;
 }
 
@@ -73,152 +73,155 @@ export default function RandomChatRoomPage() {
   const [actionLoading, setActionLoading] = useState(false); 
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const hasLeftRoomRef = useRef(false); 
+  const hasNavigatedAwayRef = useRef(false);
+  const roomUnsubscribeRef = useRef<(() => void) | null>(null);
+  const messagesUnsubscribeRef = useRef<(() => void) | null>(null);
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     return "PN";
   };
 
-  const cleanupRoom = useCallback(async (currentRoomId: string) => {
-    if(!currentRoomId) return;
+  const cleanupRoomAndNavigate = useCallback(async (currentRoomId: string, reason: string) => {
+    if (hasNavigatedAwayRef.current) return;
+    hasNavigatedAwayRef.current = true;
+
+    // console.log(`cleanupRoomAndNavigate called for room ${currentRoomId} due to: ${reason}`);
+    toast({ title: "Sohbet Sona Erdi", description: reason, variant: "default" });
+    
+    if (roomUnsubscribeRef.current) roomUnsubscribeRef.current();
+    if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
+
     try {
-      const batch = writeBatch(db);
-      const messagesQuery = query(collection(db, `oneOnOneChats/${currentRoomId}/messages`));
-      const messagesSnapshot = await getDocs(messagesQuery);
-      messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
-      
-      const roomDocRef = doc(db, "oneOnOneChats", currentRoomId);
-      const roomSnap = await getDoc(roomDocRef);
+      const roomRef = doc(db, "oneOnOneChats", currentRoomId);
+      const roomSnap = await getDoc(roomRef);
       if (roomSnap.exists()) {
-        batch.delete(roomDocRef);
+        // Delete messages sub-collection first
+        const messagesQuery = query(collection(db, `oneOnOneChats/${currentRoomId}/messages`));
+        const messagesSnapshot = await getDocs(messagesQuery);
+        const batch = writeBatch(db);
+        messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
+        await batch.commit(); // Commit message deletions
+        
+        // Then delete the room document itself
+        await deleteDoc(roomRef);
       }
-      await batch.commit();
     } catch (error) {
-      console.error("Error cleaning up room:", error);
+      console.error("Error cleaning up room:", currentRoomId, error);
+      // toast({ title: "Temizleme Hatası", description: "Oda temizlenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      router.replace("/matchmaking");
     }
-  }, []);
+  }, [router, toast]);
+
 
   useEffect(() => {
     if (!roomId || !currentUser) {
-      setLoadingRoom(false); // Ensure loading stops if essential params are missing
-      return () => {};
+      if (!loadingRoom && !hasNavigatedAwayRef.current) router.replace("/matchmaking");
+      return;
     }
-    
-    hasLeftRoomRef.current = false; // Reset when roomId or currentUser changes
+
+    hasNavigatedAwayRef.current = false;
     setLoadingRoom(true);
     const roomRef = doc(db, "oneOnOneChats", roomId);
 
-    const unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
+    roomUnsubscribeRef.current = onSnapshot(roomRef, (docSnap) => {
+      if (hasNavigatedAwayRef.current) return;
+
       if (docSnap.exists()) {
         const data = docSnap.data() as Omit<OneOnOneChatRoom, 'id'>;
         const currentRoomData = { id: docSnap.id, ...data };
         setRoomDetails(currentRoomData);
 
-        const otherUid = currentRoomData.participantUids.find(uid => uid !== currentUser.uid);
+        const myUid = currentUser.uid;
+        const otherUid = currentRoomData.participantUids.find(uid => uid !== myUid);
+
         if (otherUid && currentRoomData.participantsData[otherUid]) {
           setOtherParticipant(currentRoomData.participantsData[otherUid]);
-        } else if (currentRoomData.status !== 'waiting' && currentRoomData.participantUids.length === 2) {
-            setOtherParticipant(null); // Explicitly nullify if data is inconsistent
+        } else if (currentRoomData.status !== 'waiting' && currentRoomData.participantUids.length === 2 && !otherUid) {
+            // This case implies something is wrong, a participant is missing
+            cleanupRoomAndNavigate(roomId, "Katılımcı bilgisi eksik, oda kapatılıyor.");
+            return;
         }
+        
+        const myData = currentRoomData.participantsData[myUid];
 
-        if (['closed', 'closed_by_leave', 'closed_by_decline'].includes(currentRoomData.status)) {
-          if (!hasLeftRoomRef.current) { 
-            hasLeftRoomRef.current = true; 
-            toast({ title: "Sohbet Kapandı", description: "Bu sohbet oturumu sona erdi.", variant: "default" });
-            cleanupRoom(roomId); 
-            router.replace("/matchmaking");
-          }
+        if (currentRoomData.status === 'closed' || 
+            currentRoomData.status === 'closed_by_leave' || 
+            currentRoomData.status === 'closed_by_decline') {
+          cleanupRoomAndNavigate(roomId, "Bu sohbet oturumu sona erdi.");
           return;
         }
         
-        const myData = currentRoomData.participantsData[currentUser.uid];
-        if (myData?.hasLeft && currentRoomData.status !== 'friends_chat' && !hasLeftRoomRef.current) {
-             // If I am marked as left (e.g., by another tab/instance), treat it as left
-            hasLeftRoomRef.current = true;
-            toast({ title: "Ayrıldınız", description: "Bu sohbetten ayrıldınız.", variant: "default"});
-            router.replace("/matchmaking");
-            // No need to cleanup here, the instance that set hasLeft should handle it or the other user will.
-            return;
+        if (myData?.hasLeft && currentRoomData.status !== 'friends_chat') {
+          cleanupRoomAndNavigate(roomId, "Sohbetten ayrıldınız.");
+          return;
         }
         
         if (otherUid && currentRoomData.participantsData[otherUid]?.hasLeft && currentRoomData.status !== 'friends_chat') {
-            if(!hasLeftRoomRef.current){
-                hasLeftRoomRef.current = true;
-                toast({ title: "Kullanıcı Ayrıldı", description: "Diğer kullanıcı sohbetten ayrıldı. Oda kapatılıyor.", variant: "default" });
-                updateDoc(roomRef, { status: "closed_by_leave", [`participantsData.${currentUser.uid}.hasLeft`]: true })
-                    .catch(e => console.error("Error updating self as left and cleaning: ", e));
-            }
-            return;
+          // Other user left, current user should also be marked as left and room closed
+          if (!myData?.hasLeft) { // Avoid redundant updates
+            updateDoc(roomRef, { 
+              [`participantsData.${myUid}.hasLeft`]: true,
+              status: "closed_by_leave"
+            }).catch(e => console.error("Error updating self as left after other left: ", e));
+             // The status change to closed_by_leave will trigger cleanupRoomAndNavigate in the next snapshot
+          }
+          return;
         }
 
         if (currentRoomData.status === 'active' && otherUid) {
-            const myDecision = myData?.decision;
-            const otherDecision = currentRoomData.participantsData[otherUid]?.decision;
+          const myDecision = myData?.decision;
+          const otherDecision = currentRoomData.participantsData[otherUid]?.decision;
 
-            if (myDecision === 'no' || otherDecision === 'no') {
-                if(!hasLeftRoomRef.current){
-                    hasLeftRoomRef.current = true;
-                    toast({ title: "Arkadaşlık Reddedildi", description: "Oda kapatılıyor.", variant: "default" });
-                    updateDoc(roomRef, { status: "closed_by_decline" })
-                        .catch(e => console.error("Error on decline: ", e));
+          if (myDecision === 'no' || otherDecision === 'no') {
+            if (currentRoomData.status !== 'closed_by_decline') { // Avoid redundant updates
+              updateDoc(roomRef, { status: "closed_by_decline" })
+                  .catch(e => console.error("Error on decline status update: ", e));
+              // Status change will trigger cleanup
+            }
+            return;
+          }
+          if (myDecision === 'yes' && otherDecision === 'yes' && currentRoomData.status !== 'friends_chat') {
+            updateDoc(roomRef, { status: "friends_chat" })
+            .then(async () => {
+              if (otherParticipant && userData) {
+                const myFriendRef = doc(db, `users/${myUid}/confirmedFriends`, otherParticipant.uid);
+                const friendSnap = await getDoc(myFriendRef);
+                if (!friendSnap.exists()) {
+                  const batch = writeBatch(db);
+                  batch.set(myFriendRef, {
+                    displayName: otherParticipant.displayName,
+                    photoURL: otherParticipant.photoURL,
+                    addedAt: serverTimestamp()
+                  });
+                  const theirFriendRef = doc(db, `users/${otherParticipant.uid}/confirmedFriends`, myUid);
+                  batch.set(theirFriendRef, {
+                    displayName: userData.displayName,
+                    photoURL: userData.photoURL,
+                    addedAt: serverTimestamp()
+                  });
+                  await batch.commit();
+                  toast({title: "Arkadaş Eklendi!", description: `${otherParticipant.displayName} ile artık arkadaşsınız.`});
                 }
-                return;
-            }
-            if (myDecision === 'yes' && otherDecision === 'yes') {
-                updateDoc(roomRef, { status: "friends_chat" })
-                .then(async () => {
-                    if (otherParticipant && userData) { // Ensure otherParticipant and userData are available
-                        const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, otherParticipant.uid);
-                        const friendSnap = await getDoc(myFriendRef);
-                        if (!friendSnap.exists()) {
-                            const batch = writeBatch(db);
-                            batch.set(myFriendRef, {
-                                displayName: otherParticipant.displayName,
-                                photoURL: otherParticipant.photoURL,
-                                addedAt: serverTimestamp()
-                            });
-                            const theirFriendRef = doc(db, `users/${otherParticipant.uid}/confirmedFriends`, currentUser.uid);
-                            batch.set(theirFriendRef, {
-                                displayName: userData.displayName,
-                                photoURL: userData.photoURL,
-                                addedAt: serverTimestamp()
-                            });
-                            await batch.commit();
-                            toast({title: "Arkadaş Eklendi!", description: `${otherParticipant.displayName} ile artık arkadaşsınız.`});
-                        }
-                    }
-                })
-                .catch(e => console.error("Error updating to friends_chat: ", e));
-            }
+              }
+            }).catch(e => console.error("Error updating to friends_chat: ", e));
+          }
         }
-
-      } else {
-        if (!hasLeftRoomRef.current) {
-            hasLeftRoomRef.current = true;
-            toast({ title: "Sohbet Bulunamadı", description: "Bu sohbet odası artık mevcut değil.", variant: "destructive" });
-            router.replace("/matchmaking");
-        }
+        setLoadingRoom(false);
+      } else { // Room does not exist
+        cleanupRoomAndNavigate(roomId, "Sohbet odası bulunamadı veya silindi.");
       }
-      setLoadingRoom(false);
     }, (error) => {
       console.error("Error fetching 1v1 room details:", error);
       toast({ title: "Hata", description: "Oda bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      setLoadingRoom(false);
-      if (!hasLeftRoomRef.current && !loadingRoom) router.replace("/matchmaking"); // Prevent redirect if already loading
+      if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Oda bilgilerine erişilemiyor.");
     });
 
-    return () => {
-      unsubscribeRoom();
-    };
-  }, [roomId, currentUser, router, toast, cleanupRoom, userData, otherParticipant, loadingRoom]);
-
-
-  useEffect(() => {
-    if (!roomId || !currentUser?.uid) return; 
-
+    // Listener for messages
     const messagesQuery = query(collection(db, `oneOnOneChats/${roomId}/messages`), orderBy("timestamp", "asc"));
-    const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
+    messagesUnsubscribeRef.current = onSnapshot(messagesQuery, (querySnapshot) => {
+      if (hasNavigatedAwayRef.current) return;
       const fetchedMessages: Message[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
@@ -236,73 +239,96 @@ export default function RandomChatRoomPage() {
       setTimeout(() => scrollToBottom(), 0); 
     }, (error) => {
       console.error("Error fetching messages:", error);
+      // Don't navigate away for message fetch errors, but log it.
     });
 
-    return () => unsubscribeMessages();
-  }, [roomId, currentUser?.uid]); 
 
+    return () => {
+      if (roomUnsubscribeRef.current) roomUnsubscribeRef.current();
+      if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
+      // `handleLeaveLogic` will be called by the main unmount effect
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, currentUser]); // Removed cleanupRoomAndNavigate, userData, otherParticipant, loadingRoom
+
+
+  const handleLeaveLogic = useCallback(async () => {
+    if (!currentUser || !roomId || hasNavigatedAwayRef.current) return;
+
+    hasNavigatedAwayRef.current = true; // Mark that we are initiating a leave
+    if (roomUnsubscribeRef.current) roomUnsubscribeRef.current();
+    if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
+    
+    // console.log(`handleLeaveLogic called for room ${roomId} by user ${currentUser.uid}`);
+
+    const roomRef = doc(db, "oneOnOneChats", roomId);
+    try {
+      const roomSnap = await getDoc(roomRef);
+      if (roomSnap.exists()) {
+        const roomData = roomSnap.data() as OneOnOneChatRoom;
+        // Only update if not already left and room is not already in a terminal state by other means
+        if (!roomData.participantsData[currentUser.uid]?.hasLeft && 
+            !['closed', 'closed_by_leave', 'closed_by_decline'].includes(roomData.status)) {
+              
+          let newStatus: OneOnOneChatRoomStatus = roomData.status;
+          const otherUid = roomData.participantUids.find(uid => uid !== currentUser.uid);
+          const otherParticipantHasLeft = otherUid ? roomData.participantsData[otherUid]?.hasLeft : true;
+
+          if (roomData.participantUids.length === 1 || otherParticipantHasLeft) {
+            // If I am the last one or the other has already left, the room is fully closed.
+            newStatus = 'closed_by_leave';
+          } else {
+            // If the other person is still there, just mark me as left, their client will see this and close.
+            newStatus = 'closed_by_leave'; // Indicate one person left
+          }
+
+          await updateDoc(roomRef, {
+            [`participantsData.${currentUser.uid}.hasLeft`]: true,
+            status: newStatus,
+          });
+
+          // If I determined I am the last one effectively, I can initiate cleanup.
+          if (newStatus === 'closed_by_leave' && (roomData.participantUids.length === 1 || otherParticipantHasLeft)) {
+            // This will be caught by the onSnapshot listener of the (now ex) other user, or just cleanup
+            cleanupRoomAndNavigate(roomId, "Sohbetten ayrıldınız, oda kapatılıyor.");
+            return; 
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error during leave logic:", error);
+    }
+    // Fallback navigation if cleanup isn't triggered by status change
+    if (!hasNavigatedAwayRef.current) { // Double check, as cleanupRoomAndNavigate sets it
+        router.replace("/matchmaking");
+    }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, roomId, router, cleanupRoomAndNavigate]); // cleanupRoomAndNavigate added
 
   useEffect(() => {
-    const performLeaveActions = async () => {
-        if (!roomId || !currentUser || !roomDetails || ['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status) || hasLeftRoomRef.current) {
-            return;
-        }
-        // Mark as left, actual closing/cleanup handled by room status listener or other user
-        const roomRef = doc(db, "oneOnOneChats", roomId);
-        try {
-            const currentRoomSnap = await getDoc(roomRef);
-            if (currentRoomSnap.exists()) { // Check if room still exists
-                 const currentData = currentRoomSnap.data() as OneOnOneChatRoom;
-                 // Only update if not already marked as left by this instance
-                 if (!currentData.participantsData[currentUser.uid]?.hasLeft) {
-                    await updateDoc(roomRef, {
-                        [`participantsData.${currentUser.uid}.hasLeft`]: true,
-                        // if the other user has also left, or if only I was in a waiting room, then I can set status to closed_by_leave
-                        // otherwise, the other user's client will handle the status change when it detects I've left
-                    });
-                 }
-
-                // Smart cleanup logic
-                const updatedRoomSnap = await getDoc(roomRef); // Re-fetch to get the latest state
-                if (updatedRoomSnap.exists()) {
-                    const updatedRoomData = updatedRoomSnap.data() as OneOnOneChatRoom;
-                    const otherUid = updatedRoomData.participantUids.find(uid => uid !== currentUser.uid);
-                    const iAmLastOneEffectively = !otherUid || updatedRoomData.participantsData[otherUid]?.hasLeft;
-
-                    if (iAmLastOneEffectively && updatedRoomData.status !== 'closed' && updatedRoomData.status !== 'closed_by_leave' && updatedRoomData.status !== 'closed_by_decline') {
-                        await updateDoc(roomRef, { status: "closed_by_leave"});
-                        // cleanupRoom will be triggered by the status listener
-                    } else if (updatedRoomData.participantUids.length === 2 && updatedRoomData.participantsData[currentUser.uid]?.hasLeft && !updatedRoomData.participantsData[otherUid as string]?.hasLeft && updatedRoomData.status === 'active') {
-                        // If I'm leaving and the other person is still active, set to closed_by_leave so they get notified to cleanup
-                        await updateDoc(roomRef, { status: "closed_by_leave"});
-                    }
-                }
-            }
-        } catch (error) {
-          console.error("Error during cleanup on unmount/beforeunload:", error);
-        }
-    };
-
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-       if (roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status) && !hasLeftRoomRef.current) {
-            // performLeaveActions is async, but beforeunload must be sync.
-            // We can't reliably await it. We'll update Firestore, and the listeners will handle the rest.
-            if (currentUser && roomId) {
-                 const roomRef = doc(db, "oneOnOneChats", roomId);
-                 updateDoc(roomRef, { [`participantsData.${currentUser.uid}.hasLeft`]: true, status: 'closed_by_leave' }).catch(console.error);
-            }
+       // This is a best-effort attempt. Complex async logic here is unreliable.
+       // The goal is to quickly mark the user as 'hasLeft'.
+       if (currentUser && roomId && roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status) && !hasNavigatedAwayRef.current) {
+            // Fire-and-forget update. The onSnapshot listeners should handle the rest.
+            const roomRef = doc(db, "oneOnOneChats", roomId);
+            updateDoc(roomRef, { 
+                [`participantsData.${currentUser.uid}.hasLeft`]: true,
+                status: 'closed_by_leave' // Assume this if tab is closed abruptly
+            }).catch(console.error);
        }
     };
     
     window.addEventListener("beforeunload", handleBeforeUnload);
-
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (!hasLeftRoomRef.current && roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'friends_chat'].includes(roomDetails.status)) {
-        performLeaveActions(); 
+      // Call the leave logic when the component unmounts if not already navigated
+      if (!hasNavigatedAwayRef.current) {
+        handleLeaveLogic();
       }
     };
-  }, [roomId, currentUser, roomDetails, cleanupRoom]); 
+  }, [currentUser, roomId, roomDetails, handleLeaveLogic]);
 
 
   const scrollToBottom = () => {
@@ -320,7 +346,7 @@ export default function RandomChatRoomPage() {
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !roomId || !roomDetails || !['active', 'friends_chat'].includes(roomDetails.status)) {
+    if (hasNavigatedAwayRef.current || !currentUser || !newMessage.trim() || !roomId || !roomDetails || !['active', 'friends_chat'].includes(roomDetails.status)) {
         toast({ title: "Gönderilemedi", description: "Mesaj göndermek için uygun durumda değilsiniz.", variant: "destructive" });
         return;
     }
@@ -345,13 +371,14 @@ export default function RandomChatRoomPage() {
   };
 
   const handleFriendDecision = async (decision: 'yes' | 'no') => {
-    if (!currentUser || !roomId || !roomDetails || !otherParticipant || actionLoading || roomDetails.status !== 'active') return;
+    if (hasNavigatedAwayRef.current || !currentUser || !roomId || !roomDetails || !otherParticipant || actionLoading || roomDetails.status !== 'active') return;
     setActionLoading(true);
     const roomRef = doc(db, "oneOnOneChats", roomId);
     try {
       await updateDoc(roomRef, {
         [`participantsData.${currentUser.uid}.decision`]: decision,
       });
+      // The onSnapshot listener will handle the consequences (becoming friends or closing room)
     } catch (error) {
       console.error("Error making friend decision:", error);
       toast({ title: "Hata", description: "Kararınız kaydedilirken bir sorun oluştu.", variant: "destructive" });
@@ -361,25 +388,13 @@ export default function RandomChatRoomPage() {
   };
 
   const handleLeaveRoomButtonClick = async () => {
-    if (!currentUser || !roomId || hasLeftRoomRef.current) return;
-    hasLeftRoomRef.current = true; 
+    if (hasNavigatedAwayRef.current) return;
     toast({ title: "Ayrılıyor...", description: "Sohbetten ayrılıyorsunuz..." });
-    
-    const roomRef = doc(db, "oneOnOneChats", roomId);
-    try {
-        await updateDoc(roomRef, {
-            [`participantsData.${currentUser.uid}.hasLeft`]: true,
-            status: 'closed_by_leave' 
-        });
-    } catch (error) {
-        console.error("Error leaving room via button:", error);
-        toast({ title: "Hata", description: "Odadan ayrılırken bir sorun oluştu.", variant: "destructive" });
-        router.replace("/matchmaking"); 
-    }
+    await handleLeaveLogic(); // This will set hasNavigatedAwayRef and handle navigation/cleanup
   };
 
 
-  if (loadingRoom || authLoading || !currentUser || !roomDetails) { 
+  if (loadingRoom || authLoading || !currentUser || (!roomDetails && !hasNavigatedAwayRef.current)) { 
     return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -388,7 +403,18 @@ export default function RandomChatRoomPage() {
     );
   }
   
-  if (roomDetails.status === 'waiting' && roomDetails.participantUids.includes(currentUser.uid) && roomDetails.participantUids.length === 1) {
+  // If roomDetails is null AFTER loading and we haven't started navigating away, it's an issue.
+  if (!roomDetails && !loadingRoom && !hasNavigatedAwayRef.current) {
+     cleanupRoomAndNavigate(roomId, "Oda verileri yüklenemedi veya oda mevcut değil.");
+     return ( // Fallback UI during navigation
+        <div className="flex flex-1 items-center justify-center min-h-screen">
+            <Loader2 className="h-12 w-12 animate-spin text-destructive" />
+            <p className="ml-2 text-lg text-destructive">Oda hatası, yönlendiriliyor...</p>
+        </div>
+     );
+  }
+  
+  if (roomDetails?.status === 'waiting' && roomDetails.participantUids.includes(currentUser.uid) && roomDetails.participantUids.length === 1) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-4 space-y-6">
         <Card className="w-full max-w-md shadow-xl">
@@ -398,12 +424,7 @@ export default function RandomChatRoomPage() {
             <CardDescription>Sizin için birisi aranıyor. Lütfen bekleyin.</CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button variant="outline" onClick={() => {
-                hasLeftRoomRef.current = true; // Mark as left before navigating
-                const roomRef = doc(db, "oneOnOneChats", roomId);
-                deleteDoc(roomRef).catch(e => console.error("Error deleting waiting room on cancel: ", e));
-                router.push('/matchmaking');
-            }}>
+            <Button variant="outline" onClick={handleLeaveRoomButtonClick}>
                  İptal Et ve Geri Dön
             </Button>
           </CardContent>
@@ -412,8 +433,8 @@ export default function RandomChatRoomPage() {
     );
   }
   
-  const myCurrentDecision = roomDetails.participantsData[currentUser.uid]?.decision;
-  const canSendMessage = ['active', 'friends_chat'].includes(roomDetails.status);
+  const myCurrentDecision = roomDetails?.participantsData[currentUser.uid]?.decision;
+  const canSendMessage = roomDetails && ['active', 'friends_chat'].includes(roomDetails.status);
 
 
   return (
@@ -422,7 +443,7 @@ export default function RandomChatRoomPage() {
       <div className="flex flex-col flex-1 bg-card sm:rounded-l-xl shadow-lg overflow-hidden">
         <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
             <Button variant="ghost" size="icon" asChild className="sm:hidden flex-shrink-0 h-9 w-9">
-              <Link href="/matchmaking">
+              <Link href="/matchmaking" onClick={(e) => { e.preventDefault(); handleLeaveRoomButtonClick();}}>
                 <ArrowLeft className="h-5 w-5" />
                 <span className="sr-only">Geri</span>
               </Link>
@@ -439,7 +460,7 @@ export default function RandomChatRoomPage() {
               <p className="text-xs text-muted-foreground truncate">ile rastgele sohbet</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 h-9 px-2.5" onClick={handleLeaveRoomButtonClick} disabled={hasLeftRoomRef.current || actionLoading}>
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 h-9 px-2.5" onClick={handleLeaveRoomButtonClick} disabled={hasNavigatedAwayRef.current || actionLoading}>
             <LogOut className="mr-1.5 h-4 w-4" /> Ayrıl
           </Button>
         </header>
@@ -452,7 +473,7 @@ export default function RandomChatRoomPage() {
                 <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p>
             </div>
           )}
-          {(!canSendMessage && roomDetails.status !== 'waiting') && (
+          {(!canSendMessage && roomDetails?.status !== 'waiting') && (
              <div className="text-center text-destructive py-10 px-4">
                 <AlertTriangle className="mx-auto h-16 w-16 text-destructive/80 mb-3" />
                 <p className="text-lg font-semibold">Sohbet Kapalı</p>
@@ -491,7 +512,7 @@ export default function RandomChatRoomPage() {
 
         <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
           <div className="relative flex items-center gap-2">
-            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading || hasNavigatedAwayRef.current} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
               <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
               <span className="sr-only">Emoji Ekle</span>
             </Button>
@@ -501,14 +522,14 @@ export default function RandomChatRoomPage() {
               onChange={(e) => setNewMessage(e.target.value)}
               className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
               autoComplete="off"
-              disabled={!canSendMessage || isSending || authLoading}
+              disabled={!canSendMessage || isSending || authLoading || hasNavigatedAwayRef.current}
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-              <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+              <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading || hasNavigatedAwayRef.current} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
                 <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
                 <span className="sr-only">Dosya Ekle</span>
               </Button>
-              <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || authLoading}>
+              <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || authLoading || hasNavigatedAwayRef.current}>
                 {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 <span className="sr-only">Gönder</span>
               </Button>
@@ -518,11 +539,11 @@ export default function RandomChatRoomPage() {
       </div>
 
       {/* Side Panel for Friend Decision - Adjusted for responsiveness */}
-      {roomDetails.status !== 'closed' && roomDetails.status !== 'closed_by_leave' && roomDetails.status !== 'closed_by_decline' && otherParticipant && (
+      {roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'waiting'].includes(roomDetails.status) && otherParticipant && (
         <Card className={cn(
             "bg-card flex flex-col sm:rounded-r-xl sm:border-l",
-            "sm:max-w-[220px] md:max-w-[240px] lg:max-w-[280px]", // Responsive max width
-            roomDetails.status === 'friends_chat' ? "p-3 sm:p-4" : "p-3 sm:p-4" 
+            "w-full sm:max-w-[220px] md:max-w-[240px] lg:max-w-[280px]", // Responsive max width
+            "p-3 sm:p-4" 
         )}>
           <CardHeader className="text-center border-b pb-3 pt-2 sm:pb-4">
             <Avatar className="h-16 w-16 sm:h-20 sm:w-20 mx-auto mb-2 sm:mb-3">
@@ -551,7 +572,7 @@ export default function RandomChatRoomPage() {
                       size="sm"
                       className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs sm:text-sm" 
                       onClick={() => handleFriendDecision('yes')}
-                      disabled={actionLoading}
+                      disabled={actionLoading || hasNavigatedAwayRef.current}
                     >
                       {actionLoading ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="mr-1 sm:mr-2 h-4 w-4" />} Evet
                     </Button>
@@ -559,7 +580,7 @@ export default function RandomChatRoomPage() {
                       size="sm"
                       className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm" 
                       onClick={() => handleFriendDecision('no')}
-                      disabled={actionLoading}
+                      disabled={actionLoading || hasNavigatedAwayRef.current}
                     >
                        {actionLoading ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="mr-1 sm:mr-2 h-4 w-4" />} Hayır
                     </Button>
@@ -591,4 +612,4 @@ export default function RandomChatRoomPage() {
     </div>
   );
 }
-
+    
