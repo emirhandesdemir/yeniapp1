@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCheck, UserX, LogOut, AlertTriangle, UserPlus, MessageSquare, Clock } from "lucide-react";
-import Link from "next/link";
+// import Link from "next/link"; // Gerekli değilse kaldırıldı
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback } from "react";
 import { db } from "@/lib/firebase";
@@ -26,7 +26,7 @@ import {
   writeBatch,
   getDocs,
 } from "firebase/firestore";
-import { useAuth, type UserData } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext"; // UserData'yı AuthContext'ten alıyoruz
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +43,7 @@ export interface ParticipantData {
 export interface OneOnOneChatRoom {
   id: string;
   participantUids: string[];
-  participantsData: { [key: string]: ParticipantData }; // key is uid
+  participantsData: { [key: string]: ParticipantData }; 
   status: OneOnOneChatRoomStatus;
   createdAt: Timestamp;
 }
@@ -91,7 +91,8 @@ export default function RandomChatRoomPage() {
     if (hasNavigatedAwayRef.current) return;
     hasNavigatedAwayRef.current = true;
 
-    toast({ title: "Sohbet Sona Erdi", description: reason, variant: isError ? "destructive" : "default" });
+    // console.log(`[RandomChat Cleanup] Room: ${currentRoomId}, Reason: ${reason}, Error: ${isError}`);
+    toast({ title: "Sohbet Durumu", description: reason, variant: isError ? "destructive" : "default" });
     
     if (roomUnsubscribeRef.current) roomUnsubscribeRef.current();
     if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
@@ -104,25 +105,15 @@ export default function RandomChatRoomPage() {
       if (roomSnap.exists()) {
          const roomData = roomSnap.data() as OneOnOneChatRoom;
          let shouldDelete = false;
-         if (currentUser && roomData.participantUids.includes(currentUser.uid)) {
-            if (roomData.status === 'waiting' && roomData.participantUids.length === 1) { 
-                shouldDelete = true;
-            } else if (['closed_by_leave', 'closed_by_decline'].includes(roomData.status) ) {
-                const myData = roomData.participantsData[currentUser.uid];
-                if (myData?.hasLeft || myData?.decision === 'no') {
-                    shouldDelete = true;
-                } else {
-                    const otherUserUid = roomData.participantUids.find(uid => uid !== currentUser.uid);
-                    if (otherUserUid && (roomData.participantsData[otherUserUid]?.hasLeft || roomData.participantsData[otherUserUid]?.decision === 'no')) {
-                        shouldDelete = true;
-                    }
-                }
-            } else if (roomData.status === 'closed') { 
-                shouldDelete = true;
-            }
+         // Oda durumuna göre silme kararı ver
+         if (['waiting', 'closed_by_leave', 'closed_by_decline', 'closed'].includes(roomData.status) ) {
+            shouldDelete = true;
          }
+         // Eğer aktif ve katılımcı sayısı 2'den azsa (biri ayrılmış olabilir), bu da silme nedeni olabilir
+         // Ancak bu durum `closed_by_leave` ile zaten yakalanmalı.
 
         if (shouldDelete) {
+            // console.log(`[RandomChat Cleanup] Deleting room ${currentRoomId} and its messages.`);
             const messagesQuery = query(collection(db, `oneOnOneChats/${currentRoomId}/messages`));
             const messagesSnapshot = await getDocs(messagesQuery);
             const batch = writeBatch(db);
@@ -130,175 +121,31 @@ export default function RandomChatRoomPage() {
             await batch.commit(); 
             
             await deleteDoc(roomRef);
+        } else {
+            // console.log(`[RandomChat Cleanup] Room ${currentRoomId} not deleted based on status: ${roomData.status}`);
         }
       }
     } catch (error) {
       console.error("Error cleaning up room:", currentRoomId, error);
+      // Hata olsa bile yönlendirmeyi dene
     } finally {
       router.replace("/matchmaking");
     }
-  }, [router, toast, currentUser]);
-
-
-  useEffect(() => {
-    hasNavigatedAwayRef.current = false;
-  }, [roomId, currentUser]);
-
-
-  useEffect(() => {
-    if (!roomId || !currentUser || authLoading) {
-      if (!authLoading && !currentUser && !hasNavigatedAwayRef.current) {
-        router.replace("/matchmaking");
-      }
-      return;
-    }
-    
-    setLoadingRoom(true); 
-    const roomRef = doc(db, "oneOnOneChats", roomId);
-
-    roomUnsubscribeRef.current = onSnapshot(roomRef, (docSnap) => {
-      if (hasNavigatedAwayRef.current) return;
-
-      if (docSnap.exists()) {
-        const data = docSnap.data() as Omit<OneOnOneChatRoom, 'id'>;
-        const currentRoomData = { id: docSnap.id, ...data };
-        setRoomDetails(currentRoomData);
-
-        const myUid = currentUser.uid;
-
-        if (!currentRoomData.participantUids.includes(myUid)) {
-           if (currentRoomData.status !== 'waiting' || (currentRoomData.status === 'waiting' && currentRoomData.participantUids.length > 0 && currentRoomData.participantUids[0] !== myUid)) {
-            cleanupRoomAndNavigate(roomId, "Bu sohbete erişiminiz yok (katılımcı değilsiniz).", true);
-            return;
-          }
-        }
-        
-        const myData = currentRoomData.participantsData[myUid];
-        if (!myData && currentRoomData.status !== 'waiting') {
-          cleanupRoomAndNavigate(roomId, "Katılımcı veriniz bulunamadı, oda kapatılıyor.", true);
-          return;
-        }
-
-        const otherUserUid = currentRoomData.participantUids.find(uid => uid !== myUid);
-        if (otherUserUid) {
-          const otherData = currentRoomData.participantsData[otherUserUid];
-          if (otherData) {
-            setOtherParticipant(otherData);
-          } else if (currentRoomData.status === 'active' && currentRoomData.participantUids.length === 2) {
-            cleanupRoomAndNavigate(roomId, "Rakip katılımcının detayları eksik, oda kapatılıyor.", true);
-            return;
-          }
-        } else if (currentRoomData.status === 'active' && currentRoomData.participantUids.length === 2) {
-            cleanupRoomAndNavigate(roomId, "Katılımcı yapısı tutarsız (aktif oda, diğer yok).", true);
-            return;
-        }
-
-        if (['closed', 'closed_by_leave', 'closed_by_decline'].includes(currentRoomData.status)) {
-          cleanupRoomAndNavigate(roomId, "Bu sohbet oturumu sona erdi.");
-          return;
-        }
-        
-        if (myData?.hasLeft && currentRoomData.status !== 'friends_chat') {
-          cleanupRoomAndNavigate(roomId, "Sohbetten ayrıldınız.");
-          return;
-        }
-        
-        if (otherUserUid && currentRoomData.participantsData[otherUserUid]?.hasLeft && currentRoomData.status !== 'friends_chat' && !myData?.hasLeft) {
-          if (!hasNavigatedAwayRef.current) { 
-            updateDoc(roomRef, { 
-              [`participantsData.${myUid}.hasLeft`]: true,
-              status: "closed_by_leave" 
-            }).catch(e => console.error("[RandomChat] Error updating self as left after other left: ", e));
-            return;
-          }
-        }
-
-        if (currentRoomData.status === 'active' && otherUserUid) {
-          const myDecision = myData?.decision;
-          const otherDecision = currentRoomData.participantsData[otherUserUid]?.decision;
-
-          if (myDecision === 'no' || otherDecision === 'no') {
-            if (currentRoomData.status !== 'closed_by_decline') { 
-              updateDoc(roomRef, { status: "closed_by_decline" })
-                  .catch(e => console.error("[RandomChat] Error on decline status update: ", e));
-            }
-            return; 
-          }
-          if (myDecision === 'yes' && otherDecision === 'yes' && currentRoomData.status !== 'friends_chat') {
-            updateDoc(roomRef, { status: "friends_chat" })
-            .then(async () => {
-              if (otherParticipant && userData) {
-                const myFriendRef = doc(db, `users/${myUid}/confirmedFriends`, otherParticipant.uid);
-                const friendSnap = await getDoc(myFriendRef);
-                if (!friendSnap.exists()) {
-                  const batch = writeBatch(db);
-                  batch.set(myFriendRef, {
-                    displayName: otherParticipant.displayName,
-                    photoURL: otherParticipant.photoURL,
-                    addedAt: serverTimestamp()
-                  });
-                  const theirFriendRef = doc(db, `users/${otherParticipant.uid}/confirmedFriends`, myUid);
-                  batch.set(theirFriendRef, {
-                    displayName: userData.displayName,
-                    photoURL: userData.photoURL,
-                    addedAt: serverTimestamp()
-                  });
-                  await batch.commit();
-                  toast({title: "Arkadaş Eklendi!", description: `${otherParticipant.displayName} ile artık arkadaşsınız.`});
-                }
-              }
-            }).catch(e => console.error("[RandomChat] Error updating to friends_chat: ", e));
-          }
-        }
-        setLoadingRoom(false); 
-      } else { 
-        cleanupRoomAndNavigate(roomId, "Sohbet odası bulunamadı veya silindi.", true);
-      }
-    }, (error) => {
-      console.error("Error fetching 1v1 room details:", error);
-      if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Oda bilgilerine erişilemiyor.", true);
-    });
-
-    const messagesQuery = query(collection(db, `oneOnOneChats/${roomId}/messages`), orderBy("timestamp", "asc"));
-    messagesUnsubscribeRef.current = onSnapshot(messagesQuery, (querySnapshot) => {
-      if (hasNavigatedAwayRef.current) return;
-      const fetchedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        fetchedMessages.push({
-          id: doc.id,
-          text: data.text,
-          senderId: data.senderId,
-          timestamp: data.timestamp,
-        });
-      });
-      setMessages(fetchedMessages.map(msg => ({
-        ...msg,
-        isOwn: msg.senderId === currentUser.uid, 
-      })));
-      setTimeout(() => scrollToBottom(), 0); 
-    }, (error) => {
-      console.error("[RandomChat] Error fetching messages:", error);
-    });
-
-    return () => {
-      if (roomUnsubscribeRef.current) roomUnsubscribeRef.current();
-      if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
-      if (waitingTimeoutRef.current) clearInterval(waitingTimeoutRef.current);
-    };
-  }, [roomId, currentUser, authLoading, router, cleanupRoomAndNavigate, userData, otherParticipant, toast]);
+  }, [router, toast]); // roomId bağımlılıklardan çıkarıldı, currentRoomId parametre olarak alınıyor
 
 
   const handleLeaveLogic = useCallback(async (isTimeout = false) => {
     if (!currentUser || !roomId || hasNavigatedAwayRef.current) return;
+    // console.log(`[RandomChat handleLeaveLogic] User: ${currentUser.uid}, Room: ${roomId}, Timeout: ${isTimeout}`);
     
     const roomRef = doc(db, "oneOnOneChats", roomId);
     try {
-      const roomSnap = await getDoc(roomRef);
+      const roomSnap = await getDoc(roomRef); // En güncel oda bilgisini al
       if (roomSnap.exists()) {
         const currentRoomData = roomSnap.data() as OneOnOneChatRoom;
         
         if (currentRoomData.participantsData[currentUser.uid]?.hasLeft && !isTimeout) {
+            // console.log("[RandomChat handleLeaveLogic] User already marked as left.");
             if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Sohbetten ayrıldınız.");
             return;
         }
@@ -310,49 +157,198 @@ export default function RandomChatRoomPage() {
         else if (['active', 'friends_chat'].includes(currentRoomData.status)) {
             newStatus = 'closed_by_leave';
         }
-        else if (['closed', 'closed_by_decline', 'closed_by_leave'].includes(currentRoomData.status)){
-            newStatus = currentRoomData.status;
-        }
         
         await updateDoc(roomRef, {
           [`participantsData.${currentUser.uid}.hasLeft`]: true,
           status: newStatus,
         });
-        if(newStatus === 'closed_by_leave' && !hasNavigatedAwayRef.current) {
-            if (currentRoomData.participantUids.length === 1 || 
-                (currentRoomData.participantUids.length === 2 && currentRoomData.participantUids.every(uid => uid === currentUser.uid || currentRoomData.participantsData[uid]?.hasLeft))) {
-                cleanupRoomAndNavigate(roomId, isTimeout ? "Bekleme süresi doldu." : "Sohbetten ayrıldınız.");
-            }
-        }
+        // Durum değişikliği onSnapshot tarafından yakalanıp cleanupRoomAndNavigate'i tetikleyecek.
       } else {
-         if (!hasNavigatedAwayRef.current) router.replace("/matchmaking");
+        // Oda zaten yoksa veya silinmişse, kullanıcıyı matchmaking'e yönlendir
+        if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Oda bulunamadı.", true);
       }
     } catch (error) {
       console.error("[RandomChat] Error during leave logic:", error);
       if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Ayrılırken bir hata oluştu.", true);
     }
-  }, [currentUser, roomId, cleanupRoomAndNavigate, router]);
+  }, [currentUser, roomId, cleanupRoomAndNavigate]);
 
   const handleLeaveLogicRef = useRef(handleLeaveLogic);
   useEffect(() => {
     handleLeaveLogicRef.current = handleLeaveLogic;
   }, [handleLeaveLogic]);
 
+
   useEffect(() => {
-    if (roomDetails?.status === 'waiting' && currentUser && roomDetails.participantUids[0] === currentUser.uid) {
+    // Ana oda ve mesaj dinleyici useEffect'i
+    if (!roomId || !currentUser || authLoading || hasNavigatedAwayRef.current) {
+      if (!authLoading && !currentUser && !hasNavigatedAwayRef.current) {
+        cleanupRoomAndNavigate(roomId, "Kullanıcı oturumu doğrulanamadı.", true);
+      }
+      return;
+    }
+    
+    // console.log(`[RandomChat MainEffect] Subscribing to room ${roomId}. Initial loadingRoom: ${loadingRoom}`);
+    // Sadece roomDetails null ise ve yeniden yükleme yapılıyorsa setLoadingRoom(true) yap
+    if (!roomDetails && loadingRoom) {
+        // setLoadingRoom(true) zaten başta true olduğu için burada tekrar set etmeye gerek yok
+    } else if (roomDetails && roomDetails.id !== roomId) {
+        // Oda ID'si değiştiyse, state'leri sıfırla ve yeniden yükle
+        setRoomDetails(null);
+        setMessages([]);
+        setOtherParticipant(null);
+        setLoadingRoom(true); // Yeniden yükleme için
+    }
+
+
+    roomUnsubscribeRef.current = onSnapshot(doc(db, "oneOnOneChats", roomId), (docSnap) => {
+      if (hasNavigatedAwayRef.current) return;
+
+      if (docSnap.exists()) {
+        const currentRoomData = { id: docSnap.id, ...docSnap.data() } as OneOnOneChatRoom;
+        // console.log("[RandomChat MainEffect] Room snapshot received:", currentRoomData);
+
+        const myUid = currentUser.uid;
+
+        if (!currentRoomData.participantUids.includes(myUid)) {
+           if (currentRoomData.status !== 'waiting' || (currentRoomData.status === 'waiting' && currentRoomData.participantUids.length > 0 && currentRoomData.participantUids[0] !== myUid)) {
+            if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Bu sohbete erişiminiz yok.", true);
+            return;
+          }
+        }
+        
+        const myData = currentRoomData.participantsData[myUid];
+        if (!myData && currentRoomData.status !== 'waiting') { // Waiting durumunda ilk katılımcının verisi olmayabilir
+          if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Katılımcı veriniz bulunamadı.", true);
+          return;
+        }
+
+        const otherUserUid = currentRoomData.participantUids.find(uid => uid !== myUid);
+        if (otherUserUid) {
+          const otherData = currentRoomData.participantsData[otherUserUid];
+          if (otherData) {
+            setOtherParticipant(otherData);
+          } else if (currentRoomData.status === 'active' && currentRoomData.participantUids.length === 2) {
+            // Aktif odada diğer katılımcının verisi yoksa bu bir sorundur, ama hemen kapatmak yerine biraz bekleyebiliriz
+            // Şimdilik bu durumu izleyelim, eğer sürekli oluyorsa daha katı bir kontrol eklenebilir
+            // console.warn(`[RandomChat MainEffect] Other participant data missing for active room ${roomId}`);
+          }
+        } else if (currentRoomData.status === 'active' && currentRoomData.participantUids.length === 2) {
+            if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Katılımcı yapısı tutarsız.", true);
+            return;
+        }
+        
+        setRoomDetails(currentRoomData); // Önce roomDetails'ı set et
+
+        // Terminal durum kontrolleri
+        if (['closed', 'closed_by_leave', 'closed_by_decline'].includes(currentRoomData.status)) {
+          let reason = "Bu sohbet oturumu sona erdi.";
+          if(currentRoomData.status === 'closed_by_leave') reason = "Bir katılımcı sohbetten ayrıldı.";
+          if(currentRoomData.status === 'closed_by_decline') reason = "Arkadaşlık teklifi reddedildi veya bir kullanıcı devam etmek istemedi.";
+          if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, reason);
+          return;
+        }
+        
+        if (myData?.hasLeft && currentRoomData.status !== 'friends_chat') {
+          if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Sohbetten ayrıldınız.");
+          return;
+        }
+        
+        if (otherUserUid && currentRoomData.participantsData[otherUserUid]?.hasLeft && currentRoomData.status !== 'friends_chat' && !myData?.hasLeft) {
+          if (!hasNavigatedAwayRef.current) { 
+            // Diğer kullanıcı ayrıldıysa, mevcut kullanıcıyı da ayrılmış say ve durumu güncelle
+            updateDoc(doc(db, "oneOnOneChats", roomId), { 
+              [`participantsData.${myUid}.hasLeft`]: true,
+              status: "closed_by_leave" 
+            }).catch(e => console.error("[RandomChat] Error updating self as left after other left: ", e));
+            // Bu güncelleme sonrası onSnapshot tekrar tetiklenecek ve cleanupRoomAndNavigate çağrılacak.
+            return; 
+          }
+        }
+
+        // Arkadaşlık kararları
+        if (currentRoomData.status === 'active' && otherUserUid && myData) {
+          const myDecision = myData.decision;
+          const otherDecision = currentRoomData.participantsData[otherUserUid]?.decision;
+
+          if (myDecision === 'no' || otherDecision === 'no') {
+            if (currentRoomData.status !== 'closed_by_decline') { 
+              updateDoc(doc(db, "oneOnOneChats", roomId), { status: "closed_by_decline" })
+                  .catch(e => console.error("[RandomChat] Error on decline status update: ", e));
+            }
+            return; 
+          }
+          if (myDecision === 'yes' && otherDecision === 'yes' && currentRoomData.status !== 'friends_chat') {
+            updateDoc(doc(db, "oneOnOneChats", roomId), { status: "friends_chat" })
+            .then(async () => {
+              if (otherParticipant && userData) { // userData null kontrolü eklendi
+                const myFriendRef = doc(db, `users/${myUid}/confirmedFriends`, otherParticipant.uid);
+                const friendSnap = await getDoc(myFriendRef);
+                if (!friendSnap.exists()) {
+                  const batch = writeBatch(db);
+                  batch.set(myFriendRef, {
+                    displayName: otherParticipant.displayName,
+                    photoURL: otherParticipant.photoURL,
+                    addedAt: serverTimestamp()
+                  });
+                  const theirFriendRef = doc(db, `users/${otherParticipant.uid}/confirmedFriends`, myUid);
+                  batch.set(theirFriendRef, {
+                    displayName: userData.displayName, // userData burada kullanılacak
+                    photoURL: userData.photoURL,
+                    addedAt: serverTimestamp()
+                  });
+                  await batch.commit();
+                  toast({title: "Arkadaş Eklendi!", description: `${otherParticipant.displayName} ile artık arkadaşsınız.`});
+                }
+              }
+            }).catch(e => console.error("[RandomChat] Error updating to friends_chat: ", e));
+          }
+        }
+        
+        if (loadingRoom) setLoadingRoom(false); // Tüm kontrollerden sonra loadingRoom'u false yap
+
+      } else { 
+        if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Sohbet odası bulunamadı.", true);
+      }
+    }, (error) => {
+      console.error("[RandomChat MainEffect] Error fetching 1v1 room details:", error);
+      if (!hasNavigatedAwayRef.current) cleanupRoomAndNavigate(roomId, "Oda bilgilerine erişirken hata.", true);
+    });
+
+    messagesUnsubscribeRef.current = onSnapshot(query(collection(db, `oneOnOneChats/${roomId}/messages`), orderBy("timestamp", "asc")), (querySnapshot) => {
+      if (hasNavigatedAwayRef.current) return;
+      const fetchedMessages: Message[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedMessages.push({ id: doc.id, ...doc.data()} as Message);
+      });
+      setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser.uid })));
+      setTimeout(() => scrollToBottom(), 0); 
+    }, (error) => {
+      console.error("[RandomChat MainEffect] Error fetching messages:", error);
+      // Mesaj hatası için odayı kapatmayalım, ama kullanıcıya bilgi verilebilir.
+    });
+
+    return () => {
+      if (roomUnsubscribeRef.current) roomUnsubscribeRef.current();
+      if (messagesUnsubscribeRef.current) messagesUnsubscribeRef.current();
+    };
+  }, [roomId, currentUser, authLoading, cleanupRoomAndNavigate, userData, loadingRoom]); // userData eklendi, otherParticipant çıkarıldı
+
+
+  useEffect(() => {
+    // Waiting durumundaki oda için zaman aşımı
+    if (roomDetails?.status === 'waiting' && currentUser && roomDetails.participantUids[0] === currentUser.uid && !hasNavigatedAwayRef.current) {
       setWaitingCountdown(WAITING_TIMEOUT_SECONDS);
       waitingTimeoutRef.current = setInterval(() => {
         setWaitingCountdown(prev => {
           if (prev <= 1) {
             clearInterval(waitingTimeoutRef.current!);
             waitingTimeoutRef.current = null;
-            // Check status again inside timeout to ensure it's still 'waiting'
-            getDoc(doc(db, "oneOnOneChats", roomId)).then(currentRoomSnap => {
-              if (currentRoomSnap.exists() && currentRoomSnap.data()?.status === 'waiting' && !hasNavigatedAwayRef.current) {
-                toast({ title: "Eşleşme Bulunamadı", description: "Bekleme süresi doldu, eşleşme bulunamadı.", variant: "destructive"});
+            // Zaman aşımı olduğunda handleLeaveLogic'i çağır, o da odayı kapatacak
+            if (!hasNavigatedAwayRef.current) { // Ekstra kontrol
+                // console.log("[RandomChat WaitingTimeout] Timeout reached. Calling handleLeaveLogic.");
                 handleLeaveLogicRef.current(true); 
-              }
-            });
+            }
             return 0;
           }
           return prev - 1;
@@ -367,24 +363,27 @@ export default function RandomChatRoomPage() {
     return () => {
       if (waitingTimeoutRef.current) clearInterval(waitingTimeoutRef.current);
     };
-  }, [roomDetails?.status, roomDetails?.participantUids, currentUser?.uid, roomId, toast]);
+  }, [roomDetails?.status, roomDetails?.participantUids, currentUser?.uid]); // handleLeaveLogicRef bağımlılıktan çıkarıldı
 
 
   useEffect(() => {
+    // Sayfadan ayrılma veya kapatma durumlarını yönet
     const beforeUnloadHandler = (event: BeforeUnloadEvent) => {
         if (currentUser && roomId && roomDetails && !hasNavigatedAwayRef.current && ['active', 'friends_chat', 'waiting'].includes(roomDetails.status) ) {
-            const roomRef = doc(db, "oneOnOneChats", roomId);
-            updateDoc(roomRef, {
+            // Sadece hasLeft'i güncelle, onSnapshot bunu yakalayıp gerisini halletmeli
+             updateDoc(doc(db, "oneOnOneChats", roomId), {
               [`participantsData.${currentUser.uid}.hasLeft`]: true,
               status: roomDetails.status === 'waiting' ? 'closed_by_leave' : 'closed_by_leave', 
-            }).catch(e => console.error("Error in beforeUnload update: ", e));
+            }).catch(e => console.warn("[RandomChat beforeUnload] Error updating doc: ", e));
         }
     };
-
     window.addEventListener('beforeunload', beforeUnloadHandler);
+    
     return () => {
       window.removeEventListener('beforeunload', beforeUnloadHandler);
+      // Component unmount olduğunda, eğer navigasyon zaten başlamadıysa, ayrılma mantığını çalıştır
       if (currentUser && roomId && !hasNavigatedAwayRef.current) {
+        // console.log("[RandomChat Unmount] Component unmounting. Calling handleLeaveLogic.");
         handleLeaveLogicRef.current();
       }
     };
@@ -407,7 +406,9 @@ export default function RandomChatRoomPage() {
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (hasNavigatedAwayRef.current || !currentUser || !newMessage.trim() || !roomId || !roomDetails || !['active', 'friends_chat'].includes(roomDetails.status)) {
-        toast({ title: "Gönderilemedi", description: "Mesaj göndermek için uygun durumda değilsiniz.", variant: "destructive" });
+        if (!['active', 'friends_chat'].includes(roomDetails?.status ?? '')) {
+            toast({ title: "Gönderilemedi", description: "Sohbet aktif değil.", variant: "destructive" });
+        }
         return;
     }
 
@@ -438,6 +439,7 @@ export default function RandomChatRoomPage() {
       await updateDoc(roomRef, {
         [`participantsData.${currentUser.uid}.decision`]: decision,
       });
+      // Karar sonrası durum değişikliği onSnapshot tarafından yakalanacak.
     } catch (error) {
       console.error("Error making friend decision:", error);
       toast({ title: "Hata", description: "Kararınız kaydedilirken bir sorun oluştu.", variant: "destructive" });
@@ -447,17 +449,19 @@ export default function RandomChatRoomPage() {
   };
 
   const handleLeaveRoomButtonClick = async () => {
-    if (hasNavigatedAwayRef.current) return;
-    toast({ title: "Ayrılıyor...", description: "Sohbetten ayrılıyorsunuz..." });
+    if (hasNavigatedAwayRef.current || actionLoading) return;
+    setActionLoading(true);
+    // console.log("[RandomChat LeaveButton] Clicked. Calling handleLeaveLogic.");
     await handleLeaveLogicRef.current(); 
+    setActionLoading(false);
   };
 
 
-  if (authLoading || (!currentUser && !hasNavigatedAwayRef.current)) { 
+  if (authLoading || (!currentUser && !hasNavigatedAwayRef.current && loadingRoom)) { 
     return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2 text-lg">Sohbet için kullanıcı doğrulanıyor...</p>
+        <p className="ml-2 text-lg">Kullanıcı doğrulanıyor...</p>
       </div>
     );
   }
@@ -466,17 +470,18 @@ export default function RandomChatRoomPage() {
      return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2 text-lg">Sohbet yükleniyor...</p>
+        <p className="ml-2 text-lg">Sohbet odası yükleniyor...</p>
       </div>
     );
   }
   
-  if (!roomDetails && !loadingRoom && !hasNavigatedAwayRef.current) {
-    cleanupRoomAndNavigate(roomId, "Oda verileri yüklenemedi veya oda mevcut değil (fallback).", true);
+  // roomDetails null ve loadingRoom false ise, muhtemelen cleanupRoomAndNavigate zaten çağrılmıştır.
+  // Bu durum için bir fallback gösterilebilir veya useEffect içinde yönlendirme beklenir.
+  if (!roomDetails && !loadingRoom) {
      return ( 
         <div className="flex flex-1 items-center justify-center min-h-screen">
-            <Loader2 className="h-12 w-12 animate-spin text-destructive" />
-            <p className="ml-2 text-lg text-destructive">Oda hatası, yönlendiriliyor...</p>
+            <AlertTriangle className="h-12 w-12 text-destructive" />
+            <p className="ml-2 text-lg text-destructive">Oda bilgileri yüklenemedi. Yönlendiriliyorsunuz...</p>
         </div>
      );
   }
@@ -489,12 +494,11 @@ export default function RandomChatRoomPage() {
             <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary mb-3" />
             <CardTitle className="text-2xl">Rakip Bekleniyor...</CardTitle>
             <CardDescription>
-              Sizin için birisi aranıyor. Lütfen bekleyin.
-              Kalan süre: {waitingCountdown > 0 ? `${waitingCountdown}s` : "doldu."}
+              Kalan süre: {waitingCountdown > 0 ? `${waitingCountdown}s` : "doldu..."}
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button variant="outline" onClick={handleLeaveRoomButtonClick} disabled={hasNavigatedAwayRef.current}>
+            <Button variant="outline" onClick={handleLeaveRoomButtonClick} disabled={hasNavigatedAwayRef.current || actionLoading}>
                  İptal Et ve Geri Dön
             </Button>
           </CardContent>
@@ -504,15 +508,16 @@ export default function RandomChatRoomPage() {
   }
   
   const myCurrentDecision = roomDetails?.participantsData[currentUser?.uid ?? '']?.decision;
-  const canSendMessage = roomDetails && ['active', 'friends_chat'].includes(roomDetails.status);
+  const canSendMessage = roomDetails && ['active', 'friends_chat'].includes(roomDetails.status) && !roomDetails.participantsData[currentUser?.uid ?? '']?.hasLeft && (!otherParticipant || !otherParticipant.hasLeft);
+
 
   return (
     <div className="flex flex-col sm:flex-row flex-1 h-[calc(100vh-theme(spacing.20))] sm:h-[calc(100vh-theme(spacing.24))] md:h-[calc(100vh-theme(spacing.28))] overflow-hidden">
+      {/* Sohbet Alanı */}
       <div className="flex flex-col flex-1 bg-card sm:rounded-l-xl shadow-lg overflow-hidden">
         <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-            <Button variant="ghost" size="icon" className="sm:hidden flex-shrink-0 h-9 w-9" onClick={handleLeaveRoomButtonClick} disabled={hasNavigatedAwayRef.current}>
+            <Button variant="ghost" size="icon" className="sm:hidden flex-shrink-0 h-9 w-9" onClick={handleLeaveRoomButtonClick} disabled={hasNavigatedAwayRef.current || actionLoading}>
                 <ArrowLeft className="h-5 w-5" />
-                <span className="sr-only">Geri</span>
             </Button>
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
@@ -539,11 +544,11 @@ export default function RandomChatRoomPage() {
                 <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p>
             </div>
           )}
-          {(!canSendMessage && roomDetails?.status !== 'waiting') && (
+          {(!canSendMessage && roomDetails?.status !== 'waiting' && roomDetails?.status !== 'friends_chat') && (
              <div className="text-center text-destructive py-10 px-4">
                 <AlertTriangle className="mx-auto h-16 w-16 text-destructive/80 mb-3" />
                 <p className="text-lg font-semibold">Sohbet Kapalı</p>
-                <p>Bu sohbet oturumu artık aktif değil.</p>
+                <p>Bu sohbet oturumu artık aktif değil veya bir katılımcı ayrıldı.</p>
             </div>
           )}
           {messages.map((msg) => (
@@ -578,9 +583,8 @@ export default function RandomChatRoomPage() {
 
         <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
           <div className="relative flex items-center gap-2">
-            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading || hasNavigatedAwayRef.current} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading || hasNavigatedAwayRef.current || actionLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
               <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
-              <span className="sr-only">Emoji Ekle</span>
             </Button>
             <Input
               placeholder={!canSendMessage ? "Mesaj gönderilemez." : "Mesajınızı yazın..."}
@@ -588,27 +592,26 @@ export default function RandomChatRoomPage() {
               onChange={(e) => setNewMessage(e.target.value)}
               className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
               autoComplete="off"
-              disabled={!canSendMessage || isSending || authLoading || hasNavigatedAwayRef.current}
+              disabled={!canSendMessage || isSending || authLoading || hasNavigatedAwayRef.current || actionLoading}
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-              <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading || hasNavigatedAwayRef.current} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+              <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || authLoading || hasNavigatedAwayRef.current || actionLoading} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
                 <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
-                <span className="sr-only">Dosya Ekle</span>
               </Button>
-              <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || authLoading || hasNavigatedAwayRef.current}>
+              <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || authLoading || hasNavigatedAwayRef.current || actionLoading}>
                 {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                <span className="sr-only">Gönder</span>
               </Button>
             </div>
           </div>
         </form>
       </div>
 
+      {/* Arkadaşlık Karar Paneli */}
       {roomDetails && !['closed', 'closed_by_leave', 'closed_by_decline', 'waiting'].includes(roomDetails.status) && otherParticipant && (
         <Card className={cn(
             "bg-card flex flex-col sm:rounded-r-xl sm:border-l",
-            "w-full sm:max-w-[200px] md:max-w-[220px] lg:max-w-[260px]", 
-            "p-2.5 sm:p-3" 
+            "w-full sm:w-[200px] md:w-[220px] lg:w-[260px]", // Farklı ekran boyutları için genişlik
+            "p-2.5 sm:p-3 mt-2 sm:mt-0" // Mobil için üstte boşluk
         )}>
           <CardHeader className="text-center border-b pb-2.5 pt-1.5 sm:pb-3">
             <Avatar className="h-14 w-14 sm:h-16 sm:w-16 mx-auto mb-1.5 sm:mb-2">
@@ -625,7 +628,7 @@ export default function RandomChatRoomPage() {
                 <p className="text-xs sm:text-sm font-semibold text-green-600">Artık arkadaşsınız!</p>
                 <p className="text-[10px] sm:text-xs text-muted-foreground text-center">Sohbete devam edebilirsiniz.</p>
             </CardContent>
-          ) : (
+          ) : ( // 'active' durumu
             <CardContent className="flex-grow flex flex-col justify-center items-center p-2 sm:p-3 space-y-2">
               {myCurrentDecision === 'pending' ? (
                 <>
@@ -663,10 +666,10 @@ export default function RandomChatRoomPage() {
                            <p className="text-[10px] text-red-500 font-semibold">Diğer kullanıcı reddetti.</p>
                       }
                   </div>
-              ) : ( 
+              ) : ( // myCurrentDecision === 'no'
                    <div className="text-center space-y-1">
                       <UserX className="h-5 w-5 sm:h-6 sm:w-6 text-red-500 mx-auto"/>
-                      <p className="text-xs text-red-600">Arkadaş olarak eklemedin.</p>
+                      <p className="text-xs text-red-500">Arkadaş olarak eklemedin.</p>
                        <p className="text-[10px] text-muted-foreground">Sohbet yakında kapanacak...</p>
                   </div>
               )}
@@ -677,4 +680,6 @@ export default function RandomChatRoomPage() {
     </div>
   );
 }
+    
+
     
