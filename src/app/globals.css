@@ -14,35 +14,35 @@ body {
     --card-foreground: 210 10% 23%;
     --popover: 0 0% 100%;
     --popover-foreground: 210 10% 23%;
-    --primary: 195 53% 79%; /* Light blue for primary elements */
-    --primary-foreground: 210 60% 10%; /* Dark blue for text on primary */
+    --primary: 210 60% 50%; /* Daha belirgin bir mavi */
+    --primary-foreground: 0 0% 100%; /* Beyaz */
     --secondary: 208 100% 92%; /* Lighter AliceBlue for secondary elements */
     --secondary-foreground: 210 20% 30%;
     --muted: 208 50% 90%;
     --muted-foreground: 208 20% 45%;
-    --accent: 160 100% 75%; /* Aquamarine for accent */
-    --accent-foreground: 160 100% 25%; /* Darker teal for text on accent */
+    --accent: 30 95% 60%; /* Daha canlı bir turuncu/kayısı */
+    --accent-foreground: 0 0% 10%; /* Koyu renk */
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 208 30% 85%;
     --input: 208 30% 90%;
-    --ring: 195 53% 70%; /* Ring color based on primary */
-    --chart-1: 195 53% 79%;
-    --chart-2: 160 100% 75%;
+    --ring: 210 60% 45%; /* Ring color based on new primary */
+    --chart-1: 210 60% 50%;
+    --chart-2: 30 95% 60%;
     --chart-3: 200 60% 70%;
     --chart-4: 180 50% 65%;
     --chart-5: 210 70% 80%;
     --radius: 0.5rem;
 
     /* Sidebar specific colors, derived from the main theme */
-    --sidebar-background: 208 100% 94%; /* Slightly darker/saturated background */
+    --sidebar-background: 208 100% 94%; 
     --sidebar-foreground: 210 20% 30%;
-    --sidebar-primary: 195 53% 70%; /* Primary color for active/hover items */
-    --sidebar-primary-foreground: 210 60% 10%;
-    --sidebar-accent: 160 100% 80%; /* Accent for less prominent hover */
-    --sidebar-accent-foreground: 160 100% 25%;
+    --sidebar-primary: 210 60% 45%; 
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 95% 65%; 
+    --sidebar-accent-foreground: 0 0% 10%;
     --sidebar-border: 208 30% 80%;
-    --sidebar-ring: 195 53% 65%;
+    --sidebar-ring: 210 60% 40%;
   }
 
   .dark {
@@ -54,28 +54,28 @@ body {
     --card-foreground: 208 100% 97%;
     --popover: 210 20% 10%;
     --popover-foreground: 208 100% 97%;
-    --primary: 195 53% 60%;
-    --primary-foreground: 195 53% 95%;
+    --primary: 210 60% 55%;
+    --primary-foreground: 0 0% 98%;
     --secondary: 210 20% 18%;
     --secondary-foreground: 208 100% 92%;
     --muted: 210 20% 20%;
     --muted-foreground: 208 50% 70%;
-    --accent: 160 100% 60%;
-    --accent-foreground: 160 100% 95%;
+    --accent: 30 95% 55%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 98%;
     --border: 210 20% 25%;
     --input: 210 20% 22%;
-    --ring: 195 53% 55%;
+    --ring: 210 60% 50%;
 
     --sidebar-background: 210 20% 12%;
     --sidebar-foreground: 208 100% 94%;
-    --sidebar-primary: 195 53% 55%;
-    --sidebar-primary-foreground: 195 53% 95%;
-    --sidebar-accent: 160 100% 50%;
-    --sidebar-accent-foreground: 160 100% 90%;
+    --sidebar-primary: 210 60% 50%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 30 95% 50%;
+    --sidebar-accent-foreground: 0 0% 95%;
     --sidebar-border: 210 20% 20%;
-    --sidebar-ring: 195 53% 50%;
+    --sidebar-ring: 210 60% 45%;
   }
 }
 
@@ -86,9 +86,7 @@ body {
   body {
     @apply bg-background text-foreground;
     /* Subtle gradient background */
-    @apply bg-gradient-to-br from-background to-blue-50; /* Blue-50 is a tailwind color, let's use a theme color */
-    background-image: linear-gradient(to bottom right, hsl(var(--background)), hsl(var(--primary) / 0.05));
-
+    @apply bg-gradient-to-br from-background to-primary/5;
   }
 }
 
@@ -128,4 +126,3 @@ body {
   transform: translateY(-20px);
   transition: opacity 300ms, transform 300ms;
 }
-
