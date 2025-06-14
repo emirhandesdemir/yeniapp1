@@ -1,13 +1,85 @@
+
 import type {NextConfig} from 'next';
 import withPWAInit from '@ducanh2912/next-pwa';
+
+const customRuntimeCaching = [
+  {
+    urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
+    handler: 'StaleWhileRevalidate' as const,
+    options: {
+      cacheName: 'firestore-data',
+      expiration: {
+        maxEntries: 50,
+        maxAgeSeconds: 60 * 60 * 24 * 1, // 1 gün
+      },
+      cacheableResponse: {
+        statuses: [0, 200],
+      },
+    },
+  },
+  {
+    urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/.*/i,
+    handler: 'CacheFirst' as const,
+    options: {
+      cacheName: 'firebase-images',
+      expiration: {
+        maxEntries: 60,
+        maxAgeSeconds: 60 * 60 * 24 * 30, // 30 gün
+      },
+      cacheableResponse: {
+        statuses: [0, 200], // 0, Firebase SDK'sı opak yanıtları önbelleğe aldığında kullanılır
+      },
+    },
+  },
+  {
+    urlPattern: /^https:\/\/placehold\.co\/.*/i,
+    handler: 'CacheFirst' as const,
+    options: {
+      cacheName: 'placeholder-images',
+      expiration: {
+        maxEntries: 20,
+        maxAgeSeconds: 60 * 60 * 24 * 30, // 30 gün
+      },
+      cacheableResponse: {
+        statuses: [0, 200],
+      },
+    },
+  },
+  // Google Fonts için bir strateji (opsiyonel, tarayıcı zaten iyi önbellekler)
+  {
+    urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+    handler: 'StaleWhileRevalidate' as const,
+    options: {
+      cacheName: 'google-fonts-stylesheets',
+    },
+  },
+  {
+    urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+    handler: 'CacheFirst' as const,
+    options: {
+      cacheName: 'google-fonts-webfonts',
+      expiration: {
+        maxEntries: 30,
+        maxAgeSeconds: 60 * 60 * 24 * 365, // 1 yıl
+      },
+      cacheableResponse: {
+        statuses: [0, 200],
+      },
+    },
+  },
+];
+
 
 const withPWA = withPWAInit({
   dest: 'public',
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
-  // Daha gelişmiş önbellekleme stratejileri için runtimeCaching gibi
-  // diğer PWA seçeneklerini buraya ekleyebilirsiniz.
+  runtimeCaching: customRuntimeCaching,
+  buildExcludes: [/middleware-manifest\.json$/], // next-pwa için önerilen buildExcludes
+  fallbacks: { // Temel çevrimdışı fallback sayfası (opsiyonel)
+    // document: '/offline', // Eğer bir /offline sayfanız varsa
+  }
 });
 
 const currentNextConfig: NextConfig = {
@@ -26,7 +98,7 @@ const currentNextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
-      { // Firebase Storage'dan gelen resimler için eklendi
+      { 
         protocol: 'https',
         hostname: 'firebasestorage.googleapis.com',
       },
