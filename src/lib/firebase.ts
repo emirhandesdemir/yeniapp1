@@ -10,17 +10,18 @@ const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
 const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
 
+// Ortam değişkenlerinin yüklenip yüklenmediğini kontrol et
 if (!apiKey || !authDomain || !projectId || !storageBucket || !messagingSenderId || !appId) {
   console.error("---------------------------------------------------------------------");
   console.error("Firebase Yapılandırma Hatası!");
-  console.error("Bir veya daha fazla Firebase ortam değişkeni eksik.");
-  console.error("Lütfen .env.local dosyanızdaki tüm NEXT_PUBLIC_FIREBASE_... değişkenlerinin ayarlandığından emin olun.");
-  if (!apiKey) console.error("Eksik: NEXT_PUBLIC_FIREBASE_API_KEY");
-  if (!authDomain) console.error("Eksik: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
-  if (!projectId) console.error("Eksik: NEXT_PUBLIC_FIREBASE_PROJECT_ID");
-  if (!storageBucket) console.error("Eksik: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET");
-  if (!messagingSenderId) console.error("Eksik: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID");
-  if (!appId) console.error("Eksik: NEXT_PUBLIC_FIREBASE_APP_ID");
+  console.error("Bir veya daha fazla Firebase ortam değişkeni eksik veya boş.");
+  console.error("Lütfen .env.local dosyanızdaki tüm NEXT_PUBLIC_FIREBASE_... değişkenlerinin doğru şekilde ayarlandığından emin olun:");
+  if (!apiKey) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_API_KEY");
+  if (!authDomain) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
+  if (!projectId) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+  if (!storageBucket) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET");
+  if (!messagingSenderId) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID");
+  if (!appId) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_APP_ID");
   console.error("Değişikliklerden sonra geliştirme sunucusunu yeniden başlattığınızdan emin olun.");
   console.error("---------------------------------------------------------------------");
   // Firebase, eksik veya geçersiz değerlerle başlatılırsa kendi özel hatasını (örn: auth/invalid-api-key) verecektir.
