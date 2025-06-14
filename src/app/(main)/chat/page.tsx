@@ -81,6 +81,8 @@ export default function ChatRoomsPage() {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
         const roomData = doc.data() as ChatRoom; 
+        // Süresi dolan odaları doğrudan filtrelemiyoruz, kartta farklı gösteriyoruz.
+        // Eğer tamamen gizlenmesi isteniyorsa burada filtreleme yapılabilir.
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -186,6 +188,8 @@ export default function ChatRoomsPage() {
     );
   }
 
+  const activeChatRooms = chatRooms.filter(room => !(room.expiresAt && isPast(room.expiresAt.toDate())));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -197,7 +201,7 @@ export default function ChatRoomsPage() {
           <DialogTrigger asChild>
             <Button 
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto" 
-              disabled={!currentUser || isUserLoading || isUserDataLoading }
+              disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
             >
               <PlusCircle className="mr-2 h-5 w-5" />
               Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
@@ -262,14 +266,14 @@ export default function ChatRoomsPage() {
         </Dialog>
       </div>
 
-      {chatRooms.length === 0 && !loading ? (
+      {activeChatRooms.length === 0 && !loading ? (
         <Card className="col-span-full">
             <CardHeader>
-                <CardTitle className="text-center">Henüz Sohbet Odası Yok</CardTitle>
+                <CardTitle className="text-center">Henüz Aktif Sohbet Odası Yok</CardTitle>
             </CardHeader>
             <CardContent>
                 <p className="text-muted-foreground text-center">
-                İlk sohbet odasını siz oluşturun!
+                İlk sohbet odasını siz oluşturun veya mevcut odaların süresi dolmuş olabilir!
                 </p>
                 <div className="flex justify-center mt-4">
                 <MessageSquare className="h-24 w-24 text-muted" />
@@ -278,8 +282,8 @@ export default function ChatRoomsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {chatRooms.map((room) => (
-            <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card ${room.expiresAt && isPast(room.expiresAt.toDate()) ? 'opacity-60' : ''}`}>
+          {activeChatRooms.map((room) => (
+            <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card`}>
               <div className="relative h-40 sm:h-48 w-full">
                 <Image
                   src={room.image || "https://placehold.co/600x400.png"}
@@ -323,13 +327,11 @@ export default function ChatRoomsPage() {
               </CardContent>
               <CardFooter className="p-3 sm:p-4">
                 <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" 
-                  disabled={(room.expiresAt && isPast(room.expiresAt.toDate())) || (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
+                  disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
                 >
                   <Link href={`/chat/${room.id}`}>
                     <LogIn className="mr-2 h-4 w-4" /> 
-                    {room.expiresAt && isPast(room.expiresAt.toDate()) 
-                        ? "Süresi Doldu" 
-                        : (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Odaya Katıl")}
+                    {(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Odaya Katıl")}
                   </Link>
                 </Button>
               </CardFooter>

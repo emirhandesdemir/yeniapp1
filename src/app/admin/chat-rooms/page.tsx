@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, deleteDoc, doc, Timestamp, query, orderBy, getDocs as getSubDocs } from "firebase/firestore"; 
+import { collection, getDocs, deleteDoc, doc, Timestamp, query, orderBy, writeBatch, where } from "firebase/firestore"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Trash2, Users, Clock, ListChecks as AdminListChecksIcon, ShieldAlert } from "lucide-react"; // Renamed ListChecks
+import { Loader2, Trash2, Users, Clock, ListChecks as AdminListChecksIcon, ShieldAlert, AlertTriangle } from "lucide-react"; // Renamed ListChecks
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +45,7 @@ export default function AdminChatRoomsPage() {
   const { userData: adminUserData } = useAuth();
   const [now, setNow] = useState(new Date());
   const [processingDelete, setProcessingDelete] = useState<string | null>(null);
+  const [processingBulkDelete, setProcessingBulkDelete] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -90,19 +91,25 @@ export default function AdminChatRoomsPage() {
 
   const handleDeleteRoom = async (roomId: string, roomName: string) => {
     setProcessingDelete(roomId);
+    const batch = writeBatch(db);
     try {
-      const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
-      const messagesSnapshot = await getSubDocs(messagesQuery); 
-      const deleteMessagePromises: Promise<void>[] = [];
-      messagesSnapshot.forEach((messageDoc) => {
-        deleteMessagePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id)));
-      });
-      await Promise.all(deleteMessagePromises);
+      // Delete messages sub-collection
+      const messagesRef = collection(db, `chatRooms/${roomId}/messages`);
+      const messagesSnap = await getDocs(messagesRef);
+      messagesSnap.forEach(msgDoc => batch.delete(msgDoc.ref));
 
-      await deleteDoc(doc(db, "chatRooms", roomId));
+      // Delete participants sub-collection
+      const participantsRef = collection(db, `chatRooms/${roomId}/participants`);
+      const participantsSnap = await getDocs(participantsRef);
+      participantsSnap.forEach(partDoc => batch.delete(partDoc.ref));
+      
+      // Delete the room document itself
+      batch.delete(doc(db, "chatRooms", roomId));
+
+      await batch.commit();
 
       setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId));
-      toast({ title: "Başarılı", description: `"${roomName}" odası ve tüm mesajları silindi.` });
+      toast({ title: "Başarılı", description: `"${roomName}" odası ve tüm içeriği silindi.` });
     } catch (error) {
       console.error("Error deleting room:", error);
       toast({ title: "Hata", description: "Oda silinirken bir sorun oluştu.", variant: "destructive" });
@@ -110,6 +117,59 @@ export default function AdminChatRoomsPage() {
       setProcessingDelete(null);
     }
   };
+
+  const handleBulkDeleteExpiredRooms = async () => {
+    if (!confirm("Süresi dolmuş tüm sohbet odalarını ve içeriklerini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.")) {
+      return;
+    }
+    setProcessingBulkDelete(true);
+    let deletedCount = 0;
+    try {
+      const roomsCollectionRef = collection(db, "chatRooms");
+      // Firestore'da `Timestamp.now()` doğrudan query'de kullanılamaz, bu yüzden client-side'da anlık zaman damgası oluşturuyoruz.
+      const currentTime = Timestamp.now();
+      const q = query(roomsCollectionRef, where("expiresAt", "<", currentTime));
+      const expiredRoomsSnapshot = await getDocs(q);
+
+      if (expiredRoomsSnapshot.empty) {
+        toast({ title: "Bilgi", description: "Silinecek süresi dolmuş oda bulunamadı." });
+        setProcessingBulkDelete(false);
+        return;
+      }
+      
+      const batchPromises = expiredRoomsSnapshot.docs.map(async (roomDoc) => {
+        const batch = writeBatch(db);
+        const roomId = roomDoc.id;
+        
+        const messagesRef = collection(db, `chatRooms/${roomId}/messages`);
+        const messagesSnap = await getDocs(messagesRef);
+        messagesSnap.forEach(msgDoc => batch.delete(msgDoc.ref));
+
+        const participantsRef = collection(db, `chatRooms/${roomId}/participants`);
+        const participantsSnap = await getDocs(participantsRef);
+        participantsSnap.forEach(partDoc => batch.delete(partDoc.ref));
+        
+        batch.delete(doc(db, "chatRooms", roomId));
+        await batch.commit();
+        deletedCount++;
+      });
+
+      await Promise.all(batchPromises);
+
+      // Update local state
+      setChatRooms(prevRooms => prevRooms.filter(room => 
+        !expiredRoomsSnapshot.docs.some(expiredDoc => expiredDoc.id === room.id)
+      ));
+
+      toast({ title: "Başarılı", description: `${deletedCount} süresi dolmuş oda silindi.` });
+    } catch (error) {
+      console.error("Error bulk deleting expired rooms:", error);
+      toast({ title: "Hata", description: "Süresi dolmuş odalar silinirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setProcessingBulkDelete(false);
+    }
+  };
+
 
   const getExpiryInfo = (expiresAt?: Timestamp): string => {
     if (!expiresAt) return "Süresiz";
@@ -162,12 +222,19 @@ export default function AdminChatRoomsPage() {
   return (
     <div className="space-y-6">
       <Card className="shadow-lg">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <AdminListChecksIcon className="h-7 w-7 text-primary" />
-            <CardTitle className="text-2xl font-headline">Oda Yönetimi</CardTitle>
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-3">
+              <AdminListChecksIcon className="h-7 w-7 text-primary" />
+              <CardTitle className="text-2xl font-headline">Oda Yönetimi</CardTitle>
+            </div>
+            <CardDescription>Uygulamadaki tüm sohbet odalarını görüntüleyin ve yönetin.</CardDescription>
           </div>
-          <CardDescription>Uygulamadaki tüm sohbet odalarını görüntüleyin ve yönetin.</CardDescription>
+          <Button onClick={handleBulkDeleteExpiredRooms} variant="outline" disabled={processingBulkDelete || loading} className="w-full sm:w-auto">
+            {processingBulkDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <AlertTriangle className="mr-2 h-4 w-4 text-orange-500"/>
+            Süresi Dolan Odaları Sil
+          </Button>
         </CardHeader>
         <CardContent>
           {chatRooms.length === 0 && !loading ? (
@@ -217,7 +284,7 @@ export default function AdminChatRoomsPage() {
                     <TableCell className="text-right">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm" disabled={processingDelete === room.id}>
+                          <Button variant="destructive" size="sm" disabled={processingDelete === room.id || processingBulkDelete}>
                             {processingDelete === room.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                             <span className="ml-1 hidden sm:inline">Sil</span>
                           </Button>
@@ -230,13 +297,13 @@ export default function AdminChatRoomsPage() {
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel disabled={!!processingDelete}>İptal</AlertDialogCancel>
+                            <AlertDialogCancel disabled={!!processingDelete || processingBulkDelete}>İptal</AlertDialogCancel>
                             <AlertDialogAction
                               onClick={() => handleDeleteRoom(room.id, room.name)}
-                              disabled={!!processingDelete}
+                              disabled={!!processingDelete || processingBulkDelete}
                               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                             >
-                              {processingDelete === room.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                              {(processingDelete === room.id) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                               Evet, Sil
                             </AlertDialogAction>
                           </AlertDialogFooter>
