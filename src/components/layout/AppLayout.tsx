@@ -20,9 +20,9 @@ import {
   Sun, 
   Moon,
   ShieldCheck,
-  UserCheck, // Added for accept icon
-  UserX, // Added for decline icon
-  Send // Added for outgoing request cancel
+  UserCheck, 
+  UserX, 
+  Send
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -34,7 +34,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuGroup
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
@@ -53,7 +52,8 @@ import {
   serverTimestamp,
   Timestamp,
   writeBatch,
-  getDoc
+  getDoc,
+  orderBy // Added orderBy import
 } from "firebase/firestore";
 
 interface NavItem {
@@ -154,7 +154,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   
   const [incomingRequests, setIncomingRequests] = React.useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = React.useState(true);
-  const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
+  const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({}); // For accept/decline buttons
 
   React.useEffect(() => {
     if (!currentUser?.uid) {
@@ -168,7 +168,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending"),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc") 
     );
 
     const unsubscribe = onSnapshot(incomingQuery, async (snapshot) => {
@@ -200,7 +200,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handleAcceptRequestPopover = async (request: FriendRequestForPopover) => {
-    if (!currentUser || !userData) return;
+    if (!currentUser || !userData || !request.userProfile) return;
     setActionLoading(request.id, true);
     try {
       const batch = writeBatch(db);
@@ -209,8 +209,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
       batch.set(myFriendRef, { 
-        displayName: request.userProfile?.displayName || request.fromUsername, 
-        photoURL: request.userProfile?.photoURL || request.fromAvatarUrl,
+        displayName: request.userProfile.displayName, 
+        photoURL: request.userProfile.photoURL,
         addedAt: serverTimestamp() 
       });
 
@@ -222,7 +222,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       });
       
       await batch.commit();
-      toast({ title: "Başarılı", description: `${request.fromUsername} ile arkadaş oldunuz.` });
+      toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
+      // No need to manually remove from incomingRequests, onSnapshot will update it
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -234,8 +235,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
+      // Instead of updating status to "declined", we can just delete the request
+      // or update status if we want to keep a record of declined requests.
+      // For simplicity here, we'll delete it.
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
+      // No need to manually remove, onSnapshot will update the list
     } catch (error) {
       console.error("Error declining friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
@@ -260,7 +265,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <SidebarContent />
       </div>
       <div className="flex flex-col">
-        <header className="flex h-16 items-center gap-2 sm:gap-4 border-b bg-card px-4 sm:px-6 sticky top-0 z-30"> {/* Increased z-index for header */}
+        <header className="flex h-16 items-center gap-2 sm:gap-4 border-b bg-card px-4 sm:px-6 sticky top-0 z-30">
           <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon" className="shrink-0 lg:hidden">
@@ -268,7 +273,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <span className="sr-only">Navigasyon menüsünü aç/kapat</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50"> {/* Ensure SheetContent has high z-index */}
+            <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50">
                <SheetHeader className="p-4 border-b">
                 <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
@@ -330,7 +335,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             size="icon" 
                             className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-800/50 dark:text-green-400"
                             onClick={() => handleAcceptRequestPopover(req)}
-                            disabled={performingAction[req.id]}
+                            disabled={performingAction[req.id] || !req.userProfile}
                             aria-label="Kabul Et"
                           >
                             {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
@@ -350,9 +355,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     ))}
                   </div>
                 )}
-                {/* <div className="p-2 border-t text-center">
-                  <Button variant="link" size="sm" className="text-xs" onClick={() => router.push('/friends')}>Tüm İstekleri Gör</Button>
-                </div> */}
               </PopoverContent>
             </Popover>
 
@@ -391,3 +393,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
