@@ -41,7 +41,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string) => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string, photoFile?: File | null }) => Promise<void>; 
+  updateUserProfile: (updates: { displayName?: string, photoFile?: File | null }) => Promise<boolean>; 
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>; 
   signInWithGoogle: () => Promise<void>;
 }
@@ -219,10 +219,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
   
-  const updateUserProfile = async (updates: { displayName?: string, photoFile?: File | null }) => {
+  const updateUserProfile = async (updates: { displayName?: string, photoFile?: File | null }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
-      return;
+      return false;
     }
     setIsUserLoading(true);
     const userDocRef = doc(db, "users", auth.currentUser.uid);
@@ -230,7 +230,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let authUpdates: { displayName?: string; photoURL?: string } = {};
 
     try {
-      // Handle photo upload first if a file is provided
       if (updates.photoFile) {
         const file = updates.photoFile;
         const fileExtension = file.name.split('.').pop();
@@ -238,14 +237,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         
         const uploadTask = uploadBytesResumable(profileImageRef, file);
         
+        // Wait for the upload to complete
         await new Promise<void>((resolve, reject) => {
           uploadTask.on('state_changed',
-            (snapshot) => {
-              // Optional: Handle progress
-            },
+            (snapshot) => { /* Optional: Handle progress */ },
             (error) => {
               console.error("Image upload error:", error);
-              toast({ title: "Fotoğraf Yükleme Hatası", description: "Fotoğraf yüklenirken bir sorun oluştu.", variant: "destructive" });
+              toast({ title: "Fotoğraf Yükleme Hatası", description: "Fotoğraf yüklenirken bir sorun oluştu: " + error.message, variant: "destructive" });
               reject(error);
             },
             async () => {
@@ -254,9 +252,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 authUpdates.photoURL = downloadURL;
                 firestoreUpdates.photoURL = downloadURL;
                 resolve();
-              } catch (urlError) {
+              } catch (urlError: any) {
                 console.error("Error getting download URL:", urlError);
-                toast({ title: "Fotoğraf URL Hatası", description: "Yüklenen fotoğrafın adresi alınamadı.", variant: "destructive" });
+                toast({ title: "Fotoğraf URL Hatası", description: "Yüklenen fotoğrafın adresi alınamadı: " + urlError.message, variant: "destructive" });
                 reject(urlError);
               }
             }
@@ -264,35 +262,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
         });
       }
 
-      // Handle displayName update
-      if (updates.displayName && updates.displayName !== (userData?.displayName || auth.currentUser.displayName)) {
+      if (updates.displayName && updates.displayName !== (userData?.displayName || auth.currentUser.displayName || "")) {
         authUpdates.displayName = updates.displayName;
         firestoreUpdates.displayName = updates.displayName;
       }
 
-      // Apply updates to Firebase Auth
-      if (Object.keys(authUpdates).length > 0) {
+      // Only proceed if there are actual changes to apply
+      const hasAuthUpdates = Object.keys(authUpdates).length > 0;
+      const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
+
+      if (!hasAuthUpdates && !hasFirestoreUpdates) {
+        // No actual changes were processed (e.g. photo upload failed before setting URLs, or display name was the same)
+        // If photo upload failed, a toast was already shown. If only display name was the same, it's not an error.
+        // toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
+        return true; // Considered "successful" as there was nothing to do or failure was handled.
+      }
+
+      if (hasAuthUpdates && auth.currentUser) { // Double check auth.currentUser
         await updateFirebaseProfile(auth.currentUser, authUpdates);
       }
       
-      // Apply updates to Firestore
-      if (Object.keys(firestoreUpdates).length > 0) {
+      if (hasFirestoreUpdates) {
         await updateDoc(userDocRef, firestoreUpdates);
       }
       
-      // Update local state
-      setCurrentUser(auth.currentUser ? { ...auth.currentUser } : null);
-      setUserData(prev => prev ? { ...prev, ...firestoreUpdates } : null);
+      // Manually trigger a refresh of the user object to get the latest photoURL/displayName from Auth
+      // This is important because onAuthStateChanged might not fire immediately or might provide a cached user.
+      await auth.currentUser?.reload();
+      const refreshedUser = auth.currentUser; // Get the reloaded user
+
+      setCurrentUser(refreshedUser ? { ...refreshedUser } : null); 
+      setUserData(prev => {
+          const newLocalData: Partial<UserData> = {};
+          if (firestoreUpdates.displayName) newLocalData.displayName = firestoreUpdates.displayName;
+          if (firestoreUpdates.photoURL) newLocalData.photoURL = firestoreUpdates.photoURL;
+          // If displayName came from refreshedUser and not in firestoreUpdates (e.g. only photo was in firestoreUpdates)
+          if (refreshedUser?.displayName && !newLocalData.displayName) newLocalData.displayName = refreshedUser.displayName;
+          if (refreshedUser?.photoURL && !newLocalData.photoURL) newLocalData.photoURL = refreshedUser.photoURL;
+          
+          return prev ? { ...prev, ...newLocalData } : null
+      });
 
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+      return true;
 
     } catch (error: any) {
-      console.error("Profile update error:", error);
-      // Toast for specific errors like upload or URL fetching are handled above.
-      // This is a more general catch-all.
-      if (!updates.photoFile) { // Avoid double-toasting if photo upload failed
-        toast({ title: "Profil Güncelleme Hatası", description: "Profil güncellenirken bir sorun oluştu.", variant: "destructive" });
+      console.error("Profile update error (outer catch):", error);
+      // Avoid double-toasting if a specific upload error was already shown
+      if (!(error.message?.includes("Fotoğraf yüklenirken") || error.message?.includes("adresi alınamadı"))) {
+          toast({ title: "Profil Güncelleme Hatası", description: "Profil güncellenirken bir sorun oluştu: " + error.message, variant: "destructive" });
       }
+      return false;
     } finally {
       setIsUserLoading(false);
     }
@@ -308,6 +328,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userDocRef = doc(db, "users", currentUser.uid);
       await updateDoc(userDocRef, { diamonds: newDiamondCount });
       setUserData(prev => prev ? { ...prev, diamonds: newDiamondCount } : null);
+      // toast({ title: "Başarılı", description: "Elmaslarınız güncellendi." }); // Optional: Can be too noisy
       return Promise.resolve();
     } catch (error) {
       console.error("Error updating diamonds:", error);

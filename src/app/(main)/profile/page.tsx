@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, type ChangeEvent, useRef } from "react";
-import Image from "next/image"; // next/image import edildi
+import Image from "next/image"; 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,14 +74,15 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     if (!currentUser) {
-      toast({ title: "Hata", description: "Profil kaydedilemedi, kullanıcı bulunamadı.", variant: "destructive" });
+      // AuthContext updateUserProfile already checks this and toasts, but good to have a guard.
       return;
     }
     
     const updates: { displayName?: string, photoFile?: File | null } = {};
     let profileChanged = false;
 
-    if (tempProfile.username.trim() !== (userData?.displayName || currentUser.displayName || "")) {
+    const currentDisplayName = userData?.displayName || currentUser.displayName || "";
+    if (tempProfile.username.trim() !== currentDisplayName) {
         if(tempProfile.username.trim().length < 3){
             toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
             return;
@@ -95,24 +96,22 @@ export default function ProfilePage() {
     }
 
     if (!profileChanged) {
-        setIsEditing(false); // No changes, just exit editing mode
+        setIsEditing(false); 
+        toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         return;
     }
 
-    try {
-      await updateUserProfile(updates);
-      toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+    const success = await updateUserProfile(updates);
+    if (success) {
       setIsEditing(false);
-      setSelectedFile(null); // Reset selected file after successful save
-      // previewImage will be updated by useEffect when userData changes
-    } catch (error: any) {
-      // Errors are typically handled within updateUserProfile, but a generic one here if needed.
-      // toast({ title: "Profil Güncelleme Hatası", description: error.message || "Bilinmeyen bir hata oluştu.", variant: "destructive" });
+      setSelectedFile(null); 
+      // previewImage will be updated by useEffect when userData/currentUser changes from AuthContext
     }
+    // Toasts for success/failure are handled by updateUserProfile in AuthContext
   };
   
   const getAvatarFallbackText = () => {
-    const nameToUse = tempProfile.username || userData?.displayName || currentUser?.displayName;
+    const nameToUse = isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName);
     if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
     return "PN"; 
@@ -146,7 +145,7 @@ export default function ProfilePage() {
           <div className="relative group">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
               <AvatarImage 
-                src={previewImage || "https://placehold.co/128x128.png"} // Use previewImage
+                src={previewImage || "https://placehold.co/128x128.png"} 
                 alt={tempProfile.username || "Kullanıcı"} 
                 data-ai-hint="user portrait" 
               />

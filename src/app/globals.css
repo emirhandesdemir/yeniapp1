@@ -9,25 +9,25 @@ body {
 
 @layer base {
   :root {
-    /* Light Theme - Enhanced for Clarity and Contrast */
-    --background: 0 0% 100%;         /* Pure White */
+    /* Light Theme - Enhanced for Clarity and Contrast, with Light Gray Background */
+    --background: 220 20% 97%;       /* Very Light Cool Gray */
     --foreground: 220 20% 10%;       /* Dark Cool Gray (Good Contrast) */
-    --card: 0 0% 100%;               /* White Cards */
+    --card: 0 0% 100%;               /* White Cards for contrast with gray background */
     --card-foreground: 220 20% 10%;  /* Match foreground */
     --popover: 0 0% 100%;
     --popover-foreground: 220 20% 10%;
     --primary: 255 60% 55%;          /* Bright Purple/Blue (Original) */
     --primary-foreground: 0 0% 100%; /* White */
-    --secondary: 220 15% 96%;        /* Very Light Cool Gray - for secondary backgrounds */
+    --secondary: 220 15% 93%;        /* Slightly darker light Cool Gray - for secondary elements */
     --secondary-foreground: 220 15% 25%; /* Darker text for secondary backgrounds */
-    --muted: 220 15% 91%;            /* Light Muted Cool Gray */
+    --muted: 220 15% 88%;            /* Muted Cool Gray (darker than secondary) */
     --muted-foreground: 220 15% 40%; /* Readable Muted Text (Darker) */
     --accent: 330 80% 60%;           /* Bright Pink/Magenta (Original) */
     --accent-foreground: 0 0% 100%;  /* White */
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 15% 88%;           /* Softer, but visible border */
-    --input: 220 15% 88%;            /* Input border matches general border */
+    --border: 220 15% 85%;           /* Softer, but visible border against light gray */
+    --input: 220 15% 90%;            /* Input border, slightly lighter than main border to blend with card/popover */
     --ring: 255 60% 60%;
     --chart-1: 255 60% 55%;
     --chart-2: 330 80% 60%;
@@ -37,7 +37,7 @@ body {
     --radius: 0.75rem;
 
     /* Sidebar Light Theme */
-    --sidebar-background: 220 15% 98%; /* Very light, almost white, cool gray */
+    --sidebar-background: 220 15% 98%; /* Very light, almost white, cool gray for sidebar */
     --sidebar-foreground: 220 20% 15%;   /* Consistent dark text */
     --sidebar-primary: 255 60% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
@@ -92,10 +92,9 @@ body {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground; /* Removed light theme gradient for a cleaner look */
+    @apply bg-background text-foreground; 
   }
   .dark body {
-    /* Dark mode gradient - can be more pronounced if desired */
     @apply bg-gradient-to-br from-[hsl(var(--background))] to-[hsl(var(--primary)/15)];
   }
 }
@@ -106,11 +105,11 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: hsl(var(--background) / 0.1); /* More transparent track */
+  background: hsl(var(--background) / 0.1); 
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.6); /* Primary color for thumb */
+  background: hsl(var(--primary) / 0.6); 
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
