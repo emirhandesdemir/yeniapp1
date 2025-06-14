@@ -22,9 +22,9 @@ import {
   ShieldCheck, 
   UserCheck,
   UserX,
-  ChevronDown,
-  UserCog, // Changed from AdminUserCogIcon for consistency
-  ListChecks // Changed from AdminListChecksIcon for consistency
+  UserCog, 
+  ListChecks,
+  Sparkles // Added for Random Chat
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -64,20 +64,21 @@ interface NavItem {
   icon: React.ElementType;
   adminOnly?: boolean;
   subItems?: NavItem[];
-  isHeaderOnly?: boolean; // To make "Admin Paneli" non-clickable if it has subItems
+  isHeaderOnly?: boolean; 
 }
 
 const navItems: NavItem[] = [
   { href: '/', label: 'Anasayfa', icon: LayoutDashboard },
   { href: '/chat', label: 'Sohbet Odaları', icon: MessageSquare },
+  { href: '/matchmaking', label: 'Rastgele Eşleş', icon: Sparkles },
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
   {
-    href: '/admin/dashboard', // This will be the parent for accordion
+    href: '/admin/dashboard', 
     label: 'Admin Paneli',
     icon: ShieldCheck,
     adminOnly: true,
-    isHeaderOnly: true, // Make it non-clickable, acts as accordion trigger
+    isHeaderOnly: true, 
     subItems: [
       { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog, adminOnly: true },
       { href: '/admin/chat-rooms', label: 'Oda Yönetimi', icon: ListChecks, adminOnly: true },
@@ -97,11 +98,16 @@ interface FriendRequestForPopover {
 function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
   const isActivePath = (path: string) => {
     if (path === '/') return currentPathname === '/';
+    // For admin section, check if current path starts with the parent admin path or is an exact sub-item path
+    if (item.href.startsWith('/admin/') && item.subItems) {
+        return currentPathname.startsWith(item.href) || item.subItems.some(sub => currentPathname === sub.href);
+    }
     return currentPathname.startsWith(path);
   };
   
-  const isDirectActive = isActivePath(item.href);
-  const isParentActive = item.subItems?.some(subItem => isActivePath(subItem.href)) || (item.href === '/admin/dashboard' && currentPathname.startsWith('/admin/'));
+  const isDirectActive = currentPathname === item.href;
+  const isParentOfActive = item.subItems?.some(subItem => currentPathname.startsWith(subItem.href)) ?? false;
+  const finalIsActive = isDirectActive || isParentOfActive;
 
 
   if (item.adminOnly && !isAdmin) {
@@ -110,18 +116,17 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
 
   if (item.subItems && item.subItems.length > 0) {
     return (
-      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive ? item.href : undefined}>
+      <Accordion type="single" collapsible className="w-full" defaultValue={finalIsActive ? item.href : undefined}>
         <AccordionItem value={item.href} className="border-b-0">
           <AccordionTrigger
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm w-full justify-between hover:no-underline",
-              isParentActive
-                ? "bg-primary/10 text-primary font-semibold dark:bg-primary/20 dark:text-primary" // Updated active parent style
+              finalIsActive 
+                ? "bg-primary/10 text-primary font-semibold dark:bg-primary/20 dark:text-primary"
                 : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
               "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
-            // No Link wrapping if it's just a header
           >
              <div className="flex items-center gap-3">
                 <item.icon className="h-5 w-5" />
@@ -147,7 +152,7 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm",
         isDirectActive
-          ? "bg-primary text-primary-foreground font-semibold shadow-sm" // Active style for direct links
+          ? "bg-primary text-primary-foreground font-semibold shadow-sm" 
           : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
         "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
         isDirectActive && "dark:bg-sidebar-primary dark:text-sidebar-primary-foreground"
@@ -230,7 +235,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
-      // orderBy("createdAt", "desc") has been removed here to simplify and avoid index issues
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -260,7 +264,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
-        if(incomingInitialized) { // Only show toast if already initialized to avoid spam on first load error
+        if(incomingInitialized) { 
             toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
         }
       } finally {
@@ -491,5 +495,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
-    

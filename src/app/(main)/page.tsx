@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Gem, MessagesSquare, UserCog, Users, PlusCircle, Loader2, Compass } from "lucide-react";
+import { Gem, MessagesSquare, UserCog, Users, PlusCircle, Loader2, Compass, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
@@ -23,12 +23,10 @@ export default function DashboardPage() {
   useEffect(() => {
     const q = query(
       collection(db, "chatRooms"),
-      where("expiresAt", ">", Timestamp.now()) // Sadece süresi dolmamış olanlar
+      where("expiresAt", ">", Timestamp.now()) 
     );
     
     const unsubscribeRooms = onSnapshot(q, (snapshot) => {
-      // expiresAt'ı gelecekte olanları manuel olarak filtrelemek daha güvenilir olabilir
-      // çünkü Timestamp.now() sorgu sırasında sabit kalır.
       let count = 0;
       snapshot.docs.forEach(doc => {
         const roomData = doc.data();
@@ -36,16 +34,13 @@ export default function DashboardPage() {
           if (isFuture(roomData.expiresAt.toDate())) {
             count++;
           }
-        } else {
-          // Süresi olmayan odaları aktif sayabiliriz (eğer varsa)
-          // count++; 
         }
       });
       setActiveRoomsCount(count);
       setLoadingActiveRooms(false);
     }, (error) => {
       console.error("Error fetching active rooms count:", error);
-      setActiveRoomsCount(0); // Hata durumunda 0 göster
+      setActiveRoomsCount(0); 
       setLoadingActiveRooms(false);
     });
 
@@ -60,7 +55,7 @@ export default function DashboardPage() {
         setLoadingFriendsCount(false);
       }, (error) => {
         console.error("Error fetching friends count:", error);
-        setFriendsCount(0); // Hata durumunda 0 göster
+        setFriendsCount(0); 
         setLoadingFriendsCount(false);
       });
       return () => unsubscribeFriends();
@@ -87,7 +82,7 @@ export default function DashboardPage() {
             <Gem className="h-5 w-5 text-yellow-500" />
             <span>Mevcut Elmasların: {userData?.diamonds ?? 0}</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Button asChild size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground animate-subtle-pulse">
               <Link href="/chat">
                 <Compass className="mr-2 h-5 w-5" />
@@ -98,6 +93,12 @@ export default function DashboardPage() {
               <Link href="/chat">
                 <PlusCircle className="mr-2 h-5 w-5" />
                 Yeni Oda Oluştur
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="border-purple-500 text-purple-500 hover:bg-purple-500/10 dark:border-purple-400 dark:text-purple-400 dark:hover:bg-purple-400/10">
+              <Link href="/matchmaking">
+                <Sparkles className="mr-2 h-5 w-5" />
+                Rastgele Eşleş
               </Link>
             </Button>
           </div>
@@ -170,5 +171,4 @@ export default function DashboardPage() {
       </div>
     </div>
   );
-
-    
+}
