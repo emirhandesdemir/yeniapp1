@@ -13,9 +13,9 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase'; // Removed storage import as it's not used here anymore
+import { auth, db, storage } from '@/lib/firebase'; // storage import edildi
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
-// Removed storageRef, uploadBytesResumable, getDownloadURL as they are no longer used for profile pictures here
+import { ref as storageRefFunction, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"; // Firebase Storage fonksiyonları eklendi
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -41,7 +41,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string) => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string }) => Promise<boolean>; // Removed photoFile
+  updateUserProfile: (updates: { displayName?: string; photoFile?: File | null }) => Promise<boolean>; // photoFile eklendi
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
 }
@@ -80,29 +80,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (docSnap.exists()) {
             setUserData(docSnap.data() as UserData);
             } else {
-            // This case should ideally be handled during sign-up or first Google sign-in
-            // For robustness, we can try to create it here if it's missing
             const newUserProfileData: UserData = {
                 uid: user.uid,
                 email: user.email,
                 displayName: user.displayName,
                 photoURL: user.photoURL,
                 diamonds: INITIAL_DIAMONDS,
-                createdAt: serverTimestamp() as Timestamp, // This will be a server-side timestamp
+                createdAt: serverTimestamp() as Timestamp,
                 role: "user",
             };
             await setDoc(userDocRef, { ...newUserProfileData, createdAt: serverTimestamp() });
-            // Fetch again to get the server-generated timestamp or use local for immediate UI
             const freshSnap = await getDoc(userDocRef);
              if (freshSnap.exists()){
                 setUserData(freshSnap.data() as UserData);
             } else {
-                // Fallback if re-fetch fails, use local timestamp for UI consistency
                 setUserData({...newUserProfileData, createdAt: Timestamp.now() });
             }
             }
         } catch (error) {
-             console.error("Error fetching/creating user document on auth state change:", error);
+             console.error("[AuthContext] Error fetching/creating user document on auth state change:", error);
              toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
         } finally {
             setIsUserDataLoading(false);
@@ -133,11 +129,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (docSnap.exists()) {
         setUserData(docSnap.data() as UserData);
         } else {
-             // Fallback if docSnap doesn't exist immediately (should be rare)
             setUserData({...userDataToSet, createdAt: Timestamp.now()} as UserData);
         }
     } catch (error) {
-        console.error("Error in createUserDocument:", error);
+        console.error("[AuthContext] Error in createUserDocument:", error);
         toast({ title: "Hesap Oluşturma Hatası", description: "Kullanıcı veritabanı kaydı oluşturulurken bir sorun oluştu.", variant: "destructive" });
     }
   };
@@ -151,7 +146,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
-      console.error("Signup error:", error, "Code:", error.code);
+      console.error("[AuthContext] Signup error:", error, "Code:", error.code);
       let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') {
         message = "Bu e-posta adresi zaten kullanımda.";
@@ -175,7 +170,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       router.push('/');
       toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
-      console.error("Login error:", error);
+      console.error("[AuthContext] Login error:", error);
       let message = "Giriş sırasında bir hata oluştu.";
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         message = "E-posta veya şifre hatalı.";
@@ -200,7 +195,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       router.push('/');
       toast({ title: "Başarılı!", description: "Google ile giriş yapıldı." });
     } catch (error: any) {
-      console.error("Google sign-in error:", error);
+      console.error("[AuthContext] Google sign-in error:", error);
       let message = "Google ile giriş sırasında bir hata oluştu.";
       if (error.code === 'auth/popup-closed-by-user') {
         message = "Giriş penceresi kapatıldı.";
@@ -222,29 +217,119 @@ export function AuthProvider({ children }: AuthProviderProps) {
       router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
-      console.error("Logout error:", error);
+      console.error("[AuthContext] Logout error:", error);
       toast({ title: "Çıkış Hatası", description: "Çıkış yapılırken bir hata oluştu.", variant: "destructive" });
     } finally {
       setIsUserLoading(false);
     }
   };
 
-  const updateUserProfile = async (updates: { displayName?: string }): Promise<boolean> => {
+  const updateUserProfile = async (updates: { displayName?: string; photoFile?: File | null }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", updates);
+    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", { displayName: updates.displayName, photoFileName: updates.photoFile?.name });
+    
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
-    let authUpdates: { displayName?: string } = {}; // photoURL update removed
+    let authUpdates: { displayName?: string; photoURL?: string | null } = {}; // photoURL eklendi
+    let newPhotoURL: string | null = null;
 
     try {
-      if (updates.displayName && updates.displayName !== (userData?.displayName || auth.currentUser.displayName || "")) {
-        console.log("[AuthContext] Display name update provided:", updates.displayName);
-        authUpdates.displayName = updates.displayName;
-        firestoreUpdates.displayName = updates.displayName;
+      // 1. Fotoğraf Yükleme (eğer varsa)
+      if (updates.photoFile) {
+        console.log("[AuthContext] Photo file provided, starting upload:", updates.photoFile.name);
+        const fileExtension = updates.photoFile.name.split('.').pop();
+        const imageFileName = `profile_${auth.currentUser.uid}_${Date.now()}.${fileExtension}`;
+        const imageRef = storageRefFunction(storage, `profile_pictures/${auth.currentUser.uid}/${imageFileName}`);
+        
+        // Önceki fotoğrafı silme (isteğe bağlı, ama genellikle iyi bir pratiktir)
+        // Eğer userData.photoURL varsa ve bu bir Firebase Storage URL'siyse silebiliriz.
+        if (userData?.photoURL && userData.photoURL.includes("firebasestorage.googleapis.com")) {
+            try {
+                const previousImageRef = storageRefFunction(storage, userData.photoURL);
+                console.log("[AuthContext] Attempting to delete previous profile picture:", userData.photoURL);
+                await deleteObject(previousImageRef);
+                console.log("[AuthContext] Previous profile picture deleted successfully.");
+            } catch (deleteError: any) {
+                // Silme hatası genellikle kritik değildir, devam edebiliriz.
+                // Örneğin, dosya zaten yoksa veya izin sorunu varsa.
+                console.warn("[AuthContext] Could not delete previous profile picture:", deleteError.code, deleteError.message);
+            }
+        }
+
+
+        const uploadTask = uploadBytesResumable(imageRef, updates.photoFile);
+
+        newPhotoURL = await new Promise<string>((resolve, reject) => {
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              console.log("[AuthContext] Upload is " + progress + "% done");
+              // Gerekirse burada bir yükleme yüzdesi göstergesi güncellenebilir.
+            },
+            (error) => {
+              console.error("[AuthContext] Firebase Storage upload error:", error.code, error.message, error.serverResponse);
+              toast({
+                title: "Fotoğraf Yükleme Hatası",
+                description: `Yükleme sırasında bir sorun oluştu: ${error.code || error.message}`,
+                variant: "destructive",
+              });
+              reject(error);
+            },
+            async () => {
+              try {
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                console.log("[AuthContext] File available at", downloadURL);
+                resolve(downloadURL);
+              } catch (urlError: any) {
+                console.error("[AuthContext] Error getting download URL:", urlError.code, urlError.message);
+                toast({
+                  title: "Fotoğraf URL Hatası",
+                  description: `URL alınırken bir sorun oluştu: ${urlError.code || urlError.message}`,
+                  variant: "destructive",
+                });
+                reject(urlError);
+              }
+            }
+          );
+        });
+        console.log("[AuthContext] New photo URL obtained:", newPhotoURL);
+        authUpdates.photoURL = newPhotoURL;
+        firestoreUpdates.photoURL = newPhotoURL;
+      } else {
+         // Kullanıcı fotoğrafı kaldırmak isterse (photoFile === null ise ve bir fotoğrafı varsa)
+         if (updates.photoFile === null && userData?.photoURL) {
+            console.log("[AuthContext] User requested to remove profile picture.");
+             if (userData.photoURL.includes("firebasestorage.googleapis.com")) {
+                try {
+                    const imageToDeleteRef = storageRefFunction(storage, userData.photoURL);
+                    await deleteObject(imageToDeleteRef);
+                    console.log("[AuthContext] Profile picture deleted from storage.");
+                } catch (deleteError: any) {
+                    console.warn("[AuthContext] Could not delete profile picture from storage:", deleteError.code, deleteError.message);
+                }
+            }
+            authUpdates.photoURL = null; // Firebase Auth'da null yap
+            firestoreUpdates.photoURL = null; // Firestore'da null yap
+         }
+      }
+
+
+      // 2. Display Name Güncelleme (eğer varsa)
+      const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
+      if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
+          if(updates.displayName.trim().length < 3){
+              toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
+              setIsUserLoading(false);
+              return false; // Hata durumunda erken çık
+          }
+          console.log("[AuthContext] Display name update provided:", updates.displayName);
+          authUpdates.displayName = updates.displayName.trim();
+          firestoreUpdates.displayName = updates.displayName.trim();
       }
 
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;
@@ -257,6 +342,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return true;
       }
 
+      // 3. Firebase Auth ve Firestore Güncelleme
       if (hasAuthUpdates && auth.currentUser) {
         console.log("[AuthContext] Updating Firebase Auth profile with:", authUpdates);
         await updateFirebaseProfile(auth.currentUser, authUpdates);
@@ -266,21 +352,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[AuthContext] Updating Firestore user document with:", firestoreUpdates);
         await updateDoc(userDocRef, firestoreUpdates);
       }
+      
+      // Lokal state'i güncelle
+      await auth.currentUser?.reload(); // Auth kullanıcısını yenile
+      const refreshedUser = auth.currentUser;
 
-      console.log("[AuthContext] Reloading Firebase user data...");
-      await auth.currentUser?.reload(); // Reload to get the latest auth profile
-      const refreshedUser = auth.currentUser; // Get the refreshed user
-
-      // Update local state based on refreshedUser and firestoreUpdates
-      setCurrentUser(refreshedUser ? { ...refreshedUser } : null); // Update currentUser state
       setUserData(prev => {
+          if (!prev) return null;
           const newLocalData: Partial<UserData> = {};
           if (firestoreUpdates.displayName) newLocalData.displayName = firestoreUpdates.displayName;
-          // Ensure local state reflects Auth profile if Firestore didn't update it (or vice-versa)
+          if (firestoreUpdates.hasOwnProperty('photoURL')) newLocalData.photoURL = firestoreUpdates.photoURL; // null da olabilir
+
+          // Firestore güncellemesi olmasa bile Auth'dan gelen en son bilgiyi yansıt
           if (refreshedUser?.displayName && !newLocalData.displayName) newLocalData.displayName = refreshedUser.displayName;
-          
-          return prev ? { ...prev, ...newLocalData } : null
+          if (refreshedUser?.photoURL !== undefined && !newLocalData.hasOwnProperty('photoURL')) newLocalData.photoURL = refreshedUser.photoURL;
+
+          return { ...prev, ...newLocalData };
       });
+       // Ensure currentUser state is also refreshed if auth profile changed
+       if (refreshedUser) {
+        setCurrentUser({ ...refreshedUser });
+      }
 
 
       console.log("[AuthContext] Profile update successful.");
@@ -288,10 +380,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return true;
 
     } catch (error: any) {
-      console.error("[AuthContext] Profile update failed:", error);
+      console.error("[AuthContext] General profile update failed:", error.code, error.message, error);
       toast({ 
         title: "Profil Güncelleme Hatası", 
-        description: `Bir sorun oluştu: ${error.code || error.message}`, 
+        description: `Genel bir sorun oluştu: ${error.code || error.message}`, 
         variant: "destructive" 
       });
       return false;
@@ -311,10 +403,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userDocRef = doc(db, "users", currentUser.uid);
       await updateDoc(userDocRef, { diamonds: newDiamondCount });
       setUserData(prev => prev ? { ...prev, diamonds: newDiamondCount } : null);
-      // toast({ title: "Başarılı", description: "Elmaslarınız güncellendi." }); // Optional: Can be too noisy
       return Promise.resolve();
     } catch (error) {
-      console.error("Error updating diamonds:", error);
+      console.error("[AuthContext] Error updating diamonds:", error);
       toast({ title: "Elmas Güncelleme Hatası", description: "Elmaslar güncellenirken bir sorun oluştu.", variant: "destructive" });
       return Promise.reject(error);
     } finally {
@@ -330,7 +421,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       </div>
     );
   }
-
 
   const value = {
     currentUser,
