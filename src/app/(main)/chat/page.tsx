@@ -1,15 +1,15 @@
 
 "use client";
 
-import Image from "next/image"; // next/image import edildi
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, UploadCloud, ImagePlus } from "lucide-react";
+import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, UploadCloud } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useRef, ChangeEvent } from "react";
-import { db, storage } from "@/lib/firebase"; // storage import edildi
+import { db, storage } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage"; // storage fonksiyonları
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -37,7 +37,7 @@ interface ChatRoom {
   creatorName: string;
   createdAt: Timestamp;
   expiresAt: Timestamp;
-  image: string; // Artık her zaman bir string olacak (URL veya placeholder)
+  image: string;
   imageAiHint: string;
   participantCount?: number;
   maxParticipants: number;
@@ -48,7 +48,7 @@ const placeholderImages = [
   { url: "https://placehold.co/600x400.png", hint: "community discussion" },
   { url: "https://placehold.co/600x400.png", hint: "technology connection" },
 ];
-const defaultRoomImage = placeholderImages[0]; // Varsayılan oda resmi
+const defaultRoomImage = placeholderImages[0];
 
 const ROOM_CREATION_COST = 1;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
@@ -62,17 +62,17 @@ export default function ChatRoomsPage() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
   const [newRoomImageFile, setNewRoomImageFile] = useState<File | null>(null);
-  const [newRoomImagePreview, setNewRoomImagePreview] = useState<string | null>(defaultRoomImage.url); // Başlangıçta varsayılan
+  const [newRoomImagePreview, setNewRoomImagePreview] = useState<string | null>(defaultRoomImage.url);
   const roomImageInputRef = useRef<HTMLInputElement>(null);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
-  const [now, setNow] = useState(new Date()); 
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
-    }, 60000); 
+    }, 60000);
     return () => clearInterval(timer);
   }, []);
 
@@ -83,7 +83,7 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        const roomData = doc.data() as ChatRoom; 
+        const roomData = doc.data() as ChatRoom;
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -117,9 +117,9 @@ export default function ChatRoomsPage() {
     setNewRoomName("");
     setNewRoomDescription("");
     setNewRoomImageFile(null);
-    setNewRoomImagePreview(defaultRoomImage.url); // Varsayılana dön
+    setNewRoomImagePreview(defaultRoomImage.url);
     if (roomImageInputRef.current) {
-      roomImageInputRef.current.value = ""; // Dosya inputunu temizle
+      roomImageInputRef.current.value = "";
     }
   };
 
@@ -139,35 +139,41 @@ export default function ChatRoomsPage() {
       return;
     }
     setIsCreatingRoom(true);
-    
+    console.log("[ChatPage] Starting room creation...");
+
     let imageUrl = defaultRoomImage.url;
     let imageHint = defaultRoomImage.hint;
 
     try {
       if (newRoomImageFile) {
+        console.log("[ChatPage] Room image file provided, attempting upload...");
         const file = newRoomImageFile;
         const fileExtension = file.name.split('.').pop();
         const imageFileName = `${currentUser.uid}_${Date.now()}.${fileExtension}`;
         const roomImageRef = storageRef(storage, `chat_room_images/${imageFileName}`);
-        
         const uploadTask = uploadBytesResumable(roomImageRef, file);
-        
+
         await new Promise<void>((resolve, reject) => {
           uploadTask.on('state_changed',
-            (snapshot) => { /* İlerleme takibi (isteğe bağlı) */ },
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              console.log('[ChatPage] Upload is ' + progress + '% done');
+            },
             (error) => {
-              console.error("Room image upload error:", error);
-              toast({ title: "Oda Resmi Yükleme Hatası", description: "Oda resmi yüklenirken bir sorun oluştu.", variant: "destructive" });
+              console.error("[ChatPage] Room image upload Firebase error:", error);
+              toast({ title: "Oda Resmi Yükleme Hatası", description: `Firebase hatası: ${error.code || error.message}`, variant: "destructive" });
               reject(error);
             },
             async () => {
               try {
+                console.log("[ChatPage] Upload complete, getting download URL...");
                 imageUrl = await getDownloadURL(uploadTask.snapshot.ref);
                 imageHint = "custom room image";
+                console.log("[ChatPage] Room image uploaded and URL obtained:", imageUrl);
                 resolve();
-              } catch (urlError) {
-                console.error("Error getting room image download URL:", urlError);
-                toast({ title: "Oda Resmi URL Hatası", description: "Yüklenen oda resminin adresi alınamadı.", variant: "destructive" });
+              } catch (urlError: any) {
+                console.error("[ChatPage] Room image getDownloadURL error:", urlError);
+                toast({ title: "Oda Resmi URL Hatası", description: `URL alınamadı: ${urlError.code || urlError.message}`, variant: "destructive" });
                 reject(urlError);
               }
             }
@@ -177,7 +183,7 @@ export default function ChatRoomsPage() {
 
       const currentTime = new Date();
       const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
-      
+
       const roomDataToCreate = {
         name: newRoomName.trim(),
         description: newRoomDescription.trim(),
@@ -185,26 +191,26 @@ export default function ChatRoomsPage() {
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAtDate),
-        image: imageUrl, // Yüklenen veya varsayılan resim URL'si
-        imageAiHint: imageHint, // Yüklenen veya varsayılan hint
-        participantCount: 0, 
+        image: imageUrl,
+        imageAiHint: imageHint,
+        participantCount: 0,
         maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
       };
-
+      console.log("[ChatPage] Creating room document with data:", roomDataToCreate);
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
       await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
 
       toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
-    } catch (error) {
-      // Upload veya Firestore hatası yukarıda toast ile gösterilmiş olabilir.
-      // Bu genel bir yedekleme.
-      if (!(error instanceof Error && error.message.includes("upload") || error instanceof Error && error.message.includes("URL"))) {
-         toast({ title: "Hata", description: "Oda oluşturulurken bir sorun oluştu.", variant: "destructive" });
+      console.log("[ChatPage] Room creation successful.");
+    } catch (error: any) {
+      console.error("[ChatPage] Error creating room (outer catch):", error);
+       if (!(error.message?.includes("Oda Resmi Yükleme Hatası") || error.message?.includes("Oda Resmi URL Hatası"))) {
+         toast({ title: "Hata", description: `Oda oluşturulurken bir sorun oluştu: ${error.code || error.message}`, variant: "destructive" });
       }
-      console.error("Error creating room (general catch): ", error);
     } finally {
+      console.log("[ChatPage] Ending room creation process. Setting isCreatingRoom to false.");
       setIsCreatingRoom(false);
     }
   };
@@ -215,17 +221,17 @@ export default function ChatRoomsPage() {
     }
     try {
       const batch = writeBatch(db);
-      
+
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
       const messagesSnapshot = await getDocs(messagesQuery);
       messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
-      
+
       const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
       const participantsSnapshot = await getDocs(participantsQuery);
       participantsSnapshot.forEach((participantDoc) => batch.delete(participantDoc.ref));
-      
+
       batch.delete(doc(db, "chatRooms", roomId));
-      
+
       await batch.commit();
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
     } catch (error) {
@@ -233,7 +239,7 @@ export default function ChatRoomsPage() {
       toast({ title: "Hata", description: "Oda silinirken bir sorun oluştu.", variant: "destructive" });
     }
   };
-  
+
   const getExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
     if (!expiresAt) return "Süre bilgisi yok";
     const expiryDate = expiresAt.toDate();
@@ -264,11 +270,11 @@ export default function ChatRoomsPage() {
         </div>
         <Dialog open={isCreateModalOpen} onOpenChange={(isOpen) => {
             setIsCreateModalOpen(isOpen);
-            if (!isOpen) resetCreateRoomForm(); // Dialog kapanırken formu sıfırla
+            if (!isOpen) resetCreateRoomForm();
         }}>
           <DialogTrigger asChild>
-            <Button 
-              className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto" 
+            <Button
+              className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
               disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
             >
               <PlusCircle className="mr-2 h-5 w-5" />
@@ -309,11 +315,11 @@ export default function ChatRoomsPage() {
                     <Label htmlFor="roomImage">Oda Resmi (İsteğe Bağlı)</Label>
                     <div className="flex items-center gap-4">
                         {newRoomImagePreview && (
-                            <Image 
-                                src={newRoomImagePreview} 
-                                alt="Oda resmi önizlemesi" 
-                                width={80} 
-                                height={80} 
+                            <Image
+                                src={newRoomImagePreview}
+                                alt="Oda resmi önizlemesi"
+                                width={80}
+                                height={80}
                                 className="rounded-md border object-cover aspect-square"
                                 data-ai-hint="room preview image"
                             />
@@ -322,12 +328,12 @@ export default function ChatRoomsPage() {
                             <UploadCloud className="mr-2 h-4 w-4" /> Resim Seç
                         </Button>
                     </div>
-                    <input 
-                        type="file" 
+                    <input
+                        type="file"
                         id="roomImage"
                         ref={roomImageInputRef}
-                        className="hidden" 
-                        accept="image/jpeg,image/png,image/gif,image/webp" 
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
                         onChange={handleRoomImageChange}
                         disabled={isCreatingRoom}
                     />
@@ -338,12 +344,12 @@ export default function ChatRoomsPage() {
                 <DialogClose asChild>
                     <Button type="button" variant="outline" disabled={isCreatingRoom} onClick={resetCreateRoomForm}>İptal</Button>
                 </DialogClose>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={
-                    isCreatingRoom || 
-                    !currentUser || 
-                    !userData || 
+                    isCreatingRoom ||
+                    !currentUser ||
+                    !userData ||
                     (userData.diamonds < ROOM_CREATION_COST)
                   }
                 >
@@ -390,7 +396,7 @@ export default function ChatRoomsPage() {
                     size="icon"
                     className="absolute top-2 right-2 z-10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 hover:opacity-100"
                     onClick={(e) => {
-                      e.preventDefault(); 
+                      e.preventDefault();
                       e.stopPropagation();
                       handleDeleteRoom(room.id, room.name);
                     }}
@@ -400,7 +406,7 @@ export default function ChatRoomsPage() {
                   </Button>
                 )}
                  <Badge variant="secondary" className="absolute bottom-2 left-2 flex items-center gap-1">
-                    <UsersRound className="h-3.5 w-3.5" /> 
+                    <UsersRound className="h-3.5 w-3.5" />
                     {room.participantCount ?? 0} / {room.maxParticipants}
                 </Badge>
               </div>
@@ -416,11 +422,11 @@ export default function ChatRoomsPage() {
                 </div>
               </CardContent>
               <CardFooter className="p-3 sm:p-4">
-                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" 
+                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
                   disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
                 >
                   <Link href={`/chat/${room.id}`}>
-                    <LogIn className="mr-2 h-4 w-4" /> 
+                    <LogIn className="mr-2 h-4 w-4" />
                     {(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Odaya Katıl")}
                   </Link>
                 </Button>
@@ -432,3 +438,5 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+
+    
