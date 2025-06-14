@@ -3,12 +3,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem } from "lucide-react";
+import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react"; // UsersRound eklendi
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, increment } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -38,6 +38,7 @@ interface ChatRoom {
   image: string;
   imageAiHint: string;
   participantCount?: number;
+  maxParticipants: number; // Yeni alan
 }
 
 const placeholderImages = [
@@ -50,6 +51,7 @@ const placeholderImages = [
 
 const ROOM_CREATION_COST = 1;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
+const MAX_PARTICIPANTS_PER_ROOM = 7; // Yeni sabit
 
 
 export default function ChatRoomsPage() {
@@ -77,7 +79,7 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        const roomData = doc.data() as ChatRoom;
+        const roomData = doc.data() as ChatRoom; // Type cast to include maxParticipants
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -120,7 +122,8 @@ export default function ChatRoomsPage() {
         expiresAt: Timestamp.fromDate(expiresAtDate),
         image: randomImage.url,
         imageAiHint: randomImage.hint,
-        participantCount: 1,
+        participantCount: 0, // Başlangıçta 0 katılımcı
+        maxParticipants: MAX_PARTICIPANTS_PER_ROOM, // Maksimum katılımcı sayısı
       });
 
       await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
@@ -148,6 +151,13 @@ export default function ChatRoomsPage() {
       messagesSnapshot.forEach((messageDoc) => {
         deletePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id)));
       });
+
+      const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
+      const participantsSnapshot = await getDocs(participantsQuery);
+      participantsSnapshot.forEach((participantDoc) => {
+        deletePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/participants`, participantDoc.id)));
+      });
+
       await Promise.all(deletePromises);
       await deleteDoc(doc(db, "chatRooms", roomId));
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
@@ -196,7 +206,7 @@ export default function ChatRoomsPage() {
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
                   Odanız için bir ad ve açıklama girin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
-                  Mevcut elmasınız: {userData?.diamonds ?? 0}
+                  Maksimum katılımcı sayısı {MAX_PARTICIPANTS_PER_ROOM} kişidir. Mevcut elmasınız: {userData?.diamonds ?? 0}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -282,16 +292,20 @@ export default function ChatRoomsPage() {
                     <X className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
                 )}
+                 <Badge variant="secondary" className="absolute bottom-2 left-2 flex items-center gap-1">
+                    <UsersRound className="h-3.5 w-3.5" /> 
+                    {room.participantCount ?? 0} / {room.maxParticipants}
+                </Badge>
               </div>
               <CardHeader className="pt-3 sm:pt-4 pb-2 sm:pb-3">
                 <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground/90 truncate">{room.name}</CardTitle>
                 <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis">{room.description || "Açıklama yok."}</CardDescription>
               </CardHeader>
               <CardContent className="flex-grow pt-1 sm:pt-2 pb-3 sm:pb-4">
-                <div className="flex items-center text-xs sm:text-sm text-muted-foreground">
+                {/* <div className="flex items-center text-xs sm:text-sm text-muted-foreground">
                   <Users className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  {room.participantCount || 1} katılımcı
-                </div>
+                  {room.participantCount || 0} katılımcı ({room.maxParticipants} maks.)
+                </div> */}
                 <p className="text-xs text-muted-foreground mt-1 truncate">Oluşturan: {room.creatorName}</p>
                 <div className="flex items-center text-xs text-muted-foreground mt-1.5 sm:mt-2">
                   <Clock className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -299,10 +313,14 @@ export default function ChatRoomsPage() {
                 </div>
               </CardContent>
               <CardFooter className="p-3 sm:p-4">
-                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={room.expiresAt && isPast(room.expiresAt.toDate())}>
+                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" 
+                  disabled={(room.expiresAt && isPast(room.expiresAt.toDate())) || (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
+                >
                   <Link href={`/chat/${room.id}`}>
                     <LogIn className="mr-2 h-4 w-4" /> 
-                    {room.expiresAt && isPast(room.expiresAt.toDate()) ? "Süresi Doldu" : "Odaya Katıl"}
+                    {room.expiresAt && isPast(room.expiresAt.toDate()) 
+                        ? "Süresi Doldu" 
+                        : (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Odaya Katıl")}
                   </Link>
                 </Button>
               </CardFooter>
@@ -313,3 +331,6 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+
+
+    
