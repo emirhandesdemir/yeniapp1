@@ -19,12 +19,11 @@ import {
   Gem,
   Sun,
   Moon,
-  ShieldCheck,
+  ShieldCheck, // Admin Paneli ana ikonu
   UserCheck,
   UserX,
-  ChevronDown,
-  UserCog,
-  ListChecks // Yeni ikon eklendi
+  ChevronDown
+  // UserCog ve ListChecks importları kaldırıldı, çünkü alt menüler kalktı
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -54,7 +53,7 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  // orderBy // Gerekirse tekrar eklenebilir
+  // orderBy kaldırılmıştı, bu iyi.
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -64,7 +63,7 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   adminOnly?: boolean;
-  subItems?: NavItem[];
+  subItems?: NavItem[]; // Bu özellik artık admin için kullanılmayacak ama yapı kalabilir.
 }
 
 const navItems: NavItem[] = [
@@ -73,15 +72,11 @@ const navItems: NavItem[] = [
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
   {
-    href: '/admin/dashboard', 
+    href: '/admin/dashboard', // Doğrudan dashboard'a yönlendir
     label: 'Admin Paneli',
-    icon: ShieldCheck,
+    icon: ShieldCheck, // Ana admin ikonu
     adminOnly: true,
-    subItems: [
-      { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog },
-      { href: '/admin/chat-rooms', label: 'Oda Yönetimi', icon: ListChecks }, // Yeni alt menü öğesi
-    ]
+    // subItems artık yok
   },
 ];
 
@@ -100,46 +95,41 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
     return currentPathname.startsWith(path);
   };
   
-  const isParentActive = item.subItems 
-    ? item.subItems.some(subItem => isActivePath(subItem.href)) || isActivePath(item.href)
-    : isActivePath(item.href);
-
-  const isDirectActive = currentPathname === item.href;
+  // Admin paneli artık alt menüye sahip olmadığı için isParentActive mantığı basitleşti.
+  const isDirectActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href));
 
 
   if (item.adminOnly && !isAdmin) {
     return null;
   }
 
-  if (item.subItems && item.subItems.length > 0) {
+  // Alt menü mantığı (Accordion) artık admin paneli için geçerli değil,
+  // ama diğer menü öğeleri için gelecekte gerekebilir diye korunuyor.
+  // Admin Paneli için subItems olmadığı için bu blok atlanacak.
+  if (item.subItems && item.subItems.length > 0 && item.href !== '/admin/dashboard') {
+    const isParentActiveForAccordion = item.subItems.some(subItem => isActivePath(subItem.href)) || isActivePath(item.href);
     return (
-      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive && !item.subItems.some(sub => sub.href === currentPathname) ? item.href : undefined}>
+      <Accordion type="single" collapsible className="w-full" defaultValue={isParentActiveForAccordion ? item.href : undefined}>
         <AccordionItem value={item.href} className="border-b-0">
           <AccordionTrigger
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm w-full justify-between hover:no-underline",
-              isParentActive && !item.subItems.some(sub => sub.href === currentPathname && sub.href !== item.href)
+              isParentActiveForAccordion
                 ? "bg-sidebar-primary/10 text-sidebar-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary"
                 : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
               "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
-            // AccordionTrigger'a tıklandığında navigasyon olmaması için onClick ile Link'e yönlendirme
-            // Eğer item.href ana bir sayfa ise (örneğin /admin/dashboard) ve tıklanabilir olmasını istiyorsanız, bu mantığı ayarlamanız gerekebilir.
-            // Şimdilik, AccordionTrigger sadece açıp kapama işlevi görüyor.
             asChild={item.href === currentPathname && !item.subItems.some(sub => sub.href === currentPathname)}
-            onClick={(e) => {
-              if (item.href !== currentPathname || !item.subItems?.some(sub => sub.href === currentPathname)) {
-                // Eğer mevcut yol item.href değilse veya aktif bir alt öğe yoksa, tıklama davranışı devam etsin (Accordion'u aç/kapat).
-                // Aksi takdirde, Link'in navigasyon yapmasını engelleme.
-                if(item.href === currentPathname && item.subItems?.some(sub => sub.href === currentPathname)){
-                     e.preventDefault(); // Ana kategori linki ise ve zaten oradaysak accordion'un navigasyonunu engelle
+             onClick={(e) => {
+                if (item.href !== currentPathname || !item.subItems?.some(sub => sub.href === currentPathname)) {
+                     if(item.href === currentPathname && item.subItems?.some(sub => sub.href === currentPathname)){
+                         e.preventDefault(); 
+                    }
+                } else {
+                    e.preventDefault();
                 }
-              } else {
-                // Eğer zaten bu sayfadaysak ve alt menüsü varsa, tıklama sadece accordion'u açıp kapatmalı, navigasyon yapmamalı.
-                e.preventDefault();
-              }
-            }}
+             }}
           >
              <div className="flex items-center gap-3">
                 <item.icon className="h-5 w-5" />
@@ -180,7 +170,7 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
 
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const { logOut, isUserLoading, userData } = useAuth();
-  const { toast } = useToast();
+  const { toast } = useToast(); // toast burada tanımlı
   const pathname = usePathname();
 
   const handleLogout = async () => {
@@ -235,7 +225,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   React.useEffect(() => {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
-      if (!incomingInitialized) { // Sadece ilk kez veya kullanıcı değiştiğinde
+      if (!incomingInitialized) {
         setLoadingRequests(false);
         setIncomingInitialized(true);
       }
@@ -248,7 +238,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
-      // orderBy("createdAt", "desc") // Dizin sorunu çözülene kadar kaldırıldı
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -278,24 +267,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
+        toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
       } finally {
         if (!incomingInitialized) {
             setIncomingInitialized(true);
-            setLoadingRequests(false);
         }
+        setLoadingRequests(false); // Ensure loading is set to false in all cases
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
+      toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive"});
       if (!incomingInitialized) {
         setIncomingInitialized(true);
-        setLoadingRequests(false); 
       }
+      setLoadingRequests(false); 
     });
 
     return () => {
         unsubscribeIncoming();
     };
-  }, [currentUser?.uid, incomingInitialized]);
+  }, [currentUser?.uid, incomingInitialized, toast]);
 
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -439,7 +430,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             disabled={performingAction[req.id] || !req.userProfile}
                             aria-label="Kabul Et"
                           >
-                            {performingAction[req.id] && performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
+                            {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
                           </Button>
                           <Button
                             variant="ghost"
@@ -449,7 +440,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             disabled={performingAction[req.id]}
                             aria-label="Reddet"
                           >
-                           {performingAction[req.id] && performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
+                           {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
@@ -503,6 +494,5 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-    
 
     
