@@ -45,7 +45,6 @@ const customRuntimeCaching = [
       },
     },
   },
-  // Google Fonts için bir strateji (opsiyonel, tarayıcı zaten iyi önbellekler)
   {
     urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
     handler: 'StaleWhileRevalidate' as const,
@@ -76,10 +75,12 @@ const withPWA = withPWAInit({
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
   runtimeCaching: customRuntimeCaching,
-  buildExcludes: [/middleware-manifest\.json$/], // next-pwa için önerilen buildExcludes
-  fallbacks: { // Temel çevrimdışı fallback sayfası (opsiyonel)
+  buildExcludes: [/middleware-manifest\.json$/], 
+  fallbacks: { 
     // document: '/offline', // Eğer bir /offline sayfanız varsa
-  }
+  },
+  swSrc: 'src/worker/index.ts', // Özel service worker dosyasının yolu
+  swDest: 'public/sw.js', // Derlenmiş service worker'ın çıkış yolu
 });
 
 const currentNextConfig: NextConfig = {
@@ -107,3 +108,4 @@ const currentNextConfig: NextConfig = {
 };
 
 export default withPWA(currentNextConfig);
+

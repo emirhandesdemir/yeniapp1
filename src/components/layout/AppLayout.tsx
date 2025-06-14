@@ -24,6 +24,8 @@ import {
   UserX,
   UserCog, 
   ListChecks,
+  BellRing, // Bildirim için ikon
+  BellOff, // Bildirim kapalıyken ikon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -55,6 +57,13 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { 
+  requestNotificationPermission, 
+  subscribeUserToPush, 
+  unsubscribeUserFromPush,
+  isPushSubscribed as checkIsPushSubscribed,
+  getNotificationPermissionStatus
+} from '@/lib/notificationUtils';
 
 
 interface NavItem {
@@ -96,7 +105,6 @@ interface FriendRequestForPopover {
 function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
   const isActivePath = (path: string) => {
     if (path === '/') return currentPathname === '/';
-    // For admin section, check if current path starts with the parent admin path or is an exact sub-item path
     if (item.href.startsWith('/admin/') && item.subItems) {
         return currentPathname.startsWith(item.href) || item.subItems.some(sub => currentPathname === sub.href);
     }
@@ -164,7 +172,7 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
 }
 
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
-  const { logOut, isUserLoading, userData } = useAuth();
+  const { logOut, isUserLoading: isAuthActionLoading, userData } = useAuth(); // Renamed isUserLoading to avoid conflict
   const { toast } = useToast(); 
   const pathname = usePathname();
 
@@ -195,8 +203,8 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
         </nav>
       </div>
       <div className="mt-auto p-4 border-t border-sidebar-border">
-        <Button variant="ghost" className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 dark:text-sidebar-foreground/60 dark:hover:text-destructive-foreground dark:hover:bg-destructive/80 py-2.5" onClick={handleLogout} disabled={isUserLoading}>
-          {isUserLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogOut className="h-5 w-5" />}
+        <Button variant="ghost" className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 dark:text-sidebar-foreground/60 dark:hover:text-destructive-foreground dark:hover:bg-destructive/80 py-2.5" onClick={handleLogout} disabled={isAuthActionLoading}>
+          {isAuthActionLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogOut className="h-5 w-5" />}
           Çıkış Yap
         </Button>
       </div>
@@ -207,7 +215,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const router = useRouter();
-  const { currentUser, userData, logOut, isUserLoading } = useAuth();
+  const { currentUser, userData, logOut, isUserLoading: isAuthActionLoading } = useAuth(); // Renamed isUserLoading
   const { toast } = useToast();
   const { theme, setTheme, resolvedTheme } = useTheme();
 
@@ -215,6 +223,58 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [loadingRequests, setLoadingRequests] = React.useState(true);
   const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
   const [incomingInitialized, setIncomingInitialized] = React.useState(false);
+
+  // Notification states
+  const [isNotificationPermissionGranted, setIsNotificationPermissionGranted] = React.useState(false);
+  const [isPushSubscribed, setIsPushSubscribed] = React.useState(false);
+  const [isNotificationProcessing, setIsNotificationProcessing] = React.useState(false);
+
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator) {
+      setIsNotificationPermissionGranted(getNotificationPermissionStatus() === 'granted');
+      setIsPushSubscribed(checkIsPushSubscribed());
+    }
+  }, []);
+
+  const handleTogglePushSubscription = async () => {
+    setIsNotificationProcessing(true);
+    if (isPushSubscribed) {
+      const success = await unsubscribeUserFromPush();
+      if (success) {
+        toast({ title: "Bildirimler Kapatıldı", description: "Artık push bildirimleri almayacaksınız." });
+        setIsPushSubscribed(false);
+      } else {
+        toast({ title: "Hata", description: "Bildirim aboneliği iptal edilemedi.", variant: "destructive" });
+      }
+    } else {
+      if (!isNotificationPermissionGranted) {
+        const permission = await requestNotificationPermission();
+        if (permission === 'granted') {
+          setIsNotificationPermissionGranted(true);
+          const subscription = await subscribeUserToPush();
+          if (subscription) {
+            toast({ title: "Bildirimler Açıldı!", description: "Yeni mesajlar ve güncellemeler için bildirim alacaksınız." });
+            setIsPushSubscribed(true);
+          } else {
+            toast({ title: "Abonelik Hatası", description: "Bildirimlere abone olunurken bir sorun oluştu.", variant: "destructive" });
+            setIsNotificationPermissionGranted(false); // Geri al
+          }
+        } else {
+          toast({ title: "İzin Verilmedi", description: "Bildirimlere izin vermediğiniz için abone olunamadı.", variant: "destructive" });
+        }
+      } else { // İzin zaten var, sadece abone ol
+        const subscription = await subscribeUserToPush();
+        if (subscription) {
+          toast({ title: "Bildirimler Açıldı!", description: "Yeni mesajlar ve güncellemeler için bildirim alacaksınız." });
+          setIsPushSubscribed(true);
+        } else {
+          toast({ title: "Abonelik Hatası", description: "Bildirimlere abone olunurken bir sorun oluştu.", variant: "destructive" });
+        }
+      }
+    }
+    setIsNotificationProcessing(false);
+  };
 
 
   React.useEffect(() => {
@@ -398,7 +458,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
                     </span>
                   )}
-                  <span className="sr-only">Bildirimler</span>
+                  <span className="sr-only">Arkadaşlık İstekleri</span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
@@ -451,7 +511,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser || isUserLoading}>
+                <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser || isAuthActionLoading}>
                   <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                     <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
                     <AvatarFallback>{getAvatarFallback(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
@@ -477,9 +537,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <DropdownMenuItem onClick={() => toast({title: "Ayarlar", description:"Bu özellik yakında eklenecektir."})}>
                   <Settings className="mr-2 h-4 w-4" /> Ayarlar
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleTogglePushSubscription} disabled={isNotificationProcessing || !('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window)}>
+                  {isNotificationProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (isPushSubscribed ? <BellOff className="mr-2 h-4 w-4 text-destructive"/> : <BellRing className="mr-2 h-4 w-4 text-primary"/>)}
+                  {isPushSubscribed ? "Bildirimleri Kapat" : "Bildirimleri Aç"}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logOut} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive dark:hover:!bg-destructive/80 dark:focus:!bg-destructive/80 dark:hover:!text-destructive-foreground">
-                  {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />}
+                <DropdownMenuItem onClick={logOut} disabled={isAuthActionLoading} className="text-destructive hover:!text-destructive focus:!text-destructive dark:hover:!bg-destructive/80 dark:focus:!bg-destructive/80 dark:hover:!text-destructive-foreground">
+                  {isAuthActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />}
                   Çıkış Yap
                 </DropdownMenuItem>
               </DropdownMenuContent>
