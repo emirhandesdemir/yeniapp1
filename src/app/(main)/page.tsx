@@ -2,12 +2,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Lightbulb, MessageSquarePlus, Users2 } from "lucide-react";
 import Link from "next/link";
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Anasayfa - Sohbet Küresi',
-  description: 'Sohbet Küresi anasayfasına hoş geldiniz.',
-};
 
 export default function DashboardPage() {
   return (
