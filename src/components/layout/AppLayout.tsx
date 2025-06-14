@@ -23,7 +23,7 @@ import {
   UserCheck, 
   UserX, 
   ChevronDown,
-  UsersCog
+  UserCog // Corrected: UsersCog -> UserCog
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -35,10 +35,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuPortal,
-  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
@@ -57,6 +53,7 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
+  // orderBy is not used in this component's Firestore queries for notifications for simplicity
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -81,7 +78,7 @@ const navItems: NavItem[] = [
     adminOnly: true,
     subItems: [
       { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UsersCog },
+      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog }, // Corrected: UsersCog -> UserCog
       // Gelecekteki admin sayfaları buraya eklenebilir
     ] 
   },
@@ -122,7 +119,6 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
               <item.icon className="h-5 w-5" />
               {item.label}
             </div>
-            {/* ChevronDown is automatically added by AccordionTrigger from shadcn */}
           </AccordionTrigger>
           <AccordionContent className="pb-0 pl-5 pr-1 pt-1">
             <nav className="grid items-start gap-1">
@@ -226,7 +222,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
-      // orderBy("createdAt", "desc") // Dizin sorunu için kaldırıldı, gerekirse eklenebilir.
+      // orderBy("createdAt", "desc") Firestore dizinleri ayarlanana kadar kaldırıldı.
     );
   
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -256,7 +252,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises:", error);
-        // toast({ title: "Bildirim Yükleme Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" }); // Bu toast'u daha genel bir yere taşıyabiliriz
+        // toast({ title: "Bildirim Yükleme Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" });
       } finally {
         if (!incomingInitialized) setIncomingInitialized(true);
       }
@@ -269,7 +265,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return () => {
         unsubscribeIncoming();
     }; 
-  }, [currentUser?.uid, toast, incomingInitialized]); // incomingInitialized eklendi
+  }, [currentUser?.uid, toast, incomingInitialized]);
 
   React.useEffect(() => {
     if (incomingInitialized) {
@@ -483,3 +479,5 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+    
