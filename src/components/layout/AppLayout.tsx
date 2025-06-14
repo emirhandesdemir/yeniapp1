@@ -24,7 +24,6 @@ import {
   UserX,
   UserCog, 
   ListChecks,
-  Sparkles // Added for Random Chat
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -70,7 +69,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/', label: 'Anasayfa', icon: LayoutDashboard },
   { href: '/chat', label: 'Sohbet Odaları', icon: MessageSquare },
-  { href: '/matchmaking', label: 'Rastgele Eşleş', icon: Sparkles },
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
   {
