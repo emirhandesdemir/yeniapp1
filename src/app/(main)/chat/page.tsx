@@ -4,12 +4,11 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react"; // Removed UploadCloud
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, ChangeEvent } from "react"; // Removed useRef
-import { db } from "@/lib/firebase"; // Removed storage
+import { useEffect, useState } from "react";
+import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
-// Removed storageRefFunction, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -37,8 +36,8 @@ interface ChatRoom {
   creatorName: string;
   createdAt: Timestamp;
   expiresAt: Timestamp;
-  image: string;
-  imageAiHint: string;
+  image: string; // This will always be a placeholder for now
+  imageAiHint: string; // Hint for the placeholder
   participantCount?: number;
   maxParticipants: number;
 }
@@ -61,7 +60,6 @@ export default function ChatRoomsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
-  // Removed newRoomImageFile, newRoomImagePreview, roomImageInputRef as room image upload is disabled
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
@@ -95,12 +93,9 @@ export default function ChatRoomsPage() {
     return () => unsubscribe();
   }, [toast]);
 
-  // handleRoomImageChange removed as room image upload is disabled
-
   const resetCreateRoomForm = () => {
     setNewRoomName("");
     setNewRoomDescription("");
-    // newRoomImageFile and newRoomImagePreview reset removed
   };
 
 
@@ -119,11 +114,9 @@ export default function ChatRoomsPage() {
       return;
     }
     setIsCreatingRoom(true);
-    console.log("[ChatPage] Starting room creation (image upload disabled)...");
 
-    // Image upload logic removed, always use default image
-    const imageUrl = defaultRoomImage.url;
-    const imageHint = defaultRoomImage.hint;
+    const imageUrl = defaultRoomImage.url; // Always use default placeholder image
+    const imageHint = defaultRoomImage.hint; // Always use default placeholder hint
 
     try {
       const currentTime = new Date();
@@ -136,24 +129,21 @@ export default function ChatRoomsPage() {
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAtDate),
-        image: imageUrl, // Always use default image
-        imageAiHint: imageHint, // Always use default hint
+        image: imageUrl, 
+        imageAiHint: imageHint, 
         participantCount: 0,
         maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
       };
-      console.log("[ChatPage] Creating room document with data:", roomDataToCreate);
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
       await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
 
       toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
-      console.log("[ChatPage] Room creation successful.");
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
       toast({ title: "Hata", description: `Oda oluşturulurken bir sorun oluştu: ${error.code || error.message}`, variant: "destructive" });
     } finally {
-      console.log("[ChatPage] Ending room creation process. Setting isCreatingRoom to false.");
       setIsCreatingRoom(false);
     }
   };
@@ -220,7 +210,7 @@ export default function ChatRoomsPage() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
               disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
             >
-              <PlusCircle className="mr-2 h-5 w-5" />
+              {/* PlusCircle ikonu kaldırıldı */}
               Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
           </DialogTrigger>
@@ -254,7 +244,6 @@ export default function ChatRoomsPage() {
                     disabled={isCreatingRoom}
                   />
                 </div>
-                {/* Room image input and preview removed */}
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -295,22 +284,22 @@ export default function ChatRoomsPage() {
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {activeChatRooms.map((room) => (
-            <Card key={room.id} className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 rounded-xl bg-card`}>
+            <Card key={room.id} className="flex flex-col overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 rounded-xl bg-card border border-border/20 hover:border-primary/30 dark:border-border/10 dark:hover:border-primary/40">
               <div className="relative h-40 sm:h-48 w-full">
                 <Image
-                  src={room.image || defaultRoomImage.url} // Will show existing image or default
+                  src={room.image || defaultRoomImage.url}
                   alt={room.name}
                   layout="fill"
                   objectFit="cover"
                   className="rounded-t-xl"
                   data-ai-hint={room.imageAiHint || "chat fun"}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent rounded-t-xl"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent rounded-t-xl"></div>
                  {currentUser && room.creatorId === currentUser.uid && (
                   <Button
                     variant="destructive"
                     size="icon"
-                    className="absolute top-2 right-2 z-10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 hover:opacity-100"
+                    className="absolute top-2 right-2 z-10 h-7 w-7 sm:h-8 sm:w-8 opacity-80 hover:opacity-100 shadow-md"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -321,14 +310,14 @@ export default function ChatRoomsPage() {
                     <X className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
                 )}
-                 <Badge variant="secondary" className="absolute bottom-2 left-2 flex items-center gap-1">
+                 <Badge variant="secondary" className="absolute bottom-2 left-2 flex items-center gap-1 shadow">
                     <UsersRound className="h-3.5 w-3.5" />
                     {room.participantCount ?? 0} / {room.maxParticipants}
                 </Badge>
               </div>
               <CardHeader className="pt-3 sm:pt-4 pb-2 sm:pb-3">
-                <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground/90 truncate" title={room.name}>{room.name}</CardTitle>
-                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis">{room.description || "Açıklama yok."}</CardDescription>
+                <CardTitle className="text-lg sm:text-xl font-bold text-primary truncate" title={room.name}>{room.name}</CardTitle>
+                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground">{room.description || "Açıklama yok."}</CardDescription>
               </CardHeader>
               <CardContent className="flex-grow pt-1 sm:pt-2 pb-3 sm:pb-4">
                 <p className="text-xs text-muted-foreground mt-1 truncate">Oluşturan: {room.creatorName}</p>
@@ -337,7 +326,7 @@ export default function ChatRoomsPage() {
                   {getExpiryInfo(room.expiresAt)}
                 </div>
               </CardContent>
-              <CardFooter className="p-3 sm:p-4">
+              <CardFooter className="p-3 sm:p-4 border-t border-border/20 dark:border-border/10">
                 <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
                   disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
                 >
@@ -354,3 +343,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+
