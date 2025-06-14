@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
-// import { getFirestore } from "firebase/firestore"; // Gelecekte Firestore kullanırsanız ekleyin
+import { getFirestore } from "firebase/firestore"; // Firestore import edildi
 
 const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
 const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
@@ -24,8 +24,6 @@ if (!apiKey || !authDomain || !projectId || !storageBucket || !messagingSenderId
   if (!appId) console.error("Eksik/Boş: NEXT_PUBLIC_FIREBASE_APP_ID");
   console.error("Değişikliklerden sonra geliştirme sunucusunu yeniden başlattığınızdan emin olun.");
   console.error("---------------------------------------------------------------------");
-  // Firebase, eksik veya geçersiz değerlerle başlatılırsa kendi özel hatasını (örn: auth/invalid-api-key) verecektir.
-  // Yukarıdaki konsol günlükleri, sorunu .env.local dosyanızda bulmanıza yardımcı olmalıdır.
 }
 
 const firebaseConfig: FirebaseOptions = {
@@ -46,6 +44,6 @@ if (!getApps().length) {
 }
 
 const auth = getAuth(app);
-// const db = getFirestore(app); // Firestore kullanacaksanız
+const db = getFirestore(app); // Firestore başlatıldı
 
-export { app, auth /*, db */ };
+export { app, auth, db }; // db dışa aktarıldı
