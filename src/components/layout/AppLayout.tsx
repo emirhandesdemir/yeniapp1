@@ -5,25 +5,25 @@ import * as React from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { 
-  Globe, 
-  LayoutDashboard, 
-  MessageSquare, 
-  Users, 
-  UserCircle, 
+import {
+  Globe,
+  LayoutDashboard,
+  MessageSquare,
+  Users,
+  UserCircle,
   LogOut,
   Menu,
   Settings,
   Bell,
   Loader2,
   Gem,
-  Sun, 
+  Sun,
   Moon,
   ShieldCheck,
-  UserCheck, 
-  UserX, 
+  UserCheck,
+  UserX,
   ChevronDown,
-  UserCog // Corrected: UsersCog -> UserCog
+  UserCog
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -40,7 +40,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTheme } from '@/contexts/ThemeContext'; 
+import { useTheme } from '@/contexts/ThemeContext';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -53,7 +53,7 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  // orderBy is not used in this component's Firestore queries for notifications for simplicity
+  // orderBy // orderBy kaldırıldı
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -71,16 +71,15 @@ const navItems: NavItem[] = [
   { href: '/chat', label: 'Sohbet Odaları', icon: MessageSquare },
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
-  { 
-    href: '/admin/dashboard', 
-    label: 'Admin Paneli', 
-    icon: ShieldCheck, 
+  {
+    href: '/admin/dashboard',
+    label: 'Admin Paneli',
+    icon: ShieldCheck,
     adminOnly: true,
     subItems: [
       { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog }, // Corrected: UsersCog -> UserCog
-      // Gelecekteki admin sayfaları buraya eklenebilir
-    ] 
+      { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog },
+    ]
   },
 ];
 
@@ -90,29 +89,35 @@ interface FriendRequestForPopover {
   fromUsername: string;
   fromAvatarUrl: string | null;
   createdAt: Timestamp;
-  userProfile?: UserData; 
+  userProfile?: UserData;
 }
 
 function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
-  const isActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href));
+  const isActive = currentPathname === item.href || (item.href !== '/' && currentPathname.startsWith(item.href) && item.href.length > 1);
+
 
   if (item.adminOnly && !isAdmin) {
     return null;
   }
 
   if (item.subItems && item.subItems.length > 0) {
-    const isParentActive = item.subItems.some(subItem => currentPathname.startsWith(subItem.href));
+    // For parent active state, check if currentPathname starts with any of the subItem hrefs
+    // OR if the currentPathname exactly matches the parent item's href (if it's also a page)
+    const isParentActive = item.href === currentPathname || item.subItems.some(
+      subItem => currentPathname === subItem.href || (subItem.href !== '/' && currentPathname.startsWith(subItem.href))
+    );
+
     return (
       <Accordion type="single" collapsible className="w-full" defaultValue={isParentActive ? item.href : undefined}>
         <AccordionItem value={item.href} className="border-b-0">
-          <AccordionTrigger 
+          <AccordionTrigger
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm w-full justify-between hover:no-underline",
-              isParentActive 
-                ? "bg-primary/10 text-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary" 
+              isParentActive
+                ? "bg-primary/10 text-primary font-semibold dark:bg-sidebar-primary/20 dark:text-sidebar-primary"
                 : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
-              "[&[data-state=open]>svg:last-child]:rotate-180" // Chevron icon rotation
+              "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
           >
             <div className="flex items-center gap-3">
@@ -138,8 +143,8 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
       onClick={onClick}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-base lg:text-sm",
-        isActive 
-          ? "bg-primary text-primary-foreground font-semibold shadow-sm" 
+        isActive
+          ? "bg-primary text-primary-foreground font-semibold shadow-sm"
           : "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-primary/10",
         "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
         isActive && "dark:bg-sidebar-primary dark:text-sidebar-primary-foreground"
@@ -199,8 +204,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { currentUser, userData, logOut, isUserLoading } = useAuth();
   const { toast } = useToast();
-  const { theme, setTheme, resolvedTheme } = useTheme(); 
-  
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
   const [incomingRequests, setIncomingRequests] = React.useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = React.useState(true);
   const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
@@ -211,20 +216,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
       setLoadingRequests(false);
-      setIncomingInitialized(true); 
-      return () => {}; 
+      setIncomingInitialized(true);
+      return () => {};
     }
-  
+
     setLoadingRequests(true);
-    setIncomingInitialized(false); 
-    
+    setIncomingInitialized(false);
+
     const incomingQuery = query(
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending")
       // orderBy("createdAt", "desc") Firestore dizinleri ayarlanana kadar kaldırıldı.
     );
-  
+
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
@@ -241,12 +246,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           id: reqDoc.id,
           fromUserId: data.fromUserId,
           fromUsername: data.fromUsername,
-          fromAvatarUrl: data.fromAvatarUrl, 
-          createdAt: data.createdAt as Timestamp, 
+          fromAvatarUrl: data.fromAvatarUrl,
+          createdAt: data.createdAt as Timestamp,
           userProfile: userProfileData,
         } as FriendRequestForPopover;
       });
-      
+
       try {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
@@ -258,14 +263,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
-      toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
+      // toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
       if (!incomingInitialized) setIncomingInitialized(true);
     });
-    
+
     return () => {
         unsubscribeIncoming();
-    }; 
-  }, [currentUser?.uid, toast, incomingInitialized]);
+    };
+  }, [currentUser?.uid, /* toast, */ incomingInitialized]); // toast kaldırıldı
 
   React.useEffect(() => {
     if (incomingInitialized) {
@@ -279,7 +284,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handleAcceptRequestPopover = async (request: FriendRequestForPopover) => {
-    if (!currentUser || !userData || !request.userProfile) { 
+    if (!currentUser || !userData || !request.userProfile) {
         toast({ title: "Hata", description: "İstek kabul edilemedi, gönderen bilgileri eksik.", variant: "destructive" });
         return;
     }
@@ -290,19 +295,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       batch.update(requestRef, { status: "accepted" });
 
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
-      batch.set(myFriendRef, { 
-        displayName: request.userProfile.displayName, 
+      batch.set(myFriendRef, {
+        displayName: request.userProfile.displayName,
         photoURL: request.userProfile.photoURL,
-        addedAt: serverTimestamp() 
+        addedAt: serverTimestamp()
       });
 
       const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
-      batch.set(theirFriendRef, { 
-        displayName: userData.displayName, 
+      batch.set(theirFriendRef, {
+        displayName: userData.displayName,
         photoURL: userData.photoURL,
-        addedAt: serverTimestamp() 
+        addedAt: serverTimestamp()
       });
-      
+
       await batch.commit();
       toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
     } catch (error) {
@@ -312,11 +317,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       setActionLoading(request.id, false);
     }
   };
-  
+
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
-      await deleteDoc(doc(db, "friendRequests", requestId)); 
+      await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
     } catch (error) {
       console.error("Error declining friend request from popover:", error);
@@ -329,7 +334,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const getAvatarFallback = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "SK"; 
+    return "SK";
   };
 
   const toggleTheme = () => {
@@ -351,16 +356,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50 bg-sidebar border-r border-sidebar-border">
-               <SheetHeader className="p-4 border-b border-sidebar-border"> 
+               <SheetHeader className="p-4 border-b border-sidebar-border">
                 <SheetTitle className="text-lg font-semibold text-sidebar-foreground">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
               <SidebarContent onLinkClick={() => setMobileSheetOpen(false)} />
             </SheetContent>
           </Sheet>
-          
+
           <div className="w-full flex-1">
           </div>
-          
+
           <div className="flex items-center gap-2 sm:gap-3">
             {userData && (
               <div className="flex items-center gap-1.5 sm:gap-2 text-sm font-medium text-primary dark:text-yellow-400">
@@ -391,7 +396,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <div className="p-3 border-b">
                   <h3 className="text-sm font-medium text-foreground">Arkadaşlık İstekleri</h3>
                 </div>
-                {loadingRequests ? (
+                {loadingRequests && !incomingInitialized ? ( // Sadece ilk yüklemede göster
                   <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>
                 ) : incomingRequests.length === 0 ? (
                   <p className="p-4 text-sm text-muted-foreground text-center">Yeni arkadaşlık isteği yok.</p>
@@ -407,25 +412,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                           <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername || "Bilinmeyen Kullanıcı"}</span>
                         </div>
                         <div className="flex gap-1.5">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-400/20"
                             onClick={() => handleAcceptRequestPopover(req)}
-                            disabled={performingAction[req.id] || !req.userProfile} 
+                            disabled={performingAction[req.id] || !req.userProfile}
                             aria-label="Kabul Et"
                           >
-                            {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
+                            {performingAction[req.id] && <Loader2 className="h-4 w-4 animate-spin"/>}
+                            {!performingAction[req.id] && <UserCheck className="h-4 w-4" />}
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-400/20"
                             onClick={() => handleDeclineRequestPopover(req.id)}
                             disabled={performingAction[req.id]}
                             aria-label="Reddet"
                           >
-                           {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
+                           {performingAction[req.id] && <Loader2 className="h-4 w-4 animate-spin"/>}
+                           {!performingAction[req.id] && <UserX className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
@@ -437,7 +444,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
+                <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser || isUserLoading}>
                   <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                     <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
                     <AvatarFallback>{getAvatarFallback(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
@@ -465,7 +472,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logOut} disabled={isUserLoading} className="text-destructive hover:!text-destructive focus:!text-destructive dark:hover:!bg-destructive/80 dark:focus:!bg-destructive/80 dark:hover:!text-destructive-foreground">
-                  {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />} 
+                  {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />}
                   Çıkış Yap
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -479,5 +486,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
     
