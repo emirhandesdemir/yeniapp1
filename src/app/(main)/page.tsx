@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Gem, MessagesSquare, UserCog, Users, PlusCircle, Loader2, Compass, CalendarDays } from "lucide-react";
+import { Gem, MessagesSquare, UserCog, Users, PlusCircle, Loader2, Compass } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
@@ -17,18 +17,15 @@ export default function DashboardPage() {
   const [friendsCount, setFriendsCount] = useState<number | null>(null);
   const [loadingActiveRooms, setLoadingActiveRooms] = useState(true);
   const [loadingFriendsCount, setLoadingFriendsCount] = useState(true);
-  const [currentDate, setCurrentDate] = useState('');
 
   const greetingName = userData?.displayName || currentUser?.displayName || "Kullanıcı";
 
   useEffect(() => {
-    setCurrentDate(new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
-
     const q = query(
       collection(db, "chatRooms"),
-      where("expiresAt", ">", Timestamp.now()) 
+      where("expiresAt", ">", Timestamp.now())
     );
-    
+
     const unsubscribeRooms = onSnapshot(q, (snapshot) => {
       let count = 0;
       snapshot.docs.forEach(doc => {
@@ -43,7 +40,7 @@ export default function DashboardPage() {
       setLoadingActiveRooms(false);
     }, (error) => {
       console.error("Error fetching active rooms count:", error);
-      setActiveRoomsCount(0); 
+      setActiveRoomsCount(0);
       setLoadingActiveRooms(false);
     });
 
@@ -58,7 +55,7 @@ export default function DashboardPage() {
         setLoadingFriendsCount(false);
       }, (error) => {
         console.error("Error fetching friends count:", error);
-        setFriendsCount(0); 
+        setFriendsCount(0);
         setLoadingFriendsCount(false);
       });
       return () => unsubscribeFriends();
@@ -82,12 +79,6 @@ export default function DashboardPage() {
                 Bugün yeni bağlantılar kurmaya veya keyifli sohbetlere katılmaya ne dersin?
               </CardDescription>
             </div>
-            {currentDate && (
-              <div className="flex items-center text-sm text-muted-foreground bg-card/50 dark:bg-card/30 px-3 py-1.5 rounded-lg shadow-sm">
-                <CalendarDays className="h-4 w-4 mr-2 text-primary" />
-                {currentDate}
-              </div>
-            )}
           </div>
         </CardHeader>
         <CardContent className="p-6 pt-2">
