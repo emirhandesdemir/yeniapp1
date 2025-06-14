@@ -17,8 +17,9 @@ import {
   Bell,
   Loader2,
   Gem,
-  Sun, // Sun ikonu eklendi
-  Moon // Moon ikonu eklendi
+  Sun, 
+  Moon,
+  ShieldCheck // Admin paneli ikonu
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -34,13 +35,14 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTheme } from '@/contexts/ThemeContext'; // useTheme hook'u import edildi
+import { useTheme } from '@/contexts/ThemeContext'; 
 
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ElementType;
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -48,11 +50,17 @@ const navItems: NavItem[] = [
   { href: '/chat', label: 'Sohbet Odaları', icon: MessageSquare },
   { href: '/friends', label: 'Arkadaşlar', icon: Users },
   { href: '/profile', label: 'Profilim', icon: UserCircle },
+  { href: '/admin/dashboard', label: 'Admin Paneli', icon: ShieldCheck, adminOnly: true }, // Admin paneli linki
 ];
 
-function NavLink({ item, onClick }: { item: NavItem, onClick?: () => void }) {
+function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => void, isAdmin?: boolean }) {
   const pathname = usePathname();
   const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+
+  if (item.adminOnly && !isAdmin) {
+    return null;
+  }
+
   return (
     <Link
       href={item.href}
@@ -70,7 +78,7 @@ function NavLink({ item, onClick }: { item: NavItem, onClick?: () => void }) {
 }
 
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
-  const { logOut, isUserLoading } = useAuth();
+  const { logOut, isUserLoading, userData } = useAuth();
   const { toast } = useToast();
 
   const handleLogout = async () => {
@@ -83,6 +91,8 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
     }
   };
 
+  const isAdmin = userData?.role === 'admin';
+
   return (
     <div className="flex h-full max-h-screen flex-col gap-2 bg-card border-r">
       <div className="flex h-16 items-center border-b px-6">
@@ -94,7 +104,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
       <div className="flex-1 overflow-auto py-2">
         <nav className="grid items-start px-4 text-sm font-medium">
           {navItems.map((item) => (
-            <NavLink key={item.href} item={item} onClick={onLinkClick} />
+            <NavLink key={item.href} item={item} onClick={onLinkClick} isAdmin={isAdmin} />
           ))}
         </nav>
       </div>
@@ -113,7 +123,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { currentUser, userData, logOut, isUserLoading } = useAuth();
   const { toast } = useToast();
-  const { theme, setTheme, resolvedTheme } = useTheme(); // Theme context'i kullanıldı
+  const { theme, setTheme, resolvedTheme } = useTheme(); 
 
   const handleLogoutFromDropdown = async () => {
     try {
@@ -125,12 +135,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
   
   const getAvatarFallback = () => {
-    if (currentUser?.displayName) {
-      return currentUser.displayName.substring(0, 2).toUpperCase();
-    }
-    if (currentUser?.email) {
-      return currentUser.email.substring(0, 2).toUpperCase();
-    }
+    const nameToUse = userData?.displayName || currentUser?.displayName;
+    if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
+    if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
     return "SK";
   };
 
@@ -161,7 +168,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Sheet>
           
           <div className="w-full flex-1">
-            {/* Header content like search can go here */}
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3">
@@ -193,7 +199,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{currentUser?.displayName || userData?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
+                <DropdownMenuLabel>{userData?.displayName || currentUser?.displayName || currentUser?.email || "Hesabım"}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => router.push('/profile')}>
                   <UserCircle className="mr-2 h-4 w-4" /> Profili Görüntüle
