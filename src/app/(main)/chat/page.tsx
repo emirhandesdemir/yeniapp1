@@ -8,7 +8,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, increment } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, increment, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { Badge } from "@/components/ui/badge";
 
 interface ChatRoom {
   id: string;
@@ -38,7 +39,7 @@ interface ChatRoom {
   image: string;
   imageAiHint: string;
   participantCount?: number;
-  maxParticipants: number; // Yeni alan
+  maxParticipants: number;
 }
 
 const placeholderImages = [
@@ -51,7 +52,7 @@ const placeholderImages = [
 
 const ROOM_CREATION_COST = 1;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
-const MAX_PARTICIPANTS_PER_ROOM = 7; // Yeni sabit
+const MAX_PARTICIPANTS_PER_ROOM = 7;
 
 
 export default function ChatRoomsPage() {
@@ -61,7 +62,7 @@ export default function ChatRoomsPage() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-  const { currentUser, userData, updateUserDiamonds, isUserLoading } = useAuth();
+  const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
   const [now, setNow] = useState(new Date()); 
 
@@ -79,7 +80,7 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        const roomData = doc.data() as ChatRoom; // Type cast to include maxParticipants
+        const roomData = doc.data() as ChatRoom; 
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -113,19 +114,20 @@ export default function ChatRoomsPage() {
       const currentTime = new Date();
       const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
       
-      await addDoc(collection(db, "chatRooms"), {
-        name: newRoomName,
-        description: newRoomDescription,
+      const roomDataToCreate = {
+        name: newRoomName.trim(),
+        description: newRoomDescription.trim(),
         creatorId: currentUser.uid,
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAtDate),
         image: randomImage.url,
         imageAiHint: randomImage.hint,
-        participantCount: 0, // Başlangıçta 0 katılımcı
-        maxParticipants: MAX_PARTICIPANTS_PER_ROOM, // Maksimum katılımcı sayısı
-      });
+        participantCount: 0, 
+        maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
+      };
 
+      await addDoc(collection(db, "chatRooms"), roomDataToCreate);
       await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
 
       toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
@@ -134,7 +136,7 @@ export default function ChatRoomsPage() {
       setIsCreateModalOpen(false);
     } catch (error) {
       console.error("Error creating room: ", error);
-      toast({ title: "Hata", description: "Oda oluşturulurken bir sorun oluştu.", variant: "destructive" });
+      toast({ title: "Hata", description: "Oda oluşturulurken bir sorun oluştu. Lütfen konsolu kontrol edin.", variant: "destructive" });
     } finally {
       setIsCreatingRoom(false);
     }
@@ -145,21 +147,19 @@ export default function ChatRoomsPage() {
       return;
     }
     try {
+      const batch = writeBatch(db);
+      
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
       const messagesSnapshot = await getDocs(messagesQuery);
-      const deletePromises: Promise<void>[] = [];
-      messagesSnapshot.forEach((messageDoc) => {
-        deletePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id)));
-      });
-
+      messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
+      
       const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
       const participantsSnapshot = await getDocs(participantsQuery);
-      participantsSnapshot.forEach((participantDoc) => {
-        deletePromises.push(deleteDoc(doc(db, `chatRooms/${roomId}/participants`, participantDoc.id)));
-      });
-
-      await Promise.all(deletePromises);
-      await deleteDoc(doc(db, "chatRooms", roomId));
+      participantsSnapshot.forEach((participantDoc) => batch.delete(participantDoc.ref));
+      
+      batch.delete(doc(db, "chatRooms", roomId));
+      
+      await batch.commit();
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
     } catch (error) {
       console.error("Error deleting room: ", error);
@@ -195,7 +195,10 @@ export default function ChatRoomsPage() {
         </div>
         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto" disabled={!currentUser || isUserLoading}>
+            <Button 
+              className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto" 
+              disabled={!currentUser || isUserLoading || isUserDataLoading }
+            >
               <PlusCircle className="mr-2 h-5 w-5" />
               Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
@@ -220,6 +223,7 @@ export default function ChatRoomsPage() {
                     onChange={(e) => setNewRoomName(e.target.value)}
                     className="col-span-3"
                     required
+                    disabled={isCreatingRoom}
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -232,14 +236,23 @@ export default function ChatRoomsPage() {
                     onChange={(e) => setNewRoomDescription(e.target.value)}
                     className="col-span-3"
                     rows={3}
+                    disabled={isCreatingRoom}
                   />
                 </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                    <Button type="button" variant="outline">İptal</Button>
+                    <Button type="button" variant="outline" disabled={isCreatingRoom}>İptal</Button>
                 </DialogClose>
-                <Button type="submit" disabled={isCreatingRoom || !currentUser || (userData && userData.diamonds < ROOM_CREATION_COST)}>
+                <Button 
+                  type="submit" 
+                  disabled={
+                    isCreatingRoom || 
+                    !currentUser || 
+                    !userData || 
+                    (userData.diamonds < ROOM_CREATION_COST)
+                  }
+                >
                   {isCreatingRoom && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Oluştur
                 </Button>
@@ -249,7 +262,7 @@ export default function ChatRoomsPage() {
         </Dialog>
       </div>
 
-      {chatRooms.length === 0 ? (
+      {chatRooms.length === 0 && !loading ? (
         <Card className="col-span-full">
             <CardHeader>
                 <CardTitle className="text-center">Henüz Sohbet Odası Yok</CardTitle>
@@ -298,14 +311,10 @@ export default function ChatRoomsPage() {
                 </Badge>
               </div>
               <CardHeader className="pt-3 sm:pt-4 pb-2 sm:pb-3">
-                <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground/90 truncate">{room.name}</CardTitle>
+                <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground/90 truncate" title={room.name}>{room.name}</CardTitle>
                 <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis">{room.description || "Açıklama yok."}</CardDescription>
               </CardHeader>
               <CardContent className="flex-grow pt-1 sm:pt-2 pb-3 sm:pb-4">
-                {/* <div className="flex items-center text-xs sm:text-sm text-muted-foreground">
-                  <Users className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  {room.participantCount || 0} katılımcı ({room.maxParticipants} maks.)
-                </div> */}
                 <p className="text-xs text-muted-foreground mt-1 truncate">Oluşturan: {room.creatorName}</p>
                 <div className="flex items-center text-xs text-muted-foreground mt-1.5 sm:mt-2">
                   <Clock className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -331,6 +340,5 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
 
     
