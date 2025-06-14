@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, DoorOpen, DoorClosed } from "lucide-react"; // UsersRound, ShieldAlert eklendi
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, DoorOpen, DoorClosed } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback } from "react";
@@ -26,16 +26,14 @@ import {
   where,
   writeBatch,
   increment,
-  deleteField,
-} from "firebase/firestore";
-import { useAuth, type UserData } from "@/contexts/AuthContext"; // UserData import edildi
+} from "firebase/firestore"; // deleteField kaldırıldı, kullanılmıyor
+import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
-
+// import { Badge } from "@/components/ui/badge"; // Artık header'da popover trigger'ı için badge kullanmıyoruz
 
 interface Message {
   id: string;
@@ -54,11 +52,11 @@ interface ChatRoomDetails {
   description?: string;
   creatorId: string;
   participantCount?: number;
-  maxParticipants: number; // Yeni alan
+  maxParticipants: number;
   expiresAt?: Timestamp;
 }
 
-interface ActiveParticipant { // Sağ panel için katılımcı arayüzü
+interface ActiveParticipant {
   id: string; // userId
   displayName: string | null;
   photoURL: string | null;
@@ -104,8 +102,8 @@ export default function ChatRoomPage() {
   const [relevantFriendRequest, setRelevantFriendRequest] = useState<FriendRequest | null>(null);
 
   const [activeParticipants, setActiveParticipants] = useState<ActiveParticipant[]>([]);
-  const [isRoomFullError, setIsRoomFullError] = useState(false); // Oda doluysa mesaj göndermeyi engellemek için
-  const [isProcessingJoinLeave, setIsProcessingJoinLeave] = useState(true); // Odaya katılma/ayrılma işlemi için
+  const [isRoomFullError, setIsRoomFullError] = useState(false);
+  const [isProcessingJoinLeave, setIsProcessingJoinLeave] = useState(true);
   const [isCurrentUserParticipant, setIsCurrentUserParticipant] = useState(false);
 
   const getAvatarFallbackText = (name?: string | null) => {
@@ -113,8 +111,6 @@ export default function ChatRoomPage() {
     return "PN"; 
   };
 
-
-  // Odaya Katılma ve Ayrılma Mantığı
   const handleJoinRoom = useCallback(async () => {
     if (!currentUser || !userData || !roomId || !roomDetails) return;
     setIsProcessingJoinLeave(true);
@@ -124,7 +120,7 @@ export default function ChatRoomPage() {
     try {
       const participantSnap = await getDoc(participantRef);
       if (participantSnap.exists()) {
-        setIsCurrentUserParticipant(true); // Zaten katılımcı
+        setIsCurrentUserParticipant(true);
         setIsProcessingJoinLeave(false);
         return;
       }
@@ -156,9 +152,8 @@ export default function ChatRoomPage() {
   }, [currentUser, userData, roomId, roomDetails, toast]);
 
   const handleLeaveRoom = useCallback(async () => {
-    if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve(); // Sadece katılımcıysa ayrıl
+    if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve();
     
-    // Kullanıcı odadan ayrıldığında participantCount'u azalt ve katılımcı listesinden çıkar
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
     try {
@@ -166,11 +161,10 @@ export default function ChatRoomPage() {
       batch.delete(participantRef);
       batch.update(roomRef, { participantCount: increment(-1) });
       await batch.commit();
-      setIsCurrentUserParticipant(false); // Ayrıldı olarak işaretle
+      setIsCurrentUserParticipant(false);
       console.log("User left room and participant count decremented.");
     } catch (error) {
       console.error("Error leaving room:", error);
-      // Burada toast göstermek kullanıcı deneyimini bozabilir (sayfadan ayrılırken)
     }
   }, [currentUser, roomId, isCurrentUserParticipant]);
 
@@ -180,7 +174,6 @@ export default function ChatRoomPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Oda ve Mesaj Detayları Yükleme
   useEffect(() => {
     if (!roomId) return;
 
@@ -195,14 +188,14 @@ export default function ChatRoomPage() {
           description: data.description,
           creatorId: data.creatorId,
           participantCount: data.participantCount || 0,
-          maxParticipants: data.maxParticipants || 7, // Varsayılan olarak 7
+          maxParticipants: data.maxParticipants || 7,
           expiresAt: data.expiresAt,
         };
         setRoomDetails(fetchedRoomDetails);
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
 
-        if (currentUser && userData) { // Sadece kullanıcı bilgileri yüklendiyse katılma işlemini başlat
-            handleJoinRoom(); // Oda bilgileri geldikten sonra katılma işlemini tetikle
+        if (currentUser && userData) {
+            handleJoinRoom();
         }
 
       } else {
@@ -216,7 +209,6 @@ export default function ChatRoomPage() {
       setLoadingRoom(false);
     });
 
-    // Katılımcı Listesi Dinleyicisi
     const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`), orderBy("joinedAt", "asc"));
     const unsubscribeParticipants = onSnapshot(participantsQuery, (snapshot) => {
       const fetchedParticipants: ActiveParticipant[] = [];
@@ -225,22 +217,10 @@ export default function ChatRoomPage() {
       });
       setActiveParticipants(fetchedParticipants);
       
-      // Katılımcı listesi güncellendiğinde, mevcut kullanıcının hala katılımcı olup olmadığını kontrol et
       if (currentUser) {
         const stillParticipant = fetchedParticipants.some(p => p.id === currentUser.uid);
         setIsCurrentUserParticipant(stillParticipant);
-        // Eğer katılımcı değilse ve oda dolu değilse tekrar katılmaya çalışabilir (bu senaryo normalde olmamalı)
-        // Ama oda dolu hatası varsa ve artık katılımcı değilse, mesaj gönderme engelini kaldırabiliriz.
-        if (!stillParticipant && isRoomFullError) {
-            // Bu durumda, oda dolu mesajı devam etmeli mi? Yoksa kullanıcı çıkarıldı mı?
-            // Eğer participantCount max'ın altındaysa, isRoomFullError'ı false yapabiliriz.
-            // Şimdilik, eğer kullanıcı listede yoksa isRoomFullError'ı false yapalım ki tekrar girebilsin.
-            // Ancak bu, participantCount'un da doğru güncellenmesine bağlı.
-            // En iyisi, isRoomFullError sadece ilk girişte set edilsin.
-        }
-
       }
-
     });
 
     setLoadingMessages(true);
@@ -275,13 +255,13 @@ export default function ChatRoomPage() {
       unsubscribeRoom();
       unsubscribeMessages();
       unsubscribeParticipants();
-      handleLeaveRoom(); // Component unmount olduğunda odadan ayrıl
+      handleLeaveRoom();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, currentUser, userData, toast, router, handleLeaveRoom]); // handleJoinRoom bağımlılıklardan çıkarıldı, çünkü roomDetails'e bağlı
+  }, [roomId, currentUser, userData, toast, router, handleLeaveRoom]);
 
 
-  useEffect(() => { // handleJoinRoom'u oda detayları geldikten sonra ve kullanıcı bilgileri varsa çağır
+  useEffect(() => {
     if (roomDetails && currentUser && userData && !isCurrentUserParticipant && !isRoomFullError && isProcessingJoinLeave) {
         handleJoinRoom();
     }
@@ -539,7 +519,7 @@ export default function ChatRoomPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] sm:h-[calc(100vh-theme(spacing.24))] md:h-[calc(100vh-theme(spacing.28))] bg-card rounded-xl shadow-lg overflow-hidden">
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
             <Button variant="ghost" size="icon" asChild className="md:hidden flex-shrink-0 h-9 w-9">
             <Link href="/chat">
                 <ArrowLeft className="h-5 w-5" />
@@ -553,10 +533,6 @@ export default function ChatRoomPage() {
             <div className="flex-1 min-w-0">
                 <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
                 <div className="flex items-center text-xs text-muted-foreground gap-x-2">
-                    <div className="flex items-center">
-                        <UsersRound className="mr-1 h-3 w-3" />
-                        <span>{activeParticipants.length} / {roomDetails.maxParticipants}</span>
-                    </div>
                     {roomDetails.expiresAt && (
                         <div className="flex items-center truncate">
                             <Clock className="mr-1 h-3 w-3" />
@@ -566,30 +542,73 @@ export default function ChatRoomPage() {
                 </div>
             </div>
         </div>
-        {currentUser && roomDetails.creatorId === currentUser.uid && (
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
-                        <MoreVertical className="h-5 w-5" />
-                        <span className="sr-only">Oda Seçenekleri</span>
+        <div className="flex items-center gap-2">
+            <Popover>
+                <PopoverTrigger asChild>
+                    <Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5">
+                        <UsersRound className="h-4 w-4" />
+                        <span className="text-xs">{activeParticipants.length}/{roomDetails.maxParticipants}</span>
                     </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    {!isRoomExpired && roomDetails.expiresAt && (
-                        <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>
-                            {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                            Süre Uzat (2 <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                </PopoverTrigger>
+                <PopoverContent className="w-60 p-0">
+                    <div className="p-2 border-b">
+                        <h3 className="text-xs font-medium text-center text-muted-foreground">
+                            Aktif Katılımcılar ({activeParticipants.length}/{roomDetails.maxParticipants})
+                        </h3>
+                    </div>
+                    <ScrollArea className="max-h-60">
+                        {activeParticipants.length === 0 && !isProcessingJoinLeave && (
+                            <div className="text-center text-xs text-muted-foreground py-3 px-2">
+                                <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" />
+                                Odada kimse yok.
+                            </div>
+                        )}
+                        {isProcessingJoinLeave && activeParticipants.length === 0 && (
+                            <div className="text-center text-xs text-muted-foreground py-3 px-2">
+                                <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" />
+                                Yükleniyor...
+                            </div>
+                        )}
+                        <ul className="divide-y divide-border">
+                            {activeParticipants.map(participant => (
+                            <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
+                                <Avatar className="h-7 w-7">
+                                    <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar"/>
+                                    <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
+                                </Avatar>
+                                <span className="text-xs font-medium truncate text-muted-foreground">{participant.displayName || "Bilinmeyen"}</span>
+                            </li>
+                            ))}
+                        </ul>
+                    </ScrollArea>
+                </PopoverContent>
+            </Popover>
+
+            {currentUser && roomDetails.creatorId === currentUser.uid && (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                            <MoreVertical className="h-5 w-5" />
+                            <span className="sr-only">Oda Seçenekleri</span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        {!isRoomExpired && roomDetails.expiresAt && (
+                            <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>
+                                {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                                Süre Uzat (2 <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                            <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
                         </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                        <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
-        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            )}
+        </div>
       </header>
 
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 overflow-hidden"> {/* Bu div artık sadece mesaj alanını saracak */}
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
             {loadingMessages && (
                 <div className="flex flex-1 items-center justify-center py-10">
@@ -696,37 +715,7 @@ export default function ChatRoomPage() {
             </div>
             ))}
         </ScrollArea>
-
-        <div className="w-60 sm:w-72 border-l bg-card/50 dark:bg-card/30 p-3 flex flex-col">
-            <h3 className="text-sm font-semibold mb-3 text-center text-primary-foreground/80 border-b pb-2">
-                Aktif Katılımcılar ({activeParticipants.length}/{roomDetails.maxParticipants})
-            </h3>
-            <ScrollArea className="flex-1">
-            {activeParticipants.length === 0 && !isProcessingJoinLeave && (
-                 <div className="text-center text-xs text-muted-foreground py-4">
-                    <Users className="mx-auto h-8 w-8 mb-2 text-muted-foreground/50" />
-                    Odada kimse yok.
-                </div>
-            )}
-            {isProcessingJoinLeave && activeParticipants.length === 0 && (
-                 <div className="text-center text-xs text-muted-foreground py-4">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary mb-1" />
-                    Yükleniyor...
-                </div>
-            )}
-            <ul className="space-y-2.5">
-                {activeParticipants.map(participant => (
-                <li key={participant.id} className="flex items-center gap-2.5 p-1.5 rounded-md hover:bg-secondary/30 dark:hover:bg-secondary/20">
-                    <Avatar className="h-7 w-7">
-                        <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar"/>
-                        <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
-                    </Avatar>
-                    <span className="text-xs font-medium truncate text-muted-foreground">{participant.displayName || "Bilinmeyen"}</span>
-                </li>
-                ))}
-            </ul>
-            </ScrollArea>
-        </div>
+        {/* SAĞ YAN PANEL KALDIRILDI */}
     </div>
 
 
@@ -767,5 +756,3 @@ export default function ChatRoomPage() {
   );
 }
 
-
-    
