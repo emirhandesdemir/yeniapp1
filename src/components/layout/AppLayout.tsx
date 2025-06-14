@@ -51,7 +51,7 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  orderBy 
+  // orderBy // orderBy kaldırıldı
 } from "firebase/firestore";
 
 interface NavItem {
@@ -165,8 +165,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const incomingQuery = query(
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
-      where("status", "==", "pending"),
-      orderBy("createdAt", "desc") 
+      where("status", "==", "pending")
+      // orderBy("createdAt", "desc") // orderBy kaldırıldı
     );
 
     const unsubscribe = onSnapshot(incomingQuery, async (snapshot) => {
@@ -192,11 +192,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       });
       
       try {
-        const resolvedRequests = await Promise.all(reqPromises);
-        setIncomingRequests(resolvedRequests.filter(req => req !== null) as FriendRequestForPopover[]);
+        const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
+        setIncomingRequests(resolvedRequests);
       } catch (error) {
         console.error("Error resolving request promises:", error);
-        toast({ title: "Bildirim Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" });
+        // İsteğe bağlı: Bireysel profil çekme hataları için burada bir toast göstermeyin,
+        // çünkü onSnapshot'ın genel hata yakalayıcısı daha genel sorunları ele almalıdır.
       } finally {
         setLoadingRequests(false);
       }
@@ -251,7 +252,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
-      await deleteDoc(doc(db, "friendRequests", requestId));
+      await deleteDoc(doc(db, "friendRequests", requestId)); // Reddedilen isteği direkt sil
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
     } catch (error) {
       console.error("Error declining friend request from popover:", error);

@@ -22,7 +22,7 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  orderBy,
+  // orderBy, // orderBy kaldırıldı
   limit,
   getDocs
 } from "firebase/firestore";
@@ -65,7 +65,7 @@ export default function FriendsPage() {
     }
     setLoadingFriends(true);
     const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-    const q = query(friendsRef, orderBy("addedAt", "desc"));
+    const q = query(friendsRef); // orderBy("addedAt", "desc") kaldırıldı
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
@@ -78,7 +78,7 @@ export default function FriendsPage() {
             addedAt: friendData.addedAt 
           } as Friend;
         }
-        return {
+        return { // Fallback if user profile doc is somehow missing (should not happen ideally)
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
           photoURL: friendData.photoURL || null,
@@ -88,9 +88,15 @@ export default function FriendsPage() {
           addedAt: friendData.addedAt
         } as Friend;
       });
-      const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
-      setMyFriends(resolvedFriends);
-      setLoadingFriends(false);
+      try {
+        const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
+        setMyFriends(resolvedFriends);
+      } catch (error) {
+        console.error("Error resolving friend profiles:", error);
+        toast({ title: "Hata", description: "Arkadaş profilleri yüklenirken bir sorun oluştu.", variant: "destructive" });
+      } finally {
+        setLoadingFriends(false);
+      }
     }, (error) => {
       console.error("Error fetching friends:", error);
       toast({ title: "Hata", description: "Arkadaşlar yüklenirken bir sorun oluştu.", variant: "destructive" });
@@ -107,6 +113,8 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
+      // Case-insensitive search might require more complex queries or third-party services
+      // For simplicity, we use >= and <= for display name, and exact match for email.
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
@@ -128,9 +136,11 @@ export default function FriendsPage() {
 
       for (const user of rawResults) {
         let processedUser: SearchResultUser = { ...user };
+        // Check if already friends
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
 
         if (!processedUser.isFriend) {
+          // Check for outgoing pending request to this user
           const outgoingQuery = query(collection(db, "friendRequests"), 
             where("fromUserId", "==", currentUser.uid), 
             where("toUserId", "==", user.uid), 
@@ -142,6 +152,7 @@ export default function FriendsPage() {
             processedUser.outgoingRequestId = outgoingSnap.docs[0].id;
           }
 
+          // Check for incoming pending request from this user (only if no outgoing request)
           if (!processedUser.isRequestSent) {
             const incomingQuery = query(collection(db, "friendRequests"),
               where("fromUserId", "==", user.uid),
@@ -151,6 +162,7 @@ export default function FriendsPage() {
             const incomingSnap = await getDocs(incomingQuery);
             if(!incomingSnap.empty) {
               processedUser.isRequestReceived = true;
+              // No need to store incomingRequestId here as actions are in popover
             }
           }
         }
@@ -185,6 +197,7 @@ export default function FriendsPage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${targetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
+      // Update search results to reflect sent request
       setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: true, outgoingRequestId: newRequestRef.id } : u
       ));
@@ -197,7 +210,7 @@ export default function FriendsPage() {
   };
   
   const handleCancelOutgoingRequest = async (targetUser: SearchResultUser) => {
-    if (!targetUser.outgoingRequestId) {
+    if (!currentUser || !targetUser.outgoingRequestId) {
         toast({ title: "Hata", description: "İptal edilecek istek ID'si bulunamadı.", variant: "destructive" });
         return;
     }
@@ -206,6 +219,7 @@ export default function FriendsPage() {
     try {
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
+      // Update search results to reflect cancelled request
        setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null} : u
       ));
@@ -227,16 +241,24 @@ export default function FriendsPage() {
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
       
+      // Optional: Delete the accepted friend request document(s) too to keep friendRequests clean
       const q = query(collection(db, "friendRequests"), 
+        where("status", "==", "accepted"),
         where("fromUserId", "in", [currentUser.uid, friendId]), 
-        where("toUserId", "in", [currentUser.uid, friendId]),
-        where("status", "==", "accepted") 
+        where("toUserId", "in", [currentUser.uid, friendId])
       );
       const oldRequestsSnap = await getDocs(q);
-      oldRequestsSnap.forEach(doc => batch.delete(doc.ref));
+      oldRequestsSnap.forEach(reqDoc => {
+        if((reqDoc.data().fromUserId === currentUser.uid && reqDoc.data().toUserId === friendId) ||
+           (reqDoc.data().fromUserId === friendId && reqDoc.data().toUserId === currentUser.uid)) {
+          batch.delete(reqDoc.ref);
+        }
+      });
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
+      // myFriends list will update via onSnapshot.
+      // Update search results if the removed friend is in them
       setSearchResults(prevResults => prevResults.map(sr => 
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
@@ -285,7 +307,7 @@ export default function FriendsPage() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="my-friends" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6"> {/* Grid-cols-2 olarak güncellendi */}
+            <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6">
               <TabsTrigger value="my-friends" className="text-xs sm:text-sm">Arkadaşlarım ({myFriends.length})</TabsTrigger>
               <TabsTrigger value="add-friend" className="text-xs sm:text-sm">Arkadaş Ekle</TabsTrigger>
             </TabsList>
@@ -306,6 +328,7 @@ export default function FriendsPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium text-sm sm:text-base">{friend.displayName || "İsimsiz"}</p>
+                          {/* <p className="text-xs text-muted-foreground">{friend.email}</p> */}
                         </div>
                       </div>
                       <div className="flex gap-1 sm:gap-2">
@@ -371,22 +394,24 @@ export default function FriendsPage() {
                                 <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
                                     <Send className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Gönderildi
                                 </Button>
-                                <Button 
-                                    variant="ghost" 
-                                    size="xs" 
-                                    className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
-                                    onClick={() => user.outgoingRequestId && handleCancelOutgoingRequest(user)}
-                                    disabled={!user.outgoingRequestId || performingAction[user.outgoingRequestId]}
-                                >
-                                    {user.outgoingRequestId && performingAction[user.outgoingRequestId] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
-                                </Button>
+                                {user.outgoingRequestId && // Only show cancel if requestId exists
+                                  <Button 
+                                      variant="ghost" 
+                                      size="xs" 
+                                      className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
+                                      onClick={() => handleCancelOutgoingRequest(user)}
+                                      disabled={performingAction[user.outgoingRequestId!]}
+                                  >
+                                      {performingAction[user.outgoingRequestId!] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
+                                  </Button>
+                                }
                             </div>
                         ) : user.isRequestReceived ? (
                            <Button 
                               variant="outline" 
                               size="sm" 
                               className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                              disabled 
+                              disabled // Action is in notifications popover
                             >
                               <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi (Bildirimlerde)
                             </Button>
