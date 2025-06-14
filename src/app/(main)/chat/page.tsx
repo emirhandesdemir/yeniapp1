@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useEffect, useState, useRef, ChangeEvent } from "react";
 import { db, storage } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { ref as storageRefFunction, uploadBytesResumable, getDownloadURL, type UploadTaskSnapshot } from "firebase/storage"; // Renamed ref to storageRefFunction
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -150,35 +150,57 @@ export default function ChatRoomsPage() {
         const file = newRoomImageFile;
         const fileExtension = file.name.split('.').pop();
         const imageFileName = `${currentUser.uid}_${Date.now()}.${fileExtension}`;
-        const roomImageRef = storageRef(storage, `chat_room_images/${imageFileName}`);
-        const uploadTask = uploadBytesResumable(roomImageRef, file);
+        const roomImageStorageRef = storageRefFunction(storage, `chat_room_images/${imageFileName}`); // Renamed storageRef to storageRefFunction
+        
+        console.log("[ChatPage] Room image ref:", roomImageStorageRef.toString());
 
-        await new Promise<void>((resolve, reject) => {
-          uploadTask.on('state_changed',
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log('[ChatPage] Upload is ' + progress + '% done');
-            },
-            (error) => {
-              console.error("[ChatPage] Room image upload Firebase error:", error);
-              toast({ title: "Oda Resmi Yükleme Hatası", description: `Firebase hatası: ${error.code || error.message}`, variant: "destructive" });
-              reject(error);
-            },
-            async () => {
-              try {
-                console.log("[ChatPage] Upload complete, getting download URL...");
-                imageUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                imageHint = "custom room image";
-                console.log("[ChatPage] Room image uploaded and URL obtained:", imageUrl);
-                resolve();
-              } catch (urlError: any) {
-                console.error("[ChatPage] Room image getDownloadURL error:", urlError);
-                toast({ title: "Oda Resmi URL Hatası", description: `URL alınamadı: ${urlError.code || urlError.message}`, variant: "destructive" });
-                reject(urlError);
-              }
-            }
-          );
-        });
+        try {
+            const uploadTask = uploadBytesResumable(roomImageStorageRef, file);
+            console.log("[ChatPage] Room image upload task created.");
+
+            await new Promise<void>((resolve, reject) => {
+            uploadTask.on('state_changed',
+                (snapshot: UploadTaskSnapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log('[ChatPage] Room image upload is ' + progress + '% done. State: ' + snapshot.state);
+                },
+                (error) => {
+                console.error("[ChatPage] Room image upload Firebase error (uploadTask.on error callback):", error);
+                toast({ 
+                    title: "Oda Resmi Yükleme Hatası", 
+                    description: `Firebase hatası: ${error.code || error.message}`, 
+                    variant: "destructive" 
+                });
+                reject(error);
+                },
+                async () => {
+                console.log("[ChatPage] Room image upload task completed. Attempting to get download URL...");
+                try {
+                    imageUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                    imageHint = "custom room image";
+                    console.log("[ChatPage] Room image uploaded. Download URL obtained:", imageUrl);
+                    resolve();
+                } catch (urlError: any) {
+                    console.error("[ChatPage] Room image getDownloadURL error:", urlError);
+                    toast({ 
+                    title: "Oda Resmi URL Hatası", 
+                    description: `URL alınamadı: ${urlError.code || urlError.message}`, 
+                    variant: "destructive" 
+                    });
+                    reject(urlError);
+                }
+                }
+            );
+            });
+        } catch (uploadInitiationError: any) {
+            console.error("[ChatPage] Error initiating or during room image upload promise:", uploadInitiationError);
+            toast({ 
+            title: "Oda Resmi Yükleme Başlatma Hatası", 
+            description: `Hata: ${uploadInitiationError.code || uploadInitiationError.message}`, 
+            variant: "destructive" 
+            });
+            throw uploadInitiationError; // Re-throw to be caught by the outer try-catch
+        }
       }
 
       const currentTime = new Date();
@@ -206,7 +228,8 @@ export default function ChatRoomsPage() {
       console.log("[ChatPage] Room creation successful.");
     } catch (error: any) {
       console.error("[ChatPage] Error creating room (outer catch):", error);
-       if (!(error.message?.includes("Oda Resmi Yükleme Hatası") || error.message?.includes("Oda Resmi URL Hatası"))) {
+      // Avoid double-toasting if it's already handled by specific upload error toasts
+      if (!(error.message?.includes("Oda Resmi Yükleme Hatası") || error.message?.includes("Oda Resmi URL Hatası") || error.message?.includes("Oda Resmi Yükleme Başlatma Hatası"))) {
          toast({ title: "Hata", description: `Oda oluşturulurken bir sorun oluştu: ${error.code || error.message}`, variant: "destructive" });
       }
     } finally {

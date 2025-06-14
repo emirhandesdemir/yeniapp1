@@ -15,7 +15,7 @@ import {
 } from 'firebase/auth';
 import { auth, db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { ref as storageRef, uploadBytesResumable, getDownloadURL, type UploadTaskSnapshot } from "firebase/storage";
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -225,46 +225,79 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Starting profile update for user:", auth.currentUser.uid);
+    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", updates);
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string } = {};
 
     try {
       if (updates.photoFile) {
-        console.log("[AuthContext] Photo file provided, attempting upload...");
+        console.log("[AuthContext] Photo file provided, starting upload process...");
         const file = updates.photoFile;
         const fileExtension = file.name.split('.').pop();
         const profileImageRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
-        const uploadTask = uploadBytesResumable(profileImageRef, file);
+        
+        console.log("[AuthContext] Profile image ref:", profileImageRef.toString());
 
-        await new Promise<void>((resolve, reject) => {
-          uploadTask.on('state_changed',
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log('[AuthContext] Upload is ' + progress + '% done');
-            },
-            (error) => {
-              console.error("[AuthContext] Profile image upload Firebase error:", error);
-              toast({ title: "Fotoğraf Yükleme Hatası", description: `Firebase hatası: ${error.code || error.message}`, variant: "destructive" });
-              reject(error);
-            },
-            async () => {
-              try {
-                console.log("[AuthContext] Upload complete, getting download URL...");
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                authUpdates.photoURL = downloadURL;
-                firestoreUpdates.photoURL = downloadURL;
-                console.log("[AuthContext] Profile image uploaded and URL obtained:", downloadURL);
-                resolve();
-              } catch (urlError: any) {
-                console.error("[AuthContext] Profile image getDownloadURL error:", urlError);
-                toast({ title: "Fotoğraf URL Hatası", description: `URL alınamadı: ${urlError.code || urlError.message}`, variant: "destructive" });
-                reject(urlError);
+        try {
+          const uploadTask = uploadBytesResumable(profileImageRef, file);
+          console.log("[AuthContext] Upload task created.");
+
+          await new Promise<void>((resolve, reject) => {
+            uploadTask.on('state_changed',
+              (snapshot: UploadTaskSnapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log('[AuthContext] Upload is ' + progress + '% done. State: ' + snapshot.state);
+                switch (snapshot.state) {
+                  case 'paused':
+                    console.log('[AuthContext] Upload is paused');
+                    break;
+                  case 'running':
+                    console.log('[AuthContext] Upload is running');
+                    break;
+                }
+              },
+              (error) => {
+                console.error("[AuthContext] Firebase Storage upload error (uploadTask.on error callback):", error);
+                console.error("Error Code:", error.code);
+                console.error("Error Message:", error.message);
+                console.error("Error ServerResponse:", error.serverResponse);
+                toast({ 
+                  title: "Fotoğraf Yükleme Başarısız", 
+                  description: `Yükleme sırasında hata: ${error.code || error.message}`, 
+                  variant: "destructive" 
+                });
+                reject(error);
+              },
+              async () => {
+                console.log("[AuthContext] Upload task completed. Attempting to get download URL...");
+                try {
+                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                  console.log("[AuthContext] Profile image uploaded. Download URL:", downloadURL);
+                  authUpdates.photoURL = downloadURL;
+                  firestoreUpdates.photoURL = downloadURL;
+                  resolve();
+                } catch (urlError: any) {
+                  console.error("[AuthContext] Failed to get download URL:", urlError);
+                  toast({ 
+                    title: "Fotoğraf URL Hatası", 
+                    description: `URL alınamadı: ${urlError.code || urlError.message}`, 
+                    variant: "destructive" 
+                  });
+                  reject(urlError);
+                }
               }
-            }
-          );
-        });
+            );
+          });
+        } catch (uploadInitiationError: any) {
+          console.error("[AuthContext] Error initiating or during photo upload promise:", uploadInitiationError);
+          toast({ 
+            title: "Fotoğraf Yükleme Başlatma Hatası", 
+            description: `Hata: ${uploadInitiationError.code || uploadInitiationError.message}`, 
+            variant: "destructive" 
+          });
+          throw uploadInitiationError; // Re-throw to be caught by the outer try-catch
+        }
       }
 
       if (updates.displayName && updates.displayName !== (userData?.displayName || auth.currentUser.displayName || "")) {
@@ -279,6 +312,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         console.log("[AuthContext] No actual changes to apply to profile.");
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
+        setIsUserLoading(false); // Ensure loading state is reset
         return true;
       }
 
@@ -312,12 +346,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     } catch (error: any) {
       console.error("[AuthContext] Profile update failed (outer catch):", error);
-      if (!(error.message?.includes("Fotoğraf Yükleme Hatası") || error.message?.includes("Fotoğraf URL Hatası"))) {
-          toast({ title: "Profil Güncelleme Hatası", description: `Bir sorun oluştu: ${error.code || error.message}`, variant: "destructive" });
-      }
+      toast({ 
+        title: "Profil Güncelleme Hatası", 
+        description: `Bir sorun oluştu: ${error.code || error.message}`, 
+        variant: "destructive" 
+      });
       return false;
     } finally {
-      console.log("[AuthContext] Ending profile update process. Setting isUserLoading to false.");
+      console.log("[AuthContext] Profile update process finished. Setting isUserLoading to false.");
       setIsUserLoading(false);
     }
   };
