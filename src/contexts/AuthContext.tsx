@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { ReactNode } from 'react';
@@ -10,7 +11,7 @@ import {
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth } from '@/lib/firebase'; // Bu satırın .env.local doğru yapılandırıldığında çalışması beklenir
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
@@ -62,12 +63,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setCurrentUser(auth.currentUser); 
       router.push('/');
     } catch (error: any) {
-      console.error("Signup error:", error);
-      let message = "Kayıt sırasında bir hata oluştu.";
+      console.error("Signup error:", error, "Code:", error.code); // Hata kodunu konsola yazdır
+      let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') {
         message = "Bu e-posta adresi zaten kullanımda.";
       } else if (error.code === 'auth/weak-password') {
-        message = "Şifre çok zayıf. Lütfen daha güçlü bir şifre seçin.";
+        message = "Şifre çok zayıf. Lütfen en az 6 karakterli daha güçlü bir şifre seçin.";
+      } else if (error.code === 'auth/invalid-email') {
+        message = "Geçersiz e-posta adresi formatı.";
+      } else if (error.code === 'auth/operation-not-allowed') {
+        message = "E-posta/Şifre ile kimlik doğrulama Firebase projenizde etkinleştirilmemiş. Lütfen Firebase konsolundan bu ayarı etkinleştirin.";
       }
       throw new Error(message);
     } finally {
