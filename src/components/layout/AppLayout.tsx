@@ -22,7 +22,7 @@ import {
   ShieldCheck,
   UserCheck, 
   UserX, 
-  Send
+  Send // Send ikonu zaten vardı, gereksiz importu kaldırdım.
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -46,14 +46,14 @@ import {
   query,
   where,
   onSnapshot,
-  updateDoc,
+  updateDoc, // updateDoc eklendi, gerekiyorsa.
   deleteDoc,
   doc,
   serverTimestamp,
   Timestamp,
   writeBatch,
   getDoc,
-  orderBy // Added orderBy import
+  orderBy 
 } from "firebase/firestore";
 
 interface NavItem {
@@ -77,7 +77,7 @@ interface FriendRequestForPopover {
   fromUsername: string;
   fromAvatarUrl: string | null;
   createdAt: Timestamp;
-  userProfile?: UserData;
+  userProfile?: UserData; // Gönderen kullanıcının profil bilgileri
 }
 
 function NavLink({ item, onClick, isAdmin }: { item: NavItem, onClick?: () => void, isAdmin?: boolean }) {
@@ -160,7 +160,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (!currentUser?.uid) {
       setIncomingRequests([]);
       setLoadingRequests(false);
-      return;
+      return () => {}; // Unsubscribe fonksiyonu döndür
     }
 
     setLoadingRequests(true);
@@ -174,25 +174,42 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const unsubscribe = onSnapshot(incomingQuery, async (snapshot) => {
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
-        const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
+        let userProfileData: UserData | undefined = undefined;
+        try {
+            const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
+            if (senderProfileDoc.exists()) {
+                userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
+            }
+        } catch (profileError) {
+            console.error(`Error fetching profile for sender ${data.fromUserId}:`, profileError);
+            // Profil alınamazsa bile isteği göstermeye devam et, sadece kullanıcı adı ile.
+        }
         return {
           id: reqDoc.id,
           fromUserId: data.fromUserId,
-          fromUsername: data.fromUsername,
-          fromAvatarUrl: data.fromAvatarUrl,
-          createdAt: data.createdAt,
-          userProfile: senderProfileDoc.exists() ? { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData : undefined,
+          fromUsername: data.fromUsername, // Firestore'da bu alanın olduğundan emin olun
+          fromAvatarUrl: data.fromAvatarUrl, // Firestore'da bu alanın olduğundan emin olun
+          createdAt: data.createdAt as Timestamp, // Tip zorlaması
+          userProfile: userProfileData,
         } as FriendRequestForPopover;
       });
-      setIncomingRequests(await Promise.all(reqPromises));
-      setLoadingRequests(false);
+      
+      try {
+        const resolvedRequests = await Promise.all(reqPromises);
+        setIncomingRequests(resolvedRequests.filter(req => req !== null) as FriendRequestForPopover[]);
+      } catch (error) {
+        console.error("Error resolving request promises:", error);
+        toast({ title: "Bildirim Hatası", description: "İstekler işlenirken bir sorun oluştu.", variant: "destructive" });
+      } finally {
+        setLoadingRequests(false);
+      }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
-      toast({ title: "Hata", description: "Bildirimler yüklenirken bir sorun oluştu.", variant: "destructive" });
+      toast({ title: "Bildirim Yükleme Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu. Lütfen daha sonra tekrar deneyin.", variant: "destructive" });
       setLoadingRequests(false);
     });
     
-    return () => unsubscribe();
+    return () => unsubscribe(); // Cleanup on unmount
   }, [currentUser?.uid, toast]);
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -200,13 +217,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handleAcceptRequestPopover = async (request: FriendRequestForPopover) => {
-    if (!currentUser || !userData || !request.userProfile) return;
+    if (!currentUser || !userData || !request.userProfile) { // request.userProfile kontrolü eklendi
+        toast({ title: "Hata", description: "İstek kabul edilemedi, gönderen bilgileri eksik.", variant: "destructive" });
+        return;
+    }
     setActionLoading(request.id, true);
     try {
       const batch = writeBatch(db);
+      // Friend request status'unu güncelle
       const requestRef = doc(db, "friendRequests", request.id);
       batch.update(requestRef, { status: "accepted" });
 
+      // Mevcut kullanıcının arkadaş listesine ekle
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
       batch.set(myFriendRef, { 
         displayName: request.userProfile.displayName, 
@@ -214,6 +236,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         addedAt: serverTimestamp() 
       });
 
+      // Diğer kullanıcının (isteği gönderenin) arkadaş listesine ekle
       const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
       batch.set(theirFriendRef, { 
         displayName: userData.displayName, 
@@ -223,7 +246,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       
       await batch.commit();
       toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
-      // No need to manually remove from incomingRequests, onSnapshot will update it
+      // incomingRequests onSnapshot ile otomatik güncellenecek
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -235,12 +258,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleDeclineRequestPopover = async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
-      // Instead of updating status to "declined", we can just delete the request
-      // or update status if we want to keep a record of declined requests.
-      // For simplicity here, we'll delete it.
+      // İsteği silmek yerine durumunu 'declined' olarak güncelleyebilir veya silebilirsiniz.
+      // Silmek daha temiz bir yaklaşım olabilir.
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
-      // No need to manually remove, onSnapshot will update the list
+      // incomingRequests onSnapshot ile otomatik güncellenecek
     } catch (error) {
       console.error("Error declining friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
@@ -252,7 +274,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const getAvatarFallback = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "SK";
+    return "SK"; // Sohbet Küresi
   };
 
   const toggleTheme = () => {
@@ -274,7 +296,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col p-0 w-[280px] sm:w-[320px] z-50">
-               <SheetHeader className="p-4 border-b">
+               <SheetHeader className="p-4 border-b"> {/* SheetHeader eklendi */}
                 <SheetTitle className="text-lg font-semibold">Navigasyon Menüsü</SheetTitle>
               </SheetHeader>
               <SidebarContent onLinkClick={() => setMobileSheetOpen(false)} />
@@ -282,6 +304,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Sheet>
           
           <div className="w-full flex-1">
+            {/* Header içeriği buraya gelebilir, örneğin arama çubuğu */}
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3">
@@ -327,7 +350,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
                             <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
                           </Avatar>
-                          <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername}</span>
+                          <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername || "Bilinmeyen Kullanıcı"}</span>
                         </div>
                         <div className="flex gap-1">
                           <Button 
@@ -335,7 +358,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             size="icon" 
                             className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-800/50 dark:text-green-400"
                             onClick={() => handleAcceptRequestPopover(req)}
-                            disabled={performingAction[req.id] || !req.userProfile}
+                            disabled={performingAction[req.id] || !req.userProfile} // Eğer profil yoksa da disable et
                             aria-label="Kabul Et"
                           >
                             {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
@@ -363,7 +386,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <Button variant="ghost" size="icon" className="rounded-full" disabled={!currentUser}>
                   <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
                     <AvatarImage src={currentUser?.photoURL || userData?.photoURL || "https://placehold.co/100x100.png"} alt="Kullanıcı avatarı" data-ai-hint="user avatar" />
-                    <AvatarFallback>{getAvatarFallback()}</AvatarFallback>
+                    <AvatarFallback>{getAvatarFallback(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
                   </Avatar>
                   <span className="sr-only">Kullanıcı menüsünü aç/kapat</span>
                 </Button>
@@ -393,4 +416,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
