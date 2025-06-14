@@ -21,7 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Trash2, Users, Clock, Edit, ShieldQuestion, Gem, UserCog as AdminUserCogIcon, ListChecks as AdminListChecksIcon, ShieldCheck } from "lucide-react"; // Renamed icons to avoid conflict
+import { Loader2, Trash2, Users, Clock, Edit, ShieldQuestion, Gem, UserCog as AdminUserCogIcon, ListChecks as AdminListChecksIcon, ShieldCheck, ShieldAlert } from "lucide-react"; // ShieldAlert eklendi
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,7 +63,7 @@ interface ChatRoomAdminView {
 
 export default function AdminDashboardPage() {
   const { toast } = useToast();
-  const { currentUser: adminAuthUser, userData: adminUserData } = useAuth(); // Renamed for clarity
+  const { currentUser: adminAuthUser, userData: adminUserData } = useAuth();
 
   const [users, setUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -237,7 +237,7 @@ export default function AdminDashboardPage() {
     return `Kalan: ${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
   };
 
-  if (adminUserData === undefined || adminUserData === null) { // Ensure adminUserData is loaded
+  if (adminUserData === undefined || adminUserData === null) {
      return (
       <div className="flex flex-1 items-center justify-center min-h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -436,7 +436,6 @@ export default function AdminDashboardPage() {
         </TabsContent>
       </Tabs>
 
-      {/* User Edit Dialogs */}
       <Dialog open={isEditRoleDialogOpen} onOpenChange={setIsEditRoleDialogOpen}>
         <DialogContent>
           <DialogHeader>
