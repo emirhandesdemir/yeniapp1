@@ -28,14 +28,14 @@ import {
   getDocs
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
-import type { UserData } from "@/contexts/AuthContext"; // UserData tipini import ediyoruz
+import type { UserData } from "@/contexts/AuthContext";
 
-interface Friend extends UserData { // Artık UserData'yı temel alabiliriz
-  addedAt?: Timestamp; // confirmedFriends alt koleksiyonundan
+interface Friend extends UserData {
+  addedAt?: Timestamp;
 }
 
 interface FriendRequest {
-  id: string; // Firestore document ID
+  id: string;
   fromUserId: string;
   fromUsername: string;
   fromAvatarUrl: string | null;
@@ -44,9 +44,8 @@ interface FriendRequest {
   toAvatarUrl: string | null;
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
-  // UI için, isteğin gelen mi giden mi olduğunu ve ilgili kullanıcı profilini ekleyebiliriz
   processedType?: "incoming" | "outgoing";
-  userProfile?: UserData; // Gelen istek için gönderen, giden istek için alıcı
+  userProfile?: UserData;
 }
 
 
@@ -64,13 +63,12 @@ export default function FriendsPage() {
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingSearch, setLoadingSearch] = useState(false);
-  const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({}); // { [id]: isLoading }
+  const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     document.title = 'Arkadaşlarım - Sohbet Küresi';
   }, []);
 
-  // Arkadaşlarımı Çek
   useEffect(() => {
     if (!currentUser?.uid) {
       setLoadingFriends(false);
@@ -84,7 +82,7 @@ export default function FriendsPage() {
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
         const friendData = friendDoc.data();
-        const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id)); // Arkadaşın UID'si doc.id
+        const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
         if (userProfileDoc.exists()) {
           return { 
             ...userProfileDoc.data() as UserData, 
@@ -104,7 +102,6 @@ export default function FriendsPage() {
     return () => unsubscribe();
   }, [currentUser?.uid, toast]);
 
-  // Arkadaşlık İsteklerini Çek (Gelen ve Giden)
   useEffect(() => {
     if (!currentUser?.uid) {
       setLoadingRequests(false);
@@ -113,8 +110,15 @@ export default function FriendsPage() {
       return;
     }
     setLoadingRequests(true);
+    let initialIncomingSnapshotReceived = false;
+    let initialOutgoingSnapshotReceived = false;
 
-    // Gelen İstekler
+    const trySetLoadingFalse = () => {
+      if (initialIncomingSnapshotReceived && initialOutgoingSnapshotReceived) {
+        setLoadingRequests(false);
+      }
+    };
+
     const incomingQuery = query(
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
@@ -133,9 +137,19 @@ export default function FriendsPage() {
         } as FriendRequest;
       });
       setIncomingRequests(await Promise.all(reqPromises));
-    }, (error) => console.error("Error fetching incoming requests:", error));
+      if (!initialIncomingSnapshotReceived) {
+        initialIncomingSnapshotReceived = true;
+        trySetLoadingFalse();
+      }
+    }, (error) => {
+      console.error("Error fetching incoming requests:", error);
+      toast({ title: "Hata", description: "Gelen arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
+      if (!initialIncomingSnapshotReceived) {
+        initialIncomingSnapshotReceived = true;
+        trySetLoadingFalse();
+      }
+    });
 
-    // Giden İstekler
     const outgoingQuery = query(
       collection(db, "friendRequests"),
       where("fromUserId", "==", currentUser.uid),
@@ -154,16 +168,24 @@ export default function FriendsPage() {
         } as FriendRequest;
       });
       setOutgoingRequests(await Promise.all(reqPromises));
-    }, (error) => console.error("Error fetching outgoing requests:", error));
+      if (!initialOutgoingSnapshotReceived) {
+        initialOutgoingSnapshotReceived = true;
+        trySetLoadingFalse();
+      }
+    }, (error) => {
+      console.error("Error fetching outgoing requests:", error);
+      toast({ title: "Hata", description: "Giden arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive" });
+      if (!initialOutgoingSnapshotReceived) {
+        initialOutgoingSnapshotReceived = true;
+        trySetLoadingFalse();
+      }
+    });
     
-    Promise.all([new Promise(res => unsubIncoming(res)), new Promise(res => unsubOutgoing(res))])
-      .finally(() => setLoadingRequests(false));
-
     return () => {
       unsubIncoming();
       unsubOutgoing();
     };
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, toast]);
 
 
   const handleSearchUsers = async () => {
@@ -172,11 +194,6 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
-      // Firestore'da case-insensitive "contains" sorgusu yapmak doğrudan mümkün değil.
-      // Basit bir "eşitlik" veya "ile başlar" sorgusu kullanılabilir.
-      // Veya tüm kullanıcıları çekip client-side filtreleme (küçük veri setleri için).
-      // Burada displayName veya email ile "eşit" olanları arayalım.
-      
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
@@ -190,7 +207,7 @@ export default function FriendsPage() {
       emailSnapshot.forEach(doc => resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData));
       
       const allResults = Array.from(resultsMap.values())
-        .filter(user => user.uid !== currentUser.uid); // Kendini filtrele
+        .filter(user => user.uid !== currentUser.uid);
 
       setSearchResults(allResults);
 
@@ -210,7 +227,6 @@ export default function FriendsPage() {
     if (!currentUser || !userData || !targetUser) return;
     setActionLoading(targetUser.uid, true);
     try {
-      // Mevcut bir istek veya arkadaşlık var mı kontrol et
       const existingRequestQuery = query(collection(db, "friendRequests"),
         where("fromUserId", "==", currentUser.uid),
         where("toUserId", "==", targetUser.uid),
@@ -228,7 +244,6 @@ export default function FriendsPage() {
         setActionLoading(targetUser.uid, false);
         return;
       }
-
 
       await addDoc(collection(db, "friendRequests"), {
         fromUserId: currentUser.uid,
@@ -257,7 +272,6 @@ export default function FriendsPage() {
       const requestRef = doc(db, "friendRequests", request.id);
       batch.update(requestRef, { status: "accepted" });
 
-      // Arkadaşı kendi listeme ekle
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
       batch.set(myFriendRef, { 
         displayName: request.fromUsername, 
@@ -265,7 +279,6 @@ export default function FriendsPage() {
         addedAt: serverTimestamp() 
       });
 
-      // Kendimi arkadaşın listesine ekle
       const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
       batch.set(theirFriendRef, { 
         displayName: userData.displayName, 
@@ -287,8 +300,6 @@ export default function FriendsPage() {
     setActionLoading(requestId, true);
     try {
       await updateDoc(doc(db, "friendRequests", requestId), { status: "declined" });
-      // İsteği silmek yerine status'u 'declined' yapmak daha iyi olabilir, isteğe bağlı
-      // await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi." });
     } catch (error) {
       console.error("Error declining friend request:", error);
@@ -346,7 +357,6 @@ export default function FriendsPage() {
     return incomingRequests.some(req => req.fromUserId === targetUserId && req.status === 'pending');
   };
 
-
   if (isAuthLoading && !currentUser) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -369,7 +379,6 @@ export default function FriendsPage() {
       </div>
     );
   }
-
 
   return (
     <div className="space-y-6">
@@ -402,7 +411,6 @@ export default function FriendsPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium text-sm sm:text-base">{friend.displayName || "İsimsiz"}</p>
-                          {/* Online status eklenebilir */}
                         </div>
                       </div>
                       <div className="flex gap-1 sm:gap-2">
@@ -549,7 +557,6 @@ export default function FriendsPage() {
                               size="sm" 
                               className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
                               onClick={() => {
-                                // Directly accept or navigate to requests tab
                                 const request = incomingRequests.find(req => req.fromUserId === user.uid);
                                 if (request) handleAcceptFriendRequest(request);
                               }}
@@ -582,6 +589,3 @@ export default function FriendsPage() {
     </div>
   );
 }
-
-
-    
