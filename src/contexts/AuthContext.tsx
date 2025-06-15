@@ -170,8 +170,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       router.push('/');
       toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
-      console.error("[AuthContext] Login error:", error);
-      let message = "Giriş sırasında bir hata oluştu.";
+      console.error("[AuthContext] Login error:", error.code, error.message);
+      let message = `Giriş sırasında bir hata oluştu. (Kod: ${error.code || 'Bilinmiyor'}) Lütfen daha sonra tekrar deneyin veya konsolu kontrol edin.`;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         message = "E-posta veya şifre hatalı.";
       }
@@ -245,8 +245,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const imageFileName = `profile_${auth.currentUser.uid}_${Date.now()}.${fileExtension}`;
         const imageRef = storageRefFunction(storage, `profile_pictures/${auth.currentUser.uid}/${imageFileName}`);
         
-        // Önceki fotoğrafı silme (isteğe bağlı, ama genellikle iyi bir pratiktir)
-        // Eğer userData.photoURL varsa ve bu bir Firebase Storage URL'siyse silebiliriz.
         if (userData?.photoURL && userData.photoURL.includes("firebasestorage.googleapis.com")) {
             try {
                 const previousImageRef = storageRefFunction(storage, userData.photoURL);
@@ -254,8 +252,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 await deleteObject(previousImageRef);
                 console.log("[AuthContext] Previous profile picture deleted successfully.");
             } catch (deleteError: any) {
-                // Silme hatası genellikle kritik değildir, devam edebiliriz.
-                // Örneğin, dosya zaten yoksa veya izin sorunu varsa.
                 console.warn("[AuthContext] Could not delete previous profile picture:", deleteError.code, deleteError.message);
             }
         }
@@ -269,7 +265,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
             (snapshot) => {
               const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
               console.log("[AuthContext] Upload is " + progress + "% done");
-              // Gerekirse burada bir yükleme yüzdesi göstergesi güncellenebilir.
             },
             (error) => {
               console.error("[AuthContext] Firebase Storage upload error:", error.code, error.message, error.serverResponse);
@@ -301,7 +296,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         authUpdates.photoURL = newPhotoURL;
         firestoreUpdates.photoURL = newPhotoURL;
       } else {
-         // Kullanıcı fotoğrafı kaldırmak isterse (photoFile === null ise ve bir fotoğrafı varsa)
          if (updates.photoFile === null && userData?.photoURL) {
             console.log("[AuthContext] User requested to remove profile picture.");
              if (userData.photoURL.includes("firebasestorage.googleapis.com")) {
@@ -313,19 +307,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     console.warn("[AuthContext] Could not delete profile picture from storage:", deleteError.code, deleteError.message);
                 }
             }
-            authUpdates.photoURL = null; // Firebase Auth'da null yap
-            firestoreUpdates.photoURL = null; // Firestore'da null yap
+            authUpdates.photoURL = null; 
+            firestoreUpdates.photoURL = null; 
          }
       }
 
 
-      // 2. Display Name Güncelleme (eğer varsa)
       const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
       if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
           if(updates.displayName.trim().length < 3){
               toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
               setIsUserLoading(false);
-              return false; // Hata durumunda erken çık
+              return false; 
           }
           console.log("[AuthContext] Display name update provided:", updates.displayName);
           authUpdates.displayName = updates.displayName.trim();
@@ -342,7 +335,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return true;
       }
 
-      // 3. Firebase Auth ve Firestore Güncelleme
       if (hasAuthUpdates && auth.currentUser) {
         console.log("[AuthContext] Updating Firebase Auth profile with:", authUpdates);
         await updateFirebaseProfile(auth.currentUser, authUpdates);
@@ -353,23 +345,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(userDocRef, firestoreUpdates);
       }
       
-      // Lokal state'i güncelle
-      await auth.currentUser?.reload(); // Auth kullanıcısını yenile
+      await auth.currentUser?.reload(); 
       const refreshedUser = auth.currentUser;
 
       setUserData(prev => {
           if (!prev) return null;
           const newLocalData: Partial<UserData> = {};
           if (firestoreUpdates.displayName) newLocalData.displayName = firestoreUpdates.displayName;
-          if (firestoreUpdates.hasOwnProperty('photoURL')) newLocalData.photoURL = firestoreUpdates.photoURL; // null da olabilir
+          if (firestoreUpdates.hasOwnProperty('photoURL')) newLocalData.photoURL = firestoreUpdates.photoURL; 
 
-          // Firestore güncellemesi olmasa bile Auth'dan gelen en son bilgiyi yansıt
           if (refreshedUser?.displayName && !newLocalData.displayName) newLocalData.displayName = refreshedUser.displayName;
           if (refreshedUser?.photoURL !== undefined && !newLocalData.hasOwnProperty('photoURL')) newLocalData.photoURL = refreshedUser.photoURL;
 
           return { ...prev, ...newLocalData };
       });
-       // Ensure currentUser state is also refreshed if auth profile changed
        if (refreshedUser) {
         setCurrentUser({ ...refreshedUser });
       }
