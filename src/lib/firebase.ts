@@ -6,20 +6,22 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage"; // Firebase Storage eklendi
 
-// Firebase yapılandırmanızın projenizin kök dizinindeki
-// .env.local dosyasından yüklendiğinden emin olun.
-// Örnek .env.local içeriği:
-// NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSy...
-// NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
-// NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
-// NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
-// NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=1234567890
-// NEXT_PUBLIC_FIREBASE_APP_ID=1:1234567890:web:your-app-id
-// NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-XXXXXXXXXX (isteğe bağlı)
+// !! TEMPORARY DEBUGGING STEP !!
+// Replace the placeholder values below with your ACTUAL Firebase project credentials.
+// This is to help diagnose the 'auth/invalid-api-key' error.
+// Ensure your .env.local file is correctly set up afterwards if this works.
+const firebaseConfig: FirebaseOptions = {
+  apiKey: "PLACEHOLDER_API_KEY", // <-- REPLACE THIS WITH YOUR API KEY
+  authDomain: "PLACEHOLDER_AUTH_DOMAIN", // e.g., your-project-id.firebaseapp.com
+  projectId: "PLACEHOLDER_PROJECT_ID", // e.g., your-project-id
+  storageBucket: "PLACEHOLDER_STORAGE_BUCKET", // e.g., your-project-id.appspot.com
+  messagingSenderId: "PLACEHOLDER_MESSAGING_SENDER_ID",
+  appId: "PLACEHOLDER_APP_ID",
+  measurementId: "PLACEHOLDER_MEASUREMENT_ID", // Optional
+};
 
-// Yardımcı olmak için API anahtarını konsola yazdıralım
-console.log('[DEBUG] Attempting to use Firebase API Key:', process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? process.env.NEXT_PUBLIC_FIREBASE_API_KEY.substring(0, 10) + "..." : "NOT FOUND");
-
+// Comment out or remove the process.env lines for this temporary test:
+/*
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -27,18 +29,9 @@ const firebaseConfig: FirebaseOptions = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Analytics için, isteğe bağlı
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
-
-if (!firebaseConfig.apiKey) {
-  console.error(
-    "Firebase API Key is missing. Please check your .env.local file and ensure NEXT_PUBLIC_FIREBASE_API_KEY is set correctly and the development server was restarted."
-  );
-  // Geliştirme ortamında daha belirgin bir hata fırlatabiliriz.
-  // if (process.env.NODE_ENV === 'development') {
-  //   alert("Firebase API Anahtarı eksik veya yanlış! Lütfen .env.local dosyanızı kontrol edin ve geliştirme sunucusunu yeniden başlatın.");
-  // }
-}
+*/
 
 // Firebase'i başlat
 let app;
@@ -51,6 +44,6 @@ if (!getApps().length) {
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app); // Storage instance'ı oluşturuldu
-// const analytics = getAnalytics(app); // Analytics kullanmıyorsak bu satır da kaldırılabilir veya yorumda bırakılabilir
+// const analytics = getAnalytics(app);
 
-export { app, auth, db, storage }; // storage export edildi
+export { app, auth, db, storage };
