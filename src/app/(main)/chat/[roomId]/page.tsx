@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle } from "lucide-react"; // Puzzle ikonu eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -33,7 +33,7 @@ import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import GameQuestionCard from "@/components/game/GameQuestionCard"; // Yeni komponent importu
+import GameQuestionCard from "@/components/game/GameQuestionCard";
 
 interface Message {
   id: string;
@@ -44,7 +44,7 @@ interface Message {
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
-  isGameMessage?: boolean; // Oyun mesajlarını ayırt etmek için
+  isGameMessage?: boolean;
 }
 
 interface ChatRoomDetails {
@@ -58,7 +58,7 @@ interface ChatRoomDetails {
 }
 
 interface ActiveParticipant {
-  id: string; // userId
+  id: string; 
   displayName: string | null;
   photoURL: string | null;
   joinedAt?: Timestamp;
@@ -77,7 +77,6 @@ interface FriendRequest {
   createdAt: Timestamp;
 }
 
-// Oyun Sistemi Arayüzleri
 interface GameSettings {
   isGameEnabled: boolean;
   questionIntervalSeconds: number;
@@ -90,7 +89,6 @@ interface GameQuestion {
   reward: number;
 }
 
-// Şimdilik soruları burada hardcode edelim
 const HARDCODED_QUESTIONS: GameQuestion[] = [
   { id: "q1", text: "Hangi anahtar kapı açmaz?", answer: "klavye", reward: 5 },
   { id: "q2", text: "Hangi ilimizde trafik lambası yoktur?", answer: "sinop", reward: 7 },
@@ -102,7 +100,7 @@ const HARDCODED_QUESTIONS: GameQuestion[] = [
 
 const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
-const TYPING_DEBOUNCE_DELAY = 1500; // ms
+const TYPING_DEBOUNCE_DELAY = 1500; 
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -133,15 +131,14 @@ export default function ChatRoomPage() {
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Oyun Sistemi State'leri
   const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
   const [activeGameQuestion, setActiveGameQuestion] = useState<GameQuestion | null>(null);
   const [showGameQuestionCard, setShowGameQuestionCard] = useState(false);
   const gameQuestionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [availableGameQuestions, setAvailableGameQuestions] = useState<GameQuestion[]>([...HARDCODED_QUESTIONS]);
+  const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
 
 
-  // Oyun Ayarlarını Firestore'dan Çekme
   useEffect(() => {
     const fetchGameSettings = async () => {
       try {
@@ -149,88 +146,87 @@ export default function ChatRoomPage() {
         const docSnap = await getDoc(settingsDocRef);
         if (docSnap.exists()) {
           const settingsData = docSnap.data() as GameSettings;
-          console.log("[GameSystem] Fetched game settings:", settingsData);
           setGameSettings(settingsData);
         } else {
-          console.log("[GameSystem] No game settings found in Firestore, game disabled by default.");
-          setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); // Varsayılan olarak kapalı
+          setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); 
         }
       } catch (error) {
         console.error("[GameSystem] Error fetching game settings:", error);
-        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); // Hata durumunda kapalı
+        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); 
         toast({ title: "Oyun Hatası", description: "Oyun ayarları yüklenirken bir sorun oluştu.", variant: "destructive" });
       }
     };
     fetchGameSettings();
   }, [toast]);
 
-  // Oyun Soru Zamanlayıcısı
   useEffect(() => {
+    if (gameQuestionTimerRef.current) {
+      clearInterval(gameQuestionTimerRef.current);
+      gameQuestionTimerRef.current = null;
+    }
+  
     if (gameSettings?.isGameEnabled && isCurrentUserParticipant && roomId) {
-      if (gameQuestionTimerRef.current) {
-        clearInterval(gameQuestionTimerRef.current);
+      if (nextQuestionCountdown === null || (gameSettings.questionIntervalSeconds && nextQuestionCountdown > gameSettings.questionIntervalSeconds)) {
+         setNextQuestionCountdown(gameSettings.questionIntervalSeconds);
       }
+  
       gameQuestionTimerRef.current = setInterval(() => {
-        if (!activeGameQuestion && availableGameQuestions.length > 0) { // Sadece aktif soru yoksa ve sorulacak soru varsa
-          console.log("[GameSystem] Timer fired, attempting to show a new question.");
-          const randomIndex = Math.floor(Math.random() * availableGameQuestions.length);
-          const nextQuestion = availableGameQuestions[randomIndex];
+        setNextQuestionCountdown(prevCountdown => {
+          if (prevCountdown === null) return gameSettings.questionIntervalSeconds;
           
-          // Soruyu `availableGameQuestions` listesinden çıkar (geçici olarak, daha sonra tekrar eklenebilir)
-          // Veya daha basit bir yaklaşım: aynı soru tekrar sorulabilir. Şimdilik basit tutalım.
-          // const remainingQuestions = availableGameQuestions.filter(q => q.id !== nextQuestion.id);
-          // setAvailableGameQuestions(remainingQuestions.length > 0 ? remainingQuestions : [...HARDCODED_QUESTIONS]); // Sorular biterse başa dön
-
-          setActiveGameQuestion(nextQuestion);
-          setShowGameQuestionCard(true);
-          
-          // Sisteme oyun mesajı ekle
-          addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-            text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${nextQuestion.reward} Elmas). Cevaplamak için /answer <cevabınız> yazın.`,
-            senderId: "system",
-            senderName: "Oyun Sistemi",
-            senderAvatar: null, // veya bir oyun ikonu URL'si
-            timestamp: serverTimestamp(),
-            isGameMessage: true,
-          }).catch(err => console.error("[GameSystem] Error sending new question system message:", err));
-
-        }
-      }, (gameSettings.questionIntervalSeconds || 180) * 1000); // Saniye cinsinden ayar
-
-      return () => {
-        if (gameQuestionTimerRef.current) {
-          clearInterval(gameQuestionTimerRef.current);
-          gameQuestionTimerRef.current = null;
-        }
-      };
+          if (prevCountdown <= 1) { 
+            if (!activeGameQuestion && availableGameQuestions.length > 0) {
+              const randomIndex = Math.floor(Math.random() * availableGameQuestions.length);
+              const nextQuestion = availableGameQuestions[randomIndex];
+              setActiveGameQuestion(nextQuestion);
+              setShowGameQuestionCard(true);
+              
+              addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+                text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${nextQuestion.reward} Elmas). Cevaplamak için /answer <cevabınız> yazın.`,
+                senderId: "system",
+                senderName: "Oyun Sistemi",
+                senderAvatar: null, 
+                timestamp: serverTimestamp(),
+                isGameMessage: true,
+              }).catch(err => console.error("[GameSystem] Error sending new question system message:", err));
+            }
+            return gameSettings.questionIntervalSeconds; 
+          }
+          return prevCountdown - 1; 
+        });
+      }, 1000); 
+  
     } else {
-      // Oyun kapalıysa veya kullanıcı katılımcı değilse zamanlayıcıyı temizle
-      if (gameQuestionTimerRef.current) {
-        clearInterval(gameQuestionTimerRef.current);
-        gameQuestionTimerRef.current = null;
-        console.log("[GameSystem] Timer cleared because game is disabled or user is not participant.");
-      }
-      // Aktif soru varsa ve oyun devre dışı bırakılırsa soruyu gizle
+      setNextQuestionCountdown(null); 
       if (activeGameQuestion) {
         setActiveGameQuestion(null);
         setShowGameQuestionCard(false);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameSettings, isCurrentUserParticipant, activeGameQuestion, roomId, availableGameQuestions]);
-
+  
+    return () => {
+      if (gameQuestionTimerRef.current) {
+        clearInterval(gameQuestionTimerRef.current);
+        gameQuestionTimerRef.current = null;
+      }
+    };
+  }, [gameSettings, isCurrentUserParticipant, roomId, activeGameQuestion, availableGameQuestions, toast]);
+  
 
   const handleCloseGameQuestionCard = () => {
     setShowGameQuestionCard(false);
-    setActiveGameQuestion(null); // Soruyu kapatınca aktif soruyu da temizle, böylece timer yeni soru getirebilir.
-    // Soru kapatıldığında sistem mesajı da eklenebilir.
-     addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-        text: `[OYUN] Soru ("${activeGameQuestion?.text?.substring(0,20)}...") pas geçildi.`,
-        senderId: "system",
-        senderName: "Oyun Sistemi",
-        timestamp: serverTimestamp(),
-        isGameMessage: true,
-      }).catch(err => console.error("[GameSystem] Error sending question passed system message:", err));
+    addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+      text: `[OYUN] Soru ("${activeGameQuestion?.text?.substring(0,20)}...") pas geçildi.`,
+      senderId: "system",
+      senderName: "Oyun Sistemi",
+      timestamp: serverTimestamp(),
+      isGameMessage: true,
+    }).catch(err => console.error("[GameSystem] Error sending question passed system message:", err));
+    
+    if (gameSettings) {
+      setNextQuestionCountdown(gameSettings.questionIntervalSeconds);
+    }
+    setActiveGameQuestion(null);
   };
 
 
@@ -408,7 +404,7 @@ export default function ChatRoomPage() {
           senderName: data.senderName,
           senderAvatar: data.senderAvatar,
           timestamp: data.timestamp,
-          isGameMessage: data.isGameMessage || false, // Oyun mesajı mı?
+          isGameMessage: data.isGameMessage || false, 
         });
       });
       setMessages(fetchedMessages.map(msg => ({
@@ -435,7 +431,7 @@ export default function ChatRoomPage() {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      if (gameQuestionTimerRef.current) { // Component unmount olduğunda timer'ı temizle
+      if (gameQuestionTimerRef.current) { 
         clearInterval(gameQuestionTimerRef.current);
       }
     };
@@ -499,11 +495,8 @@ export default function ChatRoomPage() {
     const tempMessage = newMessage.trim();
     setNewMessage(""); 
 
-    // Oyun Cevabı Kontrolü
     if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && showGameQuestionCard) {
-      const userAnswer = tempMessage.substring(8).trim(); // "/answer " kısmını atla (8 karakter)
-      console.log(`[GameSystem] User ${userData.displayName} answered: "${userAnswer}" for question: "${activeGameQuestion.text}"`);
-
+      const userAnswer = tempMessage.substring(8).trim(); 
       if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
         const reward = activeGameQuestion.reward;
         await updateUserDiamonds((userData.diamonds || 0) + reward);
@@ -518,8 +511,11 @@ export default function ChatRoomPage() {
         });
         toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` });
         
-        setActiveGameQuestion(null); // Soruyu temizle
-        setShowGameQuestionCard(false); // Kartı gizle
+        setActiveGameQuestion(null); 
+        setShowGameQuestionCard(false); 
+        if (gameSettings) {
+          setNextQuestionCountdown(gameSettings.questionIntervalSeconds); 
+        }
       } else {
         const incorrectSystemMessage = `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`;
          addDoc(collection(db, `chatRooms/${roomId}/messages`), {
@@ -531,12 +527,10 @@ export default function ChatRoomPage() {
         });
         toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
       }
-      setIsSending(false); // Bu durumda da sending false olmalı
-      return; // Oyun komutu işlendi, normal mesaj olarak gönderme
+      setIsSending(false); 
+      return; 
     }
 
-
-    // Normal Mesaj Gönderme
     setIsSending(true);
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
@@ -617,6 +611,14 @@ export default function ChatRoomPage() {
     }
     return `${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
   };
+
+  const formatCountdown = (seconds: number | null): string => {
+    if (seconds === null || seconds < 0) return ""; // Boş string dönebilir veya "00:00"
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
 
   const handleOpenUserInfoPopover = async (senderId: string) => {
     if (!currentUser || senderId === currentUser.uid) return;
@@ -753,7 +755,6 @@ export default function ChatRoomPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] sm:h-[calc(100vh-theme(spacing.24))] md:h-[calc(100vh-theme(spacing.28))] bg-card rounded-xl shadow-lg overflow-hidden relative">
-      {/* Oyun Soru Kartı */}
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && (
         <GameQuestionCard
           question={activeGameQuestion}
@@ -781,6 +782,14 @@ export default function ChatRoomPage() {
                             <Clock className="mr-1 h-3 w-3" />
                             <span className="truncate" title={getExpiryInfo()}>{getExpiryInfo()}</span>
                         </div>
+                    )}
+                    {gameSettings?.isGameEnabled && isCurrentUserParticipant && nextQuestionCountdown !== null && formatCountdown(nextQuestionCountdown) && (
+                      <div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}>
+                        <Puzzle className="mr-1 h-3.5 w-3.5 text-primary" />
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {formatCountdown(nextQuestionCountdown)}
+                        </span>
+                      </div>
                     )}
                 </div>
             </div>
@@ -897,7 +906,6 @@ export default function ChatRoomPage() {
             )}
             {messages.map((msg) => (
             <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""} ${msg.isGameMessage ? "justify-center" : ""}`}>
-                {/* Oyun Mesajları Farklı Stilde */}
                 {msg.isGameMessage ? (
                     <div className="w-full max-w-md mx-auto my-2">
                         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
@@ -1030,3 +1038,5 @@ export default function ChatRoomPage() {
   );
 }
   
+
+    
