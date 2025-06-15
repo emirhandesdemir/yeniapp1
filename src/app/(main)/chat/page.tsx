@@ -1,7 +1,6 @@
 
 "use client";
 
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react";
@@ -36,12 +35,15 @@ interface ChatRoom {
   creatorName: string;
   createdAt: Timestamp;
   expiresAt: Timestamp;
-  image: string; // This will always be a placeholder for now
-  imageAiHint: string; // Hint for the placeholder
+  image: string; 
+  imageAiHint: string; 
   participantCount?: number;
   maxParticipants: number;
 }
 
+// Bu placeholderImages ve defaultRoomImage oda *oluşturulurken* hala kullanılıyor,
+// Firestore'a kaydedilecek bir resim URL'si ve ipucu sağlamak için.
+// Ancak bu sayfadaki listelemede artık gösterilmeyecek.
 const placeholderImages = [
   { url: "https://placehold.co/600x400.png", hint: "abstract modern" },
   { url: "https://placehold.co/600x400.png", hint: "community discussion" },
@@ -115,8 +117,8 @@ export default function ChatRoomsPage() {
     }
     setIsCreatingRoom(true);
 
-    const imageUrl = defaultRoomImage.url; // Always use default placeholder image
-    const imageHint = defaultRoomImage.hint; // Always use default placeholder hint
+    const imageUrl = defaultRoomImage.url; 
+    const imageHint = defaultRoomImage.hint; 
 
     try {
       const currentTime = new Date();
@@ -210,7 +212,6 @@ export default function ChatRoomsPage() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
               disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
             >
-              {/* PlusCircle ikonu kaldırıldı */}
               Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
           </DialogTrigger>
@@ -285,21 +286,15 @@ export default function ChatRoomsPage() {
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {activeChatRooms.map((room) => (
             <Card key={room.id} className="flex flex-col overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 rounded-xl bg-card border border-border/20 hover:border-primary/30 dark:border-border/10 dark:hover:border-primary/40">
-              <div className="relative h-40 sm:h-48 w-full">
-                <Image
-                  src={room.image || defaultRoomImage.url}
-                  alt={room.name}
-                  layout="fill"
-                  objectFit="cover"
-                  className="rounded-t-xl"
-                  data-ai-hint={room.imageAiHint || "chat fun"}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent rounded-t-xl"></div>
-                 {currentUser && room.creatorId === currentUser.uid && (
+              <CardHeader className="pt-4 pb-2 sm:pt-6 sm:pb-3 relative">
+                <CardTitle className="text-lg sm:text-xl font-bold text-primary truncate pr-10" title={room.name}>
+                  {room.name}
+                </CardTitle>
+                {currentUser && room.creatorId === currentUser.uid && (
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="icon"
-                    className="absolute top-2 right-2 z-10 h-7 w-7 sm:h-8 sm:w-8 opacity-80 hover:opacity-100 shadow-md"
+                    className="absolute top-3 right-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 sm:h-8 sm:w-8 opacity-80 hover:opacity-100"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -307,27 +302,32 @@ export default function ChatRoomsPage() {
                     }}
                     aria-label="Odayı Sil"
                   >
-                    <X className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <X className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
                 )}
-                 <Badge variant="secondary" className="absolute bottom-2 left-2 flex items-center gap-1 shadow">
+                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground mt-1">
+                  {room.description || "Açıklama yok."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                  <Badge variant="secondary" className="flex items-center gap-1 shadow">
                     <UsersRound className="h-3.5 w-3.5" />
                     {room.participantCount ?? 0} / {room.maxParticipants}
-                </Badge>
-              </div>
-              <CardHeader className="pt-3 sm:pt-4 pb-2 sm:pb-3">
-                <CardTitle className="text-lg sm:text-xl font-bold text-primary truncate" title={room.name}>{room.name}</CardTitle>
-                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground">{room.description || "Açıklama yok."}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow pt-1 sm:pt-2 pb-3 sm:pb-4">
-                <p className="text-xs text-muted-foreground mt-1 truncate">Oluşturan: {room.creatorName}</p>
-                <div className="flex items-center text-xs text-muted-foreground mt-1.5 sm:mt-2">
-                  <Clock className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                  {getExpiryInfo(room.expiresAt)}
+                  </Badge>
+                  <div className="flex items-center">
+                    <Clock className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                    {getExpiryInfo(room.expiresAt)}
+                  </div>
                 </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  Oluşturan: {room.creatorName}
+                </p>
               </CardContent>
-              <CardFooter className="p-3 sm:p-4 border-t border-border/20 dark:border-border/10">
-                <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+              <CardFooter className="p-3 sm:p-4 border-t bg-secondary/30 dark:bg-card/50 mt-auto">
+                <Button 
+                  asChild 
+                  className="w-full" 
                   disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
                 >
                   <Link href={`/chat/${room.id}`}>
