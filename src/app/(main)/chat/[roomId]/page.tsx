@@ -148,6 +148,7 @@ export default function ChatRoomPage() {
           const settingsData = docSnap.data() as GameSettings;
           setGameSettings(settingsData);
         } else {
+          console.warn("[GameSystem] Game config not found, defaulting to disabled.");
           setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); 
         }
       } catch (error) {
@@ -159,13 +160,20 @@ export default function ChatRoomPage() {
     fetchGameSettings();
   }, [toast]);
 
+  const formatCountdown = (seconds: number | null): string => {
+    if (seconds === null || seconds < 0) return ""; 
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
   useEffect(() => {
     if (gameQuestionTimerRef.current) {
       clearInterval(gameQuestionTimerRef.current);
       gameQuestionTimerRef.current = null;
     }
   
-    if (gameSettings?.isGameEnabled && isCurrentUserParticipant && roomId) {
+    if (gameSettings?.isGameEnabled && isCurrentUserParticipant && roomId && roomDetails) {
       if (nextQuestionCountdown === null || (gameSettings.questionIntervalSeconds && nextQuestionCountdown > gameSettings.questionIntervalSeconds)) {
          setNextQuestionCountdown(gameSettings.questionIntervalSeconds);
       }
@@ -210,18 +218,20 @@ export default function ChatRoomPage() {
         gameQuestionTimerRef.current = null;
       }
     };
-  }, [gameSettings, isCurrentUserParticipant, roomId, activeGameQuestion, availableGameQuestions, toast]);
+  }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails, activeGameQuestion, availableGameQuestions, toast]);
   
 
   const handleCloseGameQuestionCard = () => {
     setShowGameQuestionCard(false);
-    addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-      text: `[OYUN] Soru ("${activeGameQuestion?.text?.substring(0,20)}...") pas geçildi.`,
-      senderId: "system",
-      senderName: "Oyun Sistemi",
-      timestamp: serverTimestamp(),
-      isGameMessage: true,
-    }).catch(err => console.error("[GameSystem] Error sending question passed system message:", err));
+    if (activeGameQuestion) {
+      addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+        text: `[OYUN] Soru ("${activeGameQuestion.text?.substring(0,20)}...") pas geçildi.`,
+        senderId: "system",
+        senderName: "Oyun Sistemi",
+        timestamp: serverTimestamp(),
+        isGameMessage: true,
+      }).catch(err => console.error("[GameSystem] Error sending question passed system message:", err));
+    }
     
     if (gameSettings) {
       setNextQuestionCountdown(gameSettings.questionIntervalSeconds);
@@ -291,13 +301,36 @@ export default function ChatRoomPage() {
       await batch.commit();
       setIsCurrentUserParticipant(true);
       toast({ title: "Odaya Katıldınız!", description: `${roomDetails.name} odasına başarıyla katıldınız.` });
+
+      // Katılma sistem mesajı
+      await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+        text: `[SİSTEM] ${userData.displayName || currentUser.displayName || "Bir kullanıcı"} odaya katıldı.`,
+        senderId: "system",
+        senderName: "Sistem",
+        senderAvatar: null,
+        timestamp: serverTimestamp(),
+        isGameMessage: true, 
+      });
+
+      // Oyun karşılama mesajı
+      if (gameSettings?.isGameEnabled && nextQuestionCountdown !== null) {
+        await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+          text: `[BİLGİ] Hoş geldin ${userData.displayName || currentUser.displayName || "katılımcı"}! Bir sonraki oyun sorusu yaklaşık ${formatCountdown(nextQuestionCountdown)} sonra gelecek.`,
+          senderId: "system",
+          senderName: "Sistem",
+          senderAvatar: null,
+          timestamp: serverTimestamp(),
+          isGameMessage: true,
+        });
+      }
+
     } catch (error) {
       console.error("Error joining room:", error);
       toast({ title: "Hata", description: "Odaya katılırken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsProcessingJoinLeave(false);
     }
-  }, [currentUser, userData, roomId, roomDetails, toast, router]);
+  }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings, nextQuestionCountdown]);
 
   const handleLeaveRoom = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve();
@@ -306,8 +339,27 @@ export default function ChatRoomPage() {
       typingTimeoutRef.current = null;
     }
     await updateUserTypingStatus(false);
+    
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
+    
+    // Ayrılma mesajını göndermeye çalış
+    const userDisplayNameForLeave = userData?.displayName || currentUser?.displayName;
+    if (userDisplayNameForLeave) {
+        try {
+            await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+                text: `[SİSTEM] ${userDisplayNameForLeave} odadan ayrıldı.`,
+                senderId: "system",
+                senderName: "Sistem",
+                senderAvatar: null,
+                timestamp: serverTimestamp(),
+                isGameMessage: true,
+            });
+        } catch (msgError) {
+            console.warn("Could not send leave message:", msgError);
+        }
+    }
+
     try {
       const batch = writeBatch(db);
       batch.delete(participantRef);
@@ -317,7 +369,7 @@ export default function ChatRoomPage() {
     } catch (error) {
       console.error("Error leaving room:", error);
     }
-  }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus]);
+  }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus, userData?.displayName]);
 
 
   useEffect(() => {
@@ -353,6 +405,7 @@ export default function ChatRoomPage() {
       toast({ title: "Hata", description: "Oda bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
       setLoadingRoom(false);
     });
+    return () => unsubscribeRoom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, toast, router]);
 
@@ -382,6 +435,7 @@ export default function ChatRoomPage() {
       setActiveParticipants(fetchedParticipants);
       setIsCurrentUserParticipant(currentUserIsStillParticipant);
       if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
+        // Kullanıcı bir şekilde odadan çıkarıldıysa (örneğin admin tarafından)
         setIsCurrentUserParticipant(false); 
       }
     });
@@ -424,7 +478,17 @@ export default function ChatRoomPage() {
 
 
   useEffect(() => {
+    // Tarayıcı sekmesi kapatıldığında veya sayfadan ayrılmadan önce çağrılır
+    const handleBeforeUnload = () => {
+      if (isCurrentUserParticipant) {
+         handleLeaveRoom();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Component unmount olduğunda da çağrılır
       if (isCurrentUserParticipant) {
          handleLeaveRoom();
       }
@@ -463,20 +527,22 @@ export default function ChatRoomPage() {
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     } else {
+      // Sadece yazı yazmaya başladığında isTyping true yap
       if (currentMessage.trim() !== "") {
         updateUserTypingStatus(true);
       }
     }
+    // Eğer input boşsa isTyping false yap ve timeout'u temizle
     if (currentMessage.trim() === "") {
         updateUserTypingStatus(false);
         if (typingTimeoutRef.current) {
             clearTimeout(typingTimeoutRef.current);
             typingTimeoutRef.current = null;
         }
-    } else {
+    } else { // Yazı varsa, belirli bir süre sonra isTyping false yapacak timeout'u kur
         typingTimeoutRef.current = setTimeout(() => {
             updateUserTypingStatus(false);
-            typingTimeoutRef.current = null;
+            typingTimeoutRef.current = null; // Timeout bittiğinde ref'i null yap
         }, TYPING_DEBOUNCE_DELAY);
     }
   };
@@ -486,6 +552,7 @@ export default function ChatRoomPage() {
     e.preventDefault();
     if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData) return;
     
+    // Mesaj gönderilirken typing timeout'u iptal et ve typing durumunu false yap
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
@@ -493,14 +560,16 @@ export default function ChatRoomPage() {
     await updateUserTypingStatus(false);
 
     const tempMessage = newMessage.trim();
-    setNewMessage(""); 
+    setNewMessage(""); // Input'u hemen temizle
 
+    // Cevap verme mantığı
     if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && showGameQuestionCard) {
-      const userAnswer = tempMessage.substring(8).trim(); 
+      const userAnswer = tempMessage.substring(8).trim(); // "/answer " kısmını çıkar
       if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
         const reward = activeGameQuestion.reward;
         await updateUserDiamonds((userData.diamonds || 0) + reward);
         
+        // Başarı sistem mesajı
         const successSystemMessage = `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`;
         addDoc(collection(db, `chatRooms/${roomId}/messages`), {
           text: successSystemMessage,
@@ -511,12 +580,14 @@ export default function ChatRoomPage() {
         });
         toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` });
         
-        setActiveGameQuestion(null); 
-        setShowGameQuestionCard(false); 
+        setActiveGameQuestion(null); // Soruyu sıfırla
+        setShowGameQuestionCard(false); // Kartı gizle
+        // Sonraki soru için geri sayımı başlat/sıfırla
         if (gameSettings) {
           setNextQuestionCountdown(gameSettings.questionIntervalSeconds); 
         }
       } else {
+        // Yanlış cevap sistem mesajı
         const incorrectSystemMessage = `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`;
          addDoc(collection(db, `chatRooms/${roomId}/messages`), {
           text: incorrectSystemMessage,
@@ -527,9 +598,10 @@ export default function ChatRoomPage() {
         });
         toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
       }
-      setIsSending(false); 
-      return; 
+      setIsSending(false); // Her durumda isSending'i false yap
+      return; // Cevap işlendikten sonra fonksiyonu bitir
     }
+
 
     setIsSending(true);
     try {
@@ -544,7 +616,7 @@ export default function ChatRoomPage() {
     } catch (error) {
       console.error("Error sending message:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      setNewMessage(tempMessage);
+      setNewMessage(tempMessage); // Mesaj gönderilemezse input'a geri yükle
     } finally {
       setIsSending(false);
     }
@@ -559,14 +631,20 @@ export default function ChatRoomPage() {
       return;
     }
     try {
+      // Alt koleksiyonları silme (önce mesajlar, sonra katılımcılar)
       const batch = writeBatch(db);
+      
       const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
       const messagesSnapshot = await getDocs(messagesQuery);
       messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
+
       const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
       const participantsSnapshot = await getDocs(participantsQuery);
       participantsSnapshot.forEach((participantDoc) => batch.delete(participantDoc.ref));
+      
+      // Ana oda dokümanını silme
       batch.delete(doc(db, "chatRooms", roomId));
+      
       await batch.commit();
       toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` });
       router.push("/chat");
@@ -585,6 +663,7 @@ export default function ChatRoomPage() {
       toast({ title: "Yetersiz Elmas", description: `Süre uzatmak için ${ROOM_EXTENSION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds}`, variant: "destructive" });
       return;
     }
+
     setIsExtending(true);
     try {
       const currentExpiresAt = roomDetails.expiresAt.toDate();
@@ -593,7 +672,7 @@ export default function ChatRoomPage() {
       await updateDoc(roomDocRef, {
         expiresAt: Timestamp.fromDate(newExpiresAtDate)
       });
-      await updateUserDiamonds(userData.diamonds - ROOM_EXTENSION_COST);
+      await updateUserDiamonds(userData.diamonds - ROOM_EXTENSION_COST); // Elmasları güncelle
       toast({ title: "Başarılı", description: `Oda süresi ${ROOM_EXTENSION_DURATION_MINUTES} dakika uzatıldı. ${ROOM_EXTENSION_COST} elmas harcandı.` });
     } catch (error) {
       console.error("Error extending room duration:", error);
@@ -612,22 +691,16 @@ export default function ChatRoomPage() {
     return `${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
   };
 
-  const formatCountdown = (seconds: number | null): string => {
-    if (seconds === null || seconds < 0) return ""; // Boş string dönebilir veya "00:00"
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
 
   const handleOpenUserInfoPopover = async (senderId: string) => {
-    if (!currentUser || senderId === currentUser.uid) return;
+    if (!currentUser || senderId === currentUser.uid) return; // Kendi kendine popover açma
     setPopoverOpenForUserId(senderId);
     setPopoverLoading(true);
-    setRelevantFriendRequest(null);
+    setRelevantFriendRequest(null); // Önceki isteği temizle
     try {
       const userDocRef = doc(db, "users", senderId);
       const userDocSnap = await getDoc(userDocRef);
+
       if (!userDocSnap.exists()) {
         toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
         setPopoverOpenForUserId(null);
@@ -635,6 +708,8 @@ export default function ChatRoomPage() {
       }
       const targetUser = { uid: userDocSnap.id, ...userDocSnap.data() } as UserData;
       setPopoverTargetUser(targetUser);
+
+      // Arkadaşlık durumunu kontrol et
       const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, senderId);
       const friendDocSnap = await getDoc(friendDocRef);
       if (friendDocSnap.exists()) {
@@ -642,6 +717,8 @@ export default function ChatRoomPage() {
         setPopoverLoading(false);
         return;
       }
+
+      // Gönderilmiş istekleri kontrol et
       const outgoingReqQuery = query(
         collection(db, "friendRequests"),
         where("fromUserId", "==", currentUser.uid),
@@ -655,6 +732,8 @@ export default function ChatRoomPage() {
         setPopoverLoading(false);
         return;
       }
+
+      // Alınmış istekleri kontrol et
       const incomingReqQuery = query(
         collection(db, "friendRequests"),
         where("fromUserId", "==", senderId),
@@ -668,7 +747,8 @@ export default function ChatRoomPage() {
         setPopoverLoading(false);
         return;
       }
-      setFriendshipStatus("none");
+
+      setFriendshipStatus("none"); // Hiçbiri değilse
     } catch (error) {
       console.error("Error fetching user info for popover:", error);
       toast({ title: "Hata", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
@@ -693,8 +773,9 @@ export default function ChatRoomPage() {
       });
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
       setFriendshipStatus("request_sent");
+      // relevantFriendRequest'i yeni oluşturulan istek bilgileriyle güncelle
       setRelevantFriendRequest({
-        id: newRequestRef.id,
+        id: newRequestRef.id, // Yeni ID
         fromUserId: currentUser.uid,
         fromUsername: userData.displayName || "",
         fromAvatarUrl: userData.photoURL || null,
@@ -702,7 +783,7 @@ export default function ChatRoomPage() {
         toUsername: popoverTargetUser.displayName || "",
         toAvatarUrl: popoverTargetUser.photoURL || null,
         status: "pending",
-        createdAt: Timestamp.now()
+        createdAt: Timestamp.now() // Geçici olarak, Firestore'dan gelenle senkronize olacak
       });
     } catch (error) {
       console.error("Error sending friend request from popover:", error);
@@ -717,14 +798,17 @@ export default function ChatRoomPage() {
     setPopoverLoading(true);
     try {
       const batch = writeBatch(db);
+      // İsteği güncelle
       const requestRef = doc(db, "friendRequests", relevantFriendRequest.id);
       batch.update(requestRef, { status: "accepted" });
+      // Kendi arkadaş listeme ekle
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, popoverTargetUser.uid);
       batch.set(myFriendRef, {
         displayName: popoverTargetUser.displayName,
         photoURL: popoverTargetUser.photoURL,
         addedAt: serverTimestamp()
       });
+      // Onun arkadaş listesine ekle
       const theirFriendRef = doc(db, `users/${popoverTargetUser.uid}/confirmedFriends`, currentUser.uid);
       batch.set(theirFriendRef, {
         displayName: userData.displayName,
@@ -734,7 +818,7 @@ export default function ChatRoomPage() {
       await batch.commit();
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} ile arkadaş oldunuz.` });
       setFriendshipStatus("friends");
-      setRelevantFriendRequest(null);
+      setRelevantFriendRequest(null); // İsteği temizle
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -909,7 +993,8 @@ export default function ChatRoomPage() {
                 {msg.isGameMessage ? (
                     <div className="w-full max-w-md mx-auto my-2">
                         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
-                           <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" /> {msg.text}
+                           {msg.text.toLowerCase().includes("[oyun]") ? <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" /> : <MessageSquare className="inline h-4 w-4 mr-1.5 text-blue-500" /> } 
+                           {msg.text}
                         </div>
                     </div>
                 ) : (
@@ -1038,5 +1123,4 @@ export default function ChatRoomPage() {
   );
 }
   
-
     
