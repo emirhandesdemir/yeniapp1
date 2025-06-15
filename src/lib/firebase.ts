@@ -6,26 +6,27 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 // import { getAnalytics } from "firebase/analytics"; // Eğer Firebase Analytics kullanmak isterseniz bu yorumu kaldırın ve aşağıdaki analytics değişkenini de etkinleştirin.
 
-// Your web app's Firebase configuration should be loaded from environment variables
+// ÖNEMLİ: Aşağıdaki yer tutucu değerleri KENDİ Firebase projenizin GERÇEK bilgileriyle değiştirin!
 const firebaseConfig: FirebaseOptions = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Bu isteğe bağlıdır
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  apiKey: "SENIN_GERCEK_API_ANAHTARIN", // BURAYI DEĞİŞTİR
+  authDomain: "SENIN_AUTH_DOMAININ.firebaseapp.com", // BURAYI DEĞİŞTİR
+  projectId: "SENIN_PROJE_IDN", // BURAYI DEĞİŞTİR
+  storageBucket: "SENIN_STORAGE_BUCKETIN.appspot.com", // BURAYI DEĞİŞTİR
+  messagingSenderId: "SENIN_MESSAGING_SENDER_IDN", // BURAYI DEĞİŞTİR
+  appId: "SENIN_APP_IDN", // BURAYI DEĞİŞTİR
+  databaseURL: "https://SENIN_PROJE_IDN-default-rtdb.firebaseio.com", // BURAYI DEĞİŞTİR (Opsiyonel, Realtime Database kullanıyorsanız)
+  measurementId: "G-SENIN_MEASUREMENT_IDN", // BURAYI DEĞİŞTİR (Opsiyonel, Google Analytics kullanıyorsanız)
 };
 
 // Initialize Firebase
 let app;
 if (!getApps().length) {
-  if (!firebaseConfig.apiKey) {
-    // Bu durum, uygulamanın istemci tarafında API anahtarı olmadan çalışmaya çalışması durumunda bir uyarıdır.
-    // Geliştirme sırasında .env.local dosyasının doğru yüklendiğinden emin olun.
-    // Build sırasında bu değişkenler normalde build işlemine enjekte edilir.
-    console.error("Firebase API Key is missing. Ensure NEXT_PUBLIC_FIREBASE_API_KEY is set in your .env.local file and the development server was restarted.");
+  // API anahtarı doğrudan yukarıda tanımlandığı için eksiklik kontrolü burada artık gereksiz.
+  // Ancak, yine de değerlerin girildiğinden emin olun.
+  if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "SENIN_GERCEK_API_ANAHTARIN") {
+    console.error("Firebase API Key is missing or not replaced in src/lib/firebase.ts. Please replace placeholder values with your actual Firebase project credentials.");
+    // Uygulamanın bu noktada düzgün çalışmayacağını belirtmek için bir hata fırlatılabilir veya farklı bir işlem yapılabilir.
+    // Şimdilik sadece konsola hata basıyoruz.
   }
   app = initializeApp(firebaseConfig);
 } else {
