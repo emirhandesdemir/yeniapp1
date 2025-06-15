@@ -30,3 +30,4 @@ const storage = getStorage(app);
 // const analytics = getAnalytics(app); // Eğer kullanmıyorsanız bu satırı yorumda bırakabilir veya silebilirsiniz.
 
 export { app, auth, db, storage };
+
