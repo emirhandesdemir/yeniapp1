@@ -8,23 +8,16 @@ import { getAnalytics, type Analytics } from "firebase/analytics";
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-
-// Ortam değişkenlerinden Firebase yapılandırmasını al
 const firebaseConfig: FirebaseOptions = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyBrLeD1sq3p7NtSvPugatN9on052o_An2w",
+  authDomain: "yeniapp-2ecdf.firebaseapp.com",
+  databaseURL: "https://yeniapp-2ecdf-default-rtdb.firebaseio.com",
+  projectId: "yeniapp-2ecdf",
+  storageBucket: "yeniapp-2ecdf.firebasestorage.app", // Kullanıcının verdiği orijinal değer kullanıldı
+  messagingSenderId: "918568967257",
+  appId: "1:918568967257:web:ae5f8725854a8687fe6548",
+  measurementId: "G-LLEDFMDGQR"
 };
-
-// API anahtarının varlığını kontrol et
-if (!firebaseConfig.apiKey) {
-  throw new Error("Firebase API Key is missing. Ensure NEXT_PUBLIC_FIREBASE_API_KEY is set in your .env.local file and the development server was restarted.");
-}
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
