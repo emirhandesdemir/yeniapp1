@@ -4,7 +4,7 @@ import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/a
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-// import { getAnalytics } from "firebase/analytics"; // Eğer kullanmıyorsanız bu satırı yorumda bırakabilir veya silebilirsiniz.
+// import { getAnalytics } from "firebase/analytics"; // Eğer Firebase Analytics kullanmak isterseniz bu yorumu kaldırın ve aşağıdaki analytics değişkenini de etkinleştirin.
 
 // Your web app's Firebase configuration should be loaded from environment variables
 const firebaseConfig: FirebaseOptions = {
@@ -35,6 +35,6 @@ if (!getApps().length) {
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-// const analytics = getAnalytics(app); // Eğer kullanmıyorsanız bu satırı yorumda bırakabilir veya silebilirsiniz.
+// const analytics = getAnalytics(app); // Eğer Firebase Analytics kullanmak isterseniz bu yorumu kaldırın.
 
 export { app, auth, db, storage };
