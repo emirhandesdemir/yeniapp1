@@ -1,9 +1,8 @@
-
 // Import the functions you need from the SDKs you need
-import { initializeApp, type FirebaseOptions } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, type Analytics } from "firebase/analytics";
 
 // Your web app's Firebase configuration
@@ -13,17 +12,17 @@ const firebaseConfig: FirebaseOptions = {
   authDomain: "yeniapp-2ecdf.firebaseapp.com",
   databaseURL: "https://yeniapp-2ecdf-default-rtdb.firebaseio.com",
   projectId: "yeniapp-2ecdf",
-  storageBucket: "yeniapp-2ecdf.firebasestorage.app", // Kullanıcının verdiği orijinal değer kullanıldı
+  storageBucket: "yeniapp-2ecdf.firebasestorage.app", // Kullanıcının verdiği değer
   messagingSenderId: "918568967257",
-  appId: "1:918568967257:web:ae5f8725854a8687fe6548",
-  measurementId: "G-LLEDFMDGQR"
+  appId: "1:918568967257:web:101ff6a20723011cfe6548", // Kullanıcının verdiği yeni değer
+  measurementId: "G-CW2QFPWJ7F" // Kullanıcının verdiği yeni değer
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+const app: FirebaseApp = initializeApp(firebaseConfig);
+const auth: Auth = getAuth(app);
+const db: Firestore = getFirestore(app);
+const storage: FirebaseStorage = getStorage(app);
 
 let analytics: Analytics | null = null;
 
