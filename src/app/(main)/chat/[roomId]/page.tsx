@@ -821,7 +821,7 @@ export default function ChatRoomPage() {
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
     return (
-      <div className="flex flex-1 items-center justify-center min-h-screen">
+      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-8rem)]"> {/* Adjusted height */}
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="ml-2 text-lg">Oda yükleniyor...</p>
       </div>
@@ -829,7 +829,7 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] bg-card rounded-xl shadow-lg overflow-hidden relative">
+    <div className="flex flex-col h-[calc(100vh-8rem)] bg-card rounded-xl shadow-lg overflow-hidden relative"> {/* Adjusted height and removed top margin */}
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && (
         <GameQuestionCard
           question={activeGameQuestion}
@@ -837,10 +837,12 @@ export default function ChatRoomPage() {
         />
       )}
 
+      {/* This header is part of the chat room page, not the global AppLayout header */}
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
-            <Button variant="ghost" size="icon" asChild className="md:hidden flex-shrink-0 h-9 w-9">
-            <Link href="/chat">
+            {/* Back button might be less necessary if global nav is bottom */}
+            <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
+            <Link href="/chat"> {/* Or to / for main page if from DM */}
                 <ArrowLeft className="h-5 w-5" />
                 <span className="sr-only">Geri</span>
             </Link>
@@ -1113,9 +1115,5 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-  
-    
-
-    
 
     
