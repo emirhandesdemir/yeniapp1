@@ -5,37 +5,63 @@ import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, type Analytics } from "firebase/analytics";
 
-// Your web app's Firebase configuration using the latest details provided.
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Your web app's Firebase configuration using environment variables
 const firebaseConfig: FirebaseOptions = {
-  apiKey: "AIzaSyBrLeD1sq3p7NtSvPugatN9on052o_An2w",
-  authDomain: "yeniapp-2ecdf.firebaseapp.com",
-  databaseURL: "https://yeniapp-2ecdf-default-rtdb.firebaseio.com",
-  projectId: "yeniapp-2ecdf",
-  storageBucket: "yeniapp-2ecdf.firebasestorage.app", // Using user-provided value. Standard is often .appspot.com but respecting direct input.
-  messagingSenderId: "918568967257",
-  appId: "1:918568967257:web:101ff6a20723011cfe6548",
-  measurementId: "G-CW2QFPWJ7F"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase
-const app: FirebaseApp = initializeApp(firebaseConfig);
-const auth: Auth = getAuth(app);
-const db: Firestore = getFirestore(app);
-const storage: FirebaseStorage = getStorage(app);
-
+let app: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+let storage: FirebaseStorage;
 let analytics: Analytics | null = null;
 
+// Check if all necessary Firebase config values are present
+const requiredConfigs = [
+  firebaseConfig.apiKey,
+  firebaseConfig.authDomain,
+  firebaseConfig.projectId,
+  firebaseConfig.storageBucket,
+  firebaseConfig.messagingSenderId,
+  firebaseConfig.appId,
+];
+
+const allConfigsPresent = requiredConfigs.every(config => !!config);
+
+if (!allConfigsPresent) {
+  console.error(
+    "Firebase HATA: Tüm Firebase yapılandırma değişkenleri .env.local dosyasında tanımlanmamış. Lütfen kontrol edin." +
+    "\nEksik olabilecekler: NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN, NEXT_PUBLIC_FIREBASE_PROJECT_ID, " +
+    "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, NEXT_PUBLIC_FIREBASE_APP_ID"
+  );
+  // You might want to throw an error here or handle it gracefully
+  // For now, we'll let the SDK attempt to initialize and potentially fail with its own error message.
+  // This prevents the app from crashing during build if env vars are missing,
+  // but Firebase services will not work.
+}
+
+app = initializeApp(firebaseConfig);
+auth = getAuth(app);
+db = getFirestore(app);
+storage = getStorage(app);
+
 if (typeof window !== 'undefined') {
-  if (firebaseConfig.measurementId) {
+  if (firebaseConfig.measurementId && allConfigsPresent) { // Only init analytics if core configs are present
     try {
       analytics = getAnalytics(app);
     } catch (error) {
-      console.error("Firebase Analytics initialization error:", error);
-      // analytics'i null olarak bırak, böylece uygulama çökmeyecek
+      console.error("Firebase Analytics başlatma hatası:", error);
     }
-  } else {
-    console.warn("Firebase Analytics: measurementId is not defined in firebaseConfig. Analytics will not be initialized.");
+  } else if (!firebaseConfig.measurementId) {
+    console.warn("Firebase Analytics: measurementId, firebaseConfig içinde tanımlanmamış. Analytics başlatılmayacak.");
   }
 }
 
