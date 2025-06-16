@@ -29,7 +29,8 @@ export interface UserData {
   diamonds: number;
   createdAt: Timestamp; 
   role?: "admin" | "user";
-  bio?: string; // Hakkımda alanı eklendi
+  bio?: string;
+  gender?: 'kadın' | 'erkek' | 'belirtilmemiş'; // Cinsiyet alanı eklendi
 }
 
 interface AuthContextType {
@@ -38,7 +39,7 @@ interface AuthContextType {
   loading: boolean;
   isUserLoading: boolean;
   isUserDataLoading: boolean;
-  signUp: (email: string, password: string, username: string) => Promise<void>;
+  signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   updateUserProfile: (updates: { displayName?: string; photoFile?: File | null; bio?: string }) => Promise<boolean>;
@@ -93,8 +94,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     photoURL: user.photoURL, 
                     diamonds: INITIAL_DIAMONDS,
                     role: "user",
-                    createdAt: Timestamp.now(), // Geçici olarak client-side, setDoc içinde serverTimestamp olacak
-                    bio: "", // Yeni bio alanı
+                    createdAt: Timestamp.now(), 
+                    bio: "",
+                    gender: "belirtilmemiş", // Google ile ilk girişte veya eksik belgede varsayılan
                 };
 
                 try {
@@ -147,7 +149,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return unsubscribe;
   }, [toast]); 
 
-  const createUserDocument = async (user: User, username?: string) => {
+  const createUserDocument = async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = user.photoURL; 
     const dataToSetForLog: Partial<UserData> & {createdAt: string} = { 
@@ -158,20 +160,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
       diamonds: INITIAL_DIAMONDS, 
       role: "user",
       createdAt: "serverTimestamp()",
-      bio: "", // Yeni bio alanı
+      bio: "",
+      gender: gender || "belirtilmemiş",
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
     
     try {
-        const dataToSave = {
+        const dataToSave: UserData = {
             uid: user.uid,
             email: user.email,
             displayName: username || user.displayName,
             photoURL: initialPhotoURL,
             diamonds: INITIAL_DIAMONDS,
-            role: "user" as "user" | "admin",
-            createdAt: serverTimestamp(),
-            bio: "", // Yeni bio alanı
+            role: "user",
+            createdAt: serverTimestamp() as Timestamp, // Cast to Timestamp for type safety
+            bio: "", 
+            gender: gender || "belirtilmemiş",
         };
         await setDoc(userDocRef, dataToSave);
         console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
@@ -191,6 +195,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 role: "user",
                 createdAt: Timestamp.now(),
                 bio: "",
+                gender: gender || "belirtilmemiş",
             };
             setUserData(fallbackUserData);
              toast({
@@ -204,15 +209,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const signUp = async (email: string, password: string, username: string) => {
+  const signUp = async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
     setIsUserLoading(true);
-    console.log(`[AuthContext] Attempting signUp for email: ${email}, username: ${username}`);
+    console.log(`[AuthContext] Attempting signUp for email: ${email}, username: ${username}, gender: ${gender}`);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
       await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null }); 
       console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
-      await createUserDocument(userCredential.user, username);
+      await createUserDocument(userCredential.user, username, gender);
       console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
@@ -264,7 +269,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
         console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
-        await createUserDocument(user); 
+        // Google'dan cinsiyet bilgisi alamayız, bu yüzden 'belirtilmemiş' olarak kaydedilecek.
+        await createUserDocument(user, user.displayName || undefined, "belirtilmemiş"); 
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
         const firestoreData = docSnap.data() as UserData;
@@ -275,9 +281,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
             updatesToFirestore.photoURL = user.photoURL;
         }
-        // Ensure bio is initialized if missing from an older document
         if (firestoreData.bio === undefined) {
             updatesToFirestore.bio = ""; 
+        }
+        if (firestoreData.gender === undefined) { // Eğer eski kullanıcıysa ve gender alanı yoksa
+            updatesToFirestore.gender = "belirtilmemiş";
         }
 
         if (Object.keys(updatesToFirestore).length > 0) {
@@ -342,28 +350,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const formData = new FormData();
         formData.append('photoFile', updates.photoFile);
 
-        const response = await fetch('/api/upload', {
+        const response = await fetch('/api/upload/route.ts', { // API rotası düzeltildi
           method: 'POST',
           body: formData,
         });
 
         if (!response.ok) {
           let errorMessage = `API Yükleme hatası: ${response.status}`;
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            try {
+          try {
               const errorData = await response.json();
               errorMessage = errorData.error || errorData.message || errorMessage;
-            } catch (e) {
-              console.error("API'den gelen JSON hata yanıtı ayrıştırılamadı:", e);
-            }
-          } else {
-            try {
-              const errorText = await response.text();
-              console.error("API hata yanıtı (JSON olmayan):", errorText.substring(0, 500));
-            } catch (e2) {
-                // Hata metni de alınamadı.
-            }
+          } catch (e) {
+             const errorText = await response.text().catch(() => "Okunamayan API hata yanıtı");
+             console.error("API'den gelen JSON olmayan hata yanıtı:", errorText.substring(0, 500));
+             errorMessage = errorText || errorMessage;
           }
           throw new Error(errorMessage);
         }

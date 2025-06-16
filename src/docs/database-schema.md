@@ -15,6 +15,7 @@ Kullanıcı profil bilgilerini saklar.
   - `createdAt`: (Timestamp) Kullanıcı belgesinin oluşturulduğu zaman
   - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin")
   - `bio`: (String, nullable) Kullanıcının hakkında yazdığı kısa metin.
+  - `gender`: (String, nullable) Kullanıcının cinsiyeti (örneğin, "kadın", "erkek", "belirtilmemiş")
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`

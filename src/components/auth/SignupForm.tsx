@@ -14,9 +14,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { User, Mail, Lock, Loader2 } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { User, Mail, Lock, Loader2, VenetianMask } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useToast } from "@/hooks/use-toast";
 
 // Google ikonu için basit bir SVG
 const GoogleIcon = () => (
@@ -32,11 +32,11 @@ const formSchema = z.object({
   username: z.string().min(3, { message: "Kullanıcı adı en az 3 karakter olmalıdır." }).max(30, { message: "Kullanıcı adı en fazla 30 karakter olabilir."}),
   email: z.string().email({ message: "Geçerli bir e-posta adresi girin." }),
   password: z.string().min(6, { message: "Şifre en az 6 karakter olmalıdır." }),
+  gender: z.enum(["kadın", "erkek"], { required_error: "Lütfen cinsiyetinizi seçin." }),
 });
 
 export default function SignupForm() {
-  const { signUp, signInWithGoogle, isUserLoading } = useAuth(); // signInWithGoogle eklendi
-  // const { toast } = useToast(); // AuthContext içinde hallediliyor
+  const { signUp, signInWithGoogle, isUserLoading } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,17 +44,19 @@ export default function SignupForm() {
       username: "",
       email: "",
       password: "",
+      gender: undefined, // Başlangıçta seçili olmaması için undefined
     },
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    await signUp(values.email, values.password, values.username);
-    // Toast ve yönlendirme AuthContext içinde hallediliyor
+    await signUp(values.email, values.password, values.username, values.gender);
   }
 
   const handleGoogleSignUp = async () => {
+    // Google ile kayıt olurken cinsiyet bilgisi alınamıyor, bu nedenle varsayılan veya sonradan düzenlenebilir bir değer atanabilir.
+    // AuthContext'teki signInWithGoogle fonksiyonu, Firestore'a yazarken gender alanını "belirtilmemiş" veya null olarak ayarlayabilir.
+    // Şimdilik, AuthContext'teki signInWithGoogle'un bunu hallettiğini varsayıyoruz.
     await signInWithGoogle();
-    // Toast ve yönlendirme AuthContext içinde hallediliyor
   };
 
   return (
@@ -104,6 +106,41 @@ export default function SignupForm() {
                   <Input type="password" placeholder="••••••" {...field} className="pl-10" disabled={isUserLoading} />
                 </FormControl>
               </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="gender"
+          render={({ field }) => (
+            <FormItem className="space-y-3">
+              <FormLabel className="flex items-center gap-2"><VenetianMask className="h-5 w-5 text-muted-foreground" /> Cinsiyet</FormLabel>
+              <FormControl>
+                <RadioGroup
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
+                  disabled={isUserLoading}
+                >
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <RadioGroupItem value="kadın" />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      Kadın
+                    </FormLabel>
+                  </FormItem>
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <RadioGroupItem value="erkek" />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      Erkek
+                    </FormLabel>
+                  </FormItem>
+                </RadioGroup>
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
