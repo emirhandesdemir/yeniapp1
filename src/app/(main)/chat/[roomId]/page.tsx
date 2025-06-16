@@ -232,20 +232,8 @@ export default function ChatRoomPage() {
 
   const handleCloseGameQuestionCard = () => {
     setShowGameQuestionCard(false);
-    if (activeGameQuestion) {
-      addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-        text: `[OYUN] Soru ("${activeGameQuestion.text?.substring(0,20)}...") pas geçildi.`,
-        senderId: "system",
-        senderName: "Oyun Sistemi",
-        timestamp: serverTimestamp(),
-        isGameMessage: true,
-      }).catch(err => console.error("[GameSystem] Error sending question passed system message:", err));
-    }
-    
-    if (gameSettings && typeof gameSettings.questionIntervalSeconds === 'number') {
-      setNextQuestionCountdown(gameSettings.questionIntervalSeconds);
-    }
-    setActiveGameQuestion(null);
+    // Kullanıcı kartı kapattığında soruyu pas geçmiş saymıyoruz, sadece kartı gizliyoruz.
+    // Sorunun süresi veya başka bir soru gelmesiyle ilgili mantık ana zamanlayıcıda devam eder.
   };
 
 
@@ -320,7 +308,7 @@ export default function ChatRoomPage() {
         isGameMessage: true, 
       });
 
-      if (gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number') {
+      if (gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && !activeGameQuestion) {
         await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
           text: `[BİLGİ] Hoş geldin ${userData.displayName || currentUser.displayName || "katılımcı"}! Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`,
           senderId: "system",
@@ -329,7 +317,17 @@ export default function ChatRoomPage() {
           timestamp: serverTimestamp(),
           isGameMessage: true,
         });
+      } else if (gameSettings?.isGameEnabled && activeGameQuestion) {
+         await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+          text: `[BİLGİ] Hoş geldin ${userData.displayName || currentUser.displayName || "katılımcı"}! Aktif bir soru var: "${activeGameQuestion.text}". Cevaplamak için /answer <cevabınız> yazın.`,
+          senderId: "system",
+          senderName: "Sistem",
+          senderAvatar: null,
+          timestamp: serverTimestamp(),
+          isGameMessage: true,
+        });
       }
+
 
     } catch (error) {
       console.error("Error joining room:", error);
@@ -337,7 +335,7 @@ export default function ChatRoomPage() {
     } finally {
       setIsProcessingJoinLeave(false);
     }
-  }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings]);
+  }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings, activeGameQuestion]);
 
   const handleLeaveRoom = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve();
@@ -560,7 +558,8 @@ export default function ChatRoomPage() {
     const tempMessage = newMessage.trim();
     setNewMessage(""); 
 
-    if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && showGameQuestionCard && gameSettings?.isGameEnabled) {
+    if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && gameSettings?.isGameEnabled) {
+      setIsSending(true);
       const userAnswer = tempMessage.substring(8).trim(); 
       if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
         const reward = activeGameQuestion.reward;
@@ -576,6 +575,7 @@ export default function ChatRoomPage() {
         });
         toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` });
         
+        setAvailableGameQuestions(prev => prev.filter(q => q.id !== activeGameQuestion.id));
         setActiveGameQuestion(null); 
         setShowGameQuestionCard(false); 
         if (gameSettings && typeof gameSettings.questionIntervalSeconds === 'number') {
@@ -821,7 +821,7 @@ export default function ChatRoomPage() {
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
     return (
-      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-8rem)]"> {/* Adjusted height */}
+      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="ml-2 text-lg">Oda yükleniyor...</p>
       </div>
@@ -829,7 +829,7 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] bg-card rounded-xl shadow-lg overflow-hidden relative"> {/* Adjusted height and removed top margin */}
+    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] bg-card rounded-xl shadow-lg overflow-hidden relative">
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && (
         <GameQuestionCard
           question={activeGameQuestion}
@@ -837,12 +837,10 @@ export default function ChatRoomPage() {
         />
       )}
 
-      {/* This header is part of the chat room page, not the global AppLayout header */}
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
-            {/* Back button might be less necessary if global nav is bottom */}
             <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
-            <Link href="/chat"> {/* Or to / for main page if from DM */}
+            <Link href="/chat"> 
                 <ArrowLeft className="h-5 w-5" />
                 <span className="sr-only">Geri</span>
             </Link>
@@ -1081,7 +1079,7 @@ export default function ChatRoomPage() {
           </Button>
           <Input
             placeholder={
-                activeGameQuestion && showGameQuestionCard && gameSettings?.isGameEnabled
+                activeGameQuestion && gameSettings?.isGameEnabled
                 ? "Soruya cevap vermek için /answer <cevabınız> yazın veya normal mesaj gönderin..."
                 : !canSendMessage 
                 ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") 

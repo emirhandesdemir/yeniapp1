@@ -36,7 +36,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean)
+    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı, oyun sistemi mesajları için true)
   - `participants`: Odadaki aktif katılımcıları saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean)
@@ -75,10 +75,10 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
-- **Yol:** `/appSettings/gameConfig` (Örnek belge)
+- **Yol:** `/appSettings/gameConfig` (Örnek belge, Oyun Sistemi v1 için)
 - **Alanlar (`gameConfig` için):**
-  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı
-  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık
+  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı (varsayılan: false)
+  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık (varsayılan: 180 saniye)
 
 **Koleksiyonlar Nasıl Oluşturulur:**
 Uygulama kodu, kullanıcılar özelliklerle etkileşimde bulundukça bu koleksiyonları ve belgeleri dinamik olarak oluşturacak şekilde tasarlanmıştır:
@@ -86,8 +86,6 @@ Uygulama kodu, kullanıcılar özelliklerle etkileşimde bulundukça bu koleksiy
 - `chatRooms` koleksiyonundaki belgeler (ve alt koleksiyonları), bir kullanıcı yeni bir sohbet odası oluşturduğunda veya bir oda içinde etkileşimde bulunduğunda oluşturulur.
 - `directMessages` koleksiyonundaki belgeler (ve `messages` alt koleksiyonu), iki kullanıcı arasında ilk DM gönderildiğinde oluşturulur. `directMessages` ana belgesi, son mesaj bilgileriyle güncellenir.
 - `friendRequests` koleksiyonundaki belgeler, bir kullanıcı arkadaşlık isteği gönderdiğinde oluşturulur.
-- `appSettings/gameConfig` gibi başlangıç için gerekli olabilecek belirli yapılandırma belgeleri, genellikle Firebase Konsolu üzerinden manuel olarak eklenir. Uygulama bu belgeden okuma yapar, ancak eksikse varsayılan değerleri kullanır.
+- `appSettings/gameConfig` gibi başlangıç için gerekli olabilecek belirli yapılandırma belgeleri, genellikle Firebase Konsolu üzerinden manuel olarak eklenir. Uygulama bu belgeden okuma yapar, ancak eksikse kod içinde tanımlanmış varsayılan değerleri kullanır.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-    
