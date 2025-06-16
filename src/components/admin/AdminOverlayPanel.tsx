@@ -5,8 +5,14 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, LayoutDashboard, Users, ListChecks } from 'lucide-react';
+import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Dinamik olarak yüklenecek admin bölüm içerikleri
+import AdminDashboardContent from '@/components/admin/sections/AdminDashboardContent';
+import AdminUsersContent from '@/components/admin/sections/AdminUsersContent';
+import AdminChatRoomsContent from '@/components/admin/sections/AdminChatRoomsContent';
+import AdminGameSettingsContent from '@/components/admin/sections/AdminGameSettingsContent';
 
 export default function AdminOverlayPanel() {
   const { isAdminPanelOpen, setIsAdminPanelOpen, userData } = useAuth();
@@ -17,9 +23,10 @@ export default function AdminOverlayPanel() {
   }
 
   const adminSections = [
-    { value: "dashboard", label: "Gösterge Paneli", icon: LayoutDashboard, src: "/admin/dashboard" },
-    { value: "users", label: "Kullanıcılar", icon: Users, src: "/admin/users" },
-    { value: "chat-rooms", label: "Sohbet Odaları", icon: ListChecks, src: "/admin/chat-rooms" },
+    { value: "dashboard", label: "Gösterge Paneli", icon: LayoutDashboard, component: <AdminDashboardContent /> },
+    { value: "users", label: "Kullanıcılar", icon: Users, component: <AdminUsersContent /> },
+    { value: "chat-rooms", label: "Sohbet Odaları", icon: ListChecks, component: <AdminChatRoomsContent /> },
+    { value: "game-settings", label: "Oyun Ayarları", icon: GameSettingsIcon, component: <AdminGameSettingsContent /> },
   ];
 
   return (
@@ -31,7 +38,7 @@ export default function AdminOverlayPanel() {
       onClick={() => setIsAdminPanelOpen(false)} // Close on backdrop click
     >
       <div 
-        className="bg-card text-card-foreground rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] max-h-[800px] flex flex-col overflow-hidden border border-border"
+        className="bg-card text-card-foreground rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] max-h-[850px] flex flex-col overflow-hidden border border-border"
         onClick={(e) => e.stopPropagation()} // Prevent close when clicking inside panel
       >
         <header className="flex items-center justify-between p-4 border-b border-border">
@@ -47,7 +54,7 @@ export default function AdminOverlayPanel() {
 
         <div className="flex-1 p-1 sm:p-2 overflow-hidden">
           <Tabs defaultValue="dashboard" value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-3 mb-2">
+            <TabsList className="grid w-full grid-cols-4 mb-2">
               {adminSections.map(section => (
                 <TabsTrigger key={section.value} value={section.value} className="text-xs sm:text-sm">
                   <section.icon className="h-4 w-4 mr-1.5 hidden sm:inline-block" />
@@ -56,15 +63,12 @@ export default function AdminOverlayPanel() {
               ))}
             </TabsList>
             {adminSections.map(section => (
-              <TabsContent key={section.value} value={section.value} className="flex-1 overflow-auto focus-visible:ring-0 focus-visible:ring-offset-0">
-                {activeTab === section.value && (
-                  <iframe
-                    src={section.src}
-                    title={section.label}
-                    className="w-full h-full border-0 rounded-md"
-                    // sandbox="allow-scripts allow-same-origin allow-forms allow-popups" // Consider security implications
-                  />
-                )}
+              <TabsContent 
+                key={section.value} 
+                value={section.value} 
+                className="flex-1 overflow-auto focus-visible:ring-0 focus-visible:ring-offset-0 p-2 sm:p-4 rounded-md bg-background/30"
+              >
+                {activeTab === section.value && section.component}
               </TabsContent>
             ))}
           </Tabs>
