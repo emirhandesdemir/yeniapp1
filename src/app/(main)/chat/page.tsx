@@ -35,8 +35,9 @@ interface ChatRoom {
   creatorName: string;
   createdAt: Timestamp;
   expiresAt: Timestamp;
-  image: string; 
-  imageAiHint: string; 
+  // image ve imageAiHint Firestore'da kalacak ama burada gösterilmeyecek.
+  // image: string; 
+  // imageAiHint: string; 
   participantCount?: number;
   maxParticipants: number;
 }
@@ -82,6 +83,8 @@ export default function ChatRoomsPage() {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
         const roomData = doc.data() as ChatRoom;
+        // image ve imageAiHint'i ChatRoom arayüzünden kaldırmadık çünkü Firestore'da hala var,
+        // sadece burada göstermiyoruz.
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -117,6 +120,7 @@ export default function ChatRoomsPage() {
     }
     setIsCreatingRoom(true);
 
+    // Firestore'a kaydedilecek resim URL'si ve ipucu. Kullanıcı arayüzünde listelemede gösterilmeyecek.
     const imageUrl = defaultRoomImage.url; 
     const imageHint = defaultRoomImage.hint; 
 
@@ -269,32 +273,45 @@ export default function ChatRoomsPage() {
       </div>
 
       {activeChatRooms.length === 0 && !loading ? (
-        <Card className="col-span-full">
+        <Card className="col-span-full text-center py-10 sm:py-16 bg-card border border-border/20 rounded-xl shadow-lg">
             <CardHeader>
-                <CardTitle className="text-center">Henüz Aktif Sohbet Odası Yok</CardTitle>
+                <MessageSquare className="mx-auto h-16 w-16 sm:h-20 sm:w-20 text-primary/70 mb-4" />
+                <CardTitle className="text-2xl sm:text-3xl font-semibold text-primary-foreground/90">Vuhu! Yeni Ufuklar Sizi Bekliyor!</CardTitle>
             </CardHeader>
             <CardContent>
-                <p className="text-muted-foreground text-center">
-                İlk sohbet odasını siz oluşturun veya mevcut odaların süresi dolmuş olabilir!
+                <p className="text-muted-foreground text-base sm:text-lg max-w-md mx-auto">
+                Görünüşe göre şu anda aktif bir sohbet odası yok. İlk adımı atıp kendi sohbet dünyanızı yaratmaya ne dersiniz? 
                 </p>
-                <div className="flex justify-center mt-4">
-                <MessageSquare className="h-24 w-24 text-muted" />
+                <div className="mt-6">
+                  <Button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="bg-accent hover:bg-accent/90 text-accent-foreground text-base px-6 py-3"
+                    disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
+                  >
+                    Hemen Yeni Oda Oluştur!
+                  </Button>
                 </div>
             </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {activeChatRooms.map((room) => (
-            <Card key={room.id} className="flex flex-col overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 rounded-xl bg-card border border-border/20 hover:border-primary/30 dark:border-border/10 dark:hover:border-primary/40">
-              <CardHeader className="pt-4 pb-2 sm:pt-6 sm:pb-3 relative">
-                <CardTitle className="text-lg sm:text-xl font-bold text-primary truncate pr-10" title={room.name}>
+            <Card 
+              key={room.id} 
+              className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl bg-card border border-border/20 hover:border-primary/40 dark:border-border/10 dark:hover:border-primary/50 group"
+            >
+              <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
+                <CardTitle 
+                  className="text-lg sm:text-xl font-bold text-primary-foreground/90 group-hover:text-primary transition-colors truncate pr-10" 
+                  title={room.name}
+                >
                   {room.name}
                 </CardTitle>
                 {currentUser && room.creatorId === currentUser.uid && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="absolute top-3 right-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 sm:h-8 sm:w-8 opacity-80 hover:opacity-100"
+                    className="absolute top-3 right-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -305,34 +322,37 @@ export default function ChatRoomsPage() {
                     <X className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
                 )}
-                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground mt-1">
-                  {room.description || "Açıklama yok."}
+                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground/80 group-hover:text-muted-foreground transition-colors mt-1.5">
+                  {room.description || "Harika bir sohbet için açıklama bekleniyor..."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-                  <Badge variant="secondary" className="flex items-center gap-1 shadow">
-                    <UsersRound className="h-3.5 w-3.5" />
-                    {room.participantCount ?? 0} / {room.maxParticipants}
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                  <Badge variant="secondary" className="flex items-center gap-1.5 shadow-sm px-2.5 py-1">
+                    <UsersRound className="h-3.5 w-3.5 text-primary/80" />
+                    <span className="font-medium">{room.participantCount ?? 0} / {room.maxParticipants}</span>
                   </Badge>
-                  <div className="flex items-center">
-                    <Clock className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                    {getExpiryInfo(room.expiresAt)}
-                  </div>
+                  <Badge 
+                    variant={room.expiresAt && isPast(room.expiresAt.toDate()) ? 'destructive' : 'outline'} 
+                    className="flex items-center gap-1.5 shadow-sm px-2.5 py-1"
+                  >
+                    <Clock className="h-3.5 w-3.5" /> 
+                    <span className="font-medium">{getExpiryInfo(room.expiresAt)}</span>
+                  </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  Oluşturan: {room.creatorName}
+                <p className="text-xs text-muted-foreground/70 truncate">
+                  Oluşturan: <span className="font-medium text-muted-foreground/90">{room.creatorName}</span>
                 </p>
               </CardContent>
-              <CardFooter className="p-3 sm:p-4 border-t bg-secondary/30 dark:bg-card/50 mt-auto">
+              <CardFooter className="p-3 sm:p-4 border-t bg-secondary/20 dark:bg-card/40 mt-auto">
                 <Button 
                   asChild 
-                  className="w-full" 
+                  className="w-full bg-primary hover:bg-primary/80 text-primary-foreground text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105" 
                   disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
                 >
                   <Link href={`/chat/${room.id}`}>
                     <LogIn className="mr-2 h-4 w-4" />
-                    {(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Odaya Katıl")}
+                    {(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Sohbete Katıl")}
                   </Link>
                 </Button>
               </CardFooter>
@@ -344,3 +364,4 @@ export default function ChatRoomsPage() {
   );
 }
 
+    
