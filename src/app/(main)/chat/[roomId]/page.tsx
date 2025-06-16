@@ -829,7 +829,7 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] sm:h-[calc(100vh-theme(spacing.24))] md:h-[calc(100vh-theme(spacing.28))] bg-card rounded-xl shadow-lg overflow-hidden relative">
+    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] bg-card rounded-xl shadow-lg overflow-hidden relative">
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && (
         <GameQuestionCard
           question={activeGameQuestion}
@@ -1114,6 +1114,8 @@ export default function ChatRoomPage() {
   );
 }
   
+    
+
     
 
     

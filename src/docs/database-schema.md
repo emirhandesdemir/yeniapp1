@@ -1,3 +1,4 @@
+
 # Firestore Veri Yapısı
 
 Bu belge, uygulamanın kullandığı temel Firestore koleksiyonlarını ve tipik belge yapılarını özetlemektedir. Firestore bir NoSQL veritabanı olduğu için şemalar esnektir, ancak bu, yaygın kullanım kalıplarını açıklar.
@@ -46,10 +47,12 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `dmChatId`, iki kullanıcının UID'sinin alfabetik olarak sıralanıp `_` ile birleştirilmesiyle oluşturulur (örn: `uid1_uid2`).
 - **Alanlar:**
   - `participantUids`: (Array<String>) İki katılımcının UID'lerini içerir.
-  - `participantInfo`: (Map) Katılımcıların temel bilgilerini saklar.
-    - `{userId1: {displayName: "User1", photoURL: "url1"}, userId2: {displayName: "User2", photoURL: "url2"}}`
+  - `participantInfo`: (Map) Katılımcıların temel bilgilerini saklar (UID anahtarıyla).
+    - Örn: `{ "uid1": { "displayName": "User1", "photoURL": "url1" }, "uid2": { "displayName": "User2", "photoURL": "url2" } }`
   - `createdAt`: (Timestamp) DM sohbetinin ilk mesajla oluşturulduğu zaman.
   - `lastMessageTimestamp`: (Timestamp) Bu sohbetteki son mesajın zaman damgası (sıralama ve bildirimler için).
+  - `lastMessageText`: (String, isteğe bağlı) Son mesajın kısa bir özeti (DM listesinde göstermek için).
+  - `lastMessageSenderId`: (String, isteğe bağlı) Son mesajı gönderenin UID'si.
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
@@ -79,8 +82,10 @@ Genel uygulama ayarlarını saklar.
 Uygulama kodu, kullanıcılar özelliklerle etkileşimde bulundukça bu koleksiyonları ve belgeleri dinamik olarak oluşturacak şekilde tasarlanmıştır:
 - `users` koleksiyonundaki belgeler, bir kullanıcı kaydolduğunda veya profili güncellendiğinde oluşturulur/güncellenir.
 - `chatRooms` koleksiyonundaki belgeler (ve alt koleksiyonları), bir kullanıcı yeni bir sohbet odası oluşturduğunda veya bir oda içinde etkileşimde bulunduğunda oluşturulur.
-- `directMessages` koleksiyonundaki belgeler (ve `messages` alt koleksiyonu), iki kullanıcı arasında ilk DM gönderildiğinde oluşturulur.
+- `directMessages` koleksiyonundaki belgeler (ve `messages` alt koleksiyonu), iki kullanıcı arasında ilk DM gönderildiğinde oluşturulur. `directMessages` ana belgesi, son mesaj bilgileriyle güncellenir.
 - `friendRequests` koleksiyonundaki belgeler, bir kullanıcı arkadaşlık isteği gönderdiğinde oluşturulur.
 - `appSettings/gameConfig` gibi başlangıç için gerekli olabilecek belirli yapılandırma belgeleri, genellikle Firebase Konsolu üzerinden manuel olarak eklenir. Uygulama bu belgeden okuma yapar, ancak eksikse varsayılan değerleri kullanır.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+    

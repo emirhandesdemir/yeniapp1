@@ -24,6 +24,7 @@ import {
   UserX,
   UserCog, 
   ListChecks,
+  SendHorizontal, // DM ikonu için eklendi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -122,7 +123,6 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
               "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
-            // Admin Paneli ana öğesi tıklandığında dashboard'a gitmesi için Link'e sar
             asChild={item.href === '/admin/dashboard'} 
           >
             {item.href === '/admin/dashboard' ? (
@@ -392,6 +392,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               {resolvedTheme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               <span className="sr-only">Temayı Değiştir</span>
             </Button>
+            
+            <Link href="/direct-messages" passHref>
+              <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground">
+                <SendHorizontal className="h-5 w-5" />
+                <span className="sr-only">Direkt Mesajlar</span>
+              </Button>
+            </Link>
 
             <Popover>
               <PopoverTrigger asChild>
@@ -482,7 +489,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <DropdownMenuItem onClick={() => toast({title: "Ayarlar", description:"Bu özellik yakında eklenecektir."})}>
                   <Settings className="mr-2 h-4 w-4" /> Ayarlar
                 </DropdownMenuItem>
-                {/* Push notification toggle removed as per request */}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logOut} disabled={isAuthActionLoading} className="text-destructive hover:!text-destructive focus:!text-destructive dark:hover:!bg-destructive/80 dark:focus:!bg-destructive/80 dark:hover:!text-destructive-foreground">
                   {isAuthActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />}
@@ -499,3 +505,5 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+    

@@ -32,7 +32,7 @@ interface DirectMessage {
   id: string;
   text: string;
   senderId: string;
-  senderName: string; // DM'de de tutarlılık için tutabiliriz, ya da sadece avatar
+  senderName: string; 
   senderAvatar: string | null;
   timestamp: Timestamp | null;
   isOwn?: boolean;
@@ -43,7 +43,7 @@ interface DmPartnerDetails {
   uid: string;
   displayName: string | null;
   photoURL: string | null;
-  email?: string | null; // Gerekirse
+  email?: string | null; 
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500; 
@@ -51,7 +51,7 @@ const TYPING_DEBOUNCE_DELAY = 1500;
 export default function DirectMessagePage() {
   const params = useParams();
   const router = useRouter();
-  const chatId = params.chatId as string; //örn: uid1_uid2
+  const chatId = params.chatId as string; 
   const [dmPartnerDetails, setDmPartnerDetails] = useState<DmPartnerDetails | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -70,7 +70,6 @@ export default function DirectMessagePage() {
     return "PN";
   };
 
-  // DM partnerinin bilgilerini yükle
   useEffect(() => {
     if (!chatId || !currentUser?.uid) return;
 
@@ -79,7 +78,7 @@ export default function DirectMessagePage() {
 
     if (!partnerUid) {
         toast({ title: "Hata", description: "Sohbet partneri belirlenemedi.", variant: "destructive" });
-        router.push("/friends"); // Veya uygun bir hata sayfasına
+        router.push("/friends"); 
         return;
     }
     
@@ -109,7 +108,6 @@ export default function DirectMessagePage() {
   }, [chatId, currentUser?.uid, toast, router]);
 
 
-  // Mesajları yükle
   useEffect(() => {
     if(!chatId || !currentUser?.uid) return;
     setLoadingMessages(true);
@@ -122,7 +120,7 @@ export default function DirectMessagePage() {
           id: doc.id,
           text: data.text,
           senderId: data.senderId,
-          senderName: data.senderName, // DM için displayName daha mantıklı olabilir
+          senderName: data.senderName, 
           senderAvatar: data.senderAvatar,
           timestamp: data.timestamp,
         });
@@ -169,7 +167,6 @@ export default function DirectMessagePage() {
   const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const currentMessage = e.target.value;
     setNewMessage(currentMessage);
-    // Typing indicator logic (şimdilik basit tutuldu, eklenebilir)
   };
 
   const handleSendMessage = async (e: FormEvent) => {
@@ -181,9 +178,15 @@ export default function DirectMessagePage() {
     setNewMessage(""); 
 
     try {
-      // Create DM chat document if it doesn't exist
       const dmChatDocRef = doc(db, "directMessages", chatId);
       const dmChatDocSnap = await getDoc(dmChatDocRef);
+      
+      const messageDataForParentDoc = {
+        lastMessageTimestamp: serverTimestamp(),
+        lastMessageText: tempMessage.substring(0, 50), // Snippet
+        lastMessageSenderId: currentUser.uid,
+      };
+
       if (!dmChatDocSnap.exists()) {
         await setDoc(dmChatDocRef, {
           participantUids: [currentUser.uid, dmPartnerDetails.uid].sort(),
@@ -198,12 +201,10 @@ export default function DirectMessagePage() {
             },
           },
           createdAt: serverTimestamp(),
-          lastMessageTimestamp: serverTimestamp(), // For querying later
+          ...messageDataForParentDoc
         });
       } else {
-         await setDoc(dmChatDocRef, {
-            lastMessageTimestamp: serverTimestamp(),
-         }, { merge: true });
+         await setDoc(dmChatDocRef, messageDataForParentDoc, { merge: true });
       }
 
 
@@ -234,11 +235,11 @@ export default function DirectMessagePage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] sm:h-[calc(100vh-theme(spacing.24))] md:h-[calc(100vh-theme(spacing.28))] bg-card rounded-xl shadow-lg overflow-hidden relative">
+    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] bg-card rounded-xl shadow-lg overflow-hidden relative">
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center gap-3 flex-1 min-w-0">
             <Button variant="ghost" size="icon" asChild className="md:hidden flex-shrink-0 h-9 w-9">
-            <Link href="/friends">
+            <Link href="/direct-messages">
                 <ArrowLeft className="h-5 w-5" />
                 <span className="sr-only">Geri</span>
             </Link>
@@ -249,10 +250,8 @@ export default function DirectMessagePage() {
             </Avatar>
             <div className="flex-1 min-w-0">
                 <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
-                {/* DM'de süre veya katılımcı bilgisi olmaz */}
             </div>
         </div>
-        {/* DM'de oda seçenekleri veya katılımcı listesi popover'ı olmaz */}
       </header>
 
     <div className="flex flex-1 overflow-hidden">
@@ -281,7 +280,6 @@ export default function DirectMessagePage() {
                     </Avatar>
                 )}
                 <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
-                    {/* DM'de gönderen adını mesajın üstünde göstermeye gerek yok, zaten başlıkta var */}
                     <div className={`p-2.5 sm:p-3 shadow-md ${
                         msg.isOwn
                         ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
@@ -335,3 +333,5 @@ export default function DirectMessagePage() {
     </div>
   );
 }
+
+    
