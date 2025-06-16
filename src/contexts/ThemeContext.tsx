@@ -4,17 +4,17 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-type Theme = 'light' | 'dark' | 'system';
+type ThemeSetting = 'system' | 'light' | 'dark' | 'forest-light' | 'forest-dark' | 'ocean-light' | 'ocean-dark';
 
 interface ThemeProviderProps {
   children: ReactNode;
-  defaultTheme?: Theme;
+  defaultTheme?: ThemeSetting;
   storageKey?: string;
 }
 
 interface ThemeContextType {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  theme: ThemeSetting;
+  setTheme: (theme: ThemeSetting) => void;
   resolvedTheme: 'light' | 'dark';
 }
 
@@ -31,12 +31,12 @@ export function useTheme() {
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
-  storageKey = 'vite-ui-theme',
+  storageKey = 'sohbet-kuresi-theme', // Updated storage key
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(() => {
+  const [theme, setThemeState] = useState<ThemeSetting>(() => {
     if (typeof window !== 'undefined') {
       try {
-        return (localStorage.getItem(storageKey) as Theme) || defaultTheme;
+        return (localStorage.getItem(storageKey) as ThemeSetting) || defaultTheme;
       } catch (e) {
         console.error('Error reading theme from localStorage', e);
         return defaultTheme;
@@ -49,21 +49,37 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement;
-    let currentTheme: 'light' | 'dark';
+    
+    const allThemeClasses = ['light', 'dark', 'theme-forest-light', 'theme-forest-dark', 'theme-ocean-light', 'theme-ocean-dark'];
+    root.classList.remove(...allThemeClasses);
+
+    let currentResolvedMode: 'light' | 'dark';
+    let classToApplyToRoot: string;
 
     if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      currentTheme = systemTheme;
-    } else {
-      currentTheme = theme;
+      const systemMode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      currentResolvedMode = systemMode;
+      classToApplyToRoot = systemMode; 
+    } else if (theme === 'light' || theme === 'dark') {
+      currentResolvedMode = theme;
+      classToApplyToRoot = theme; 
+    } else { 
+      classToApplyToRoot = theme; 
+      if (theme.endsWith('-dark')) {
+        currentResolvedMode = 'dark';
+        root.classList.add('dark'); 
+      } else { // ends with '-light'
+        currentResolvedMode = 'light';
+        root.classList.add('light'); 
+      }
     }
+    
+    root.classList.add(classToApplyToRoot);
+    setResolvedTheme(currentResolvedMode);
 
-    root.classList.remove('light', 'dark');
-    root.classList.add(currentTheme);
-    setResolvedTheme(currentTheme);
   }, [theme]);
 
-  const setTheme = useCallback((newTheme: Theme) => {
+  const setTheme = useCallback((newTheme: ThemeSetting) => {
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(storageKey, newTheme);
@@ -81,11 +97,12 @@ export function ThemeProvider({
     }
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
-      setTheme('system'); // Re-trigger effect to apply new system theme
+      // Re-evaluate system theme by setting it to 'system', which triggers the main useEffect
+      setThemeState('system'); 
     };
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme, setTheme]);
+  }, [theme]); // Only re-run if theme itself changes to/from system
   
 
   const value = {

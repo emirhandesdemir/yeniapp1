@@ -227,7 +227,7 @@ export default function DirectMessagePage() {
 
   if (loadingDmPartner || !dmPartnerDetails || isUserLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-8rem)]"> {/* Adjusted height */}
+      <div className="flex flex-1 items-center justify-center h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="ml-2 text-lg">Sohbet yükleniyor...</p>
       </div>
@@ -235,8 +235,7 @@ export default function DirectMessagePage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] bg-card rounded-xl shadow-lg overflow-hidden relative"> {/* Adjusted height and removed top margin */}
-      {/* This header is part of the DM page, not the global AppLayout header */}
+    <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center gap-3 flex-1 min-w-0">
             <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">

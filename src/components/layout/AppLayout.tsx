@@ -2,7 +2,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -14,13 +14,14 @@ import {
   Home,
   UserRound,
   Flame,
-  LayoutDashboard, // Admin ikonu kaldırıldı, panel context'ten yönetilecek
+  Palette, // Tema ikonu eklendi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext'; // useTheme eklendi
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -37,7 +38,7 @@ import {
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
-import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel'; // Yeni admin paneli eklendi
+import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 
 interface FriendRequestForPopover {
   id: string;
@@ -73,10 +74,14 @@ function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: 
 }
 
 const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
+type ThemeSetting = 'system' | 'light' | 'dark' | 'forest-light' | 'forest-dark' | 'ocean-light' | 'ocean-dark';
+const availableThemes: ThemeSetting[] = ['system', 'light', 'dark', 'forest-light', 'forest-dark', 'ocean-light', 'ocean-dark'];
+
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth(); // isAdminPanelOpen eklendi
+  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
+  const { theme, setTheme } = useTheme(); // useTheme hook'u kullanıldı
   const { toast } = useToast();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
@@ -235,100 +240,116 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return "SK";
   };
 
+  const handleChangeTheme = () => {
+    const currentIndex = availableThemes.indexOf(theme as ThemeSetting);
+    const nextIndex = (currentIndex + 1) % availableThemes.length;
+    setTheme(availableThemes[nextIndex]);
+  };
+
+  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/');
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <header className="flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
-        <Link href="/" className="flex items-center gap-2 font-semibold text-primary dark:text-sidebar-primary">
-          <Flame className="h-7 w-7" /> 
-          <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
-        </Link>
-
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <Link href="/direct-messages" passHref>
-            <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Direkt Mesajlar">
-              <SendHorizontal className="h-5 w-5" />
-            </Button>
+      {!isChatPage && (
+        <header className="flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
+          <Link href="/" className="flex items-center gap-2 font-semibold text-primary dark:text-sidebar-primary">
+            <Flame className="h-7 w-7" /> 
+            <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
           </Link>
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
-                <Bell className="h-5 w-5" />
-                {incomingRequests.length > 0 && (
-                  <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
-                  </span>
-                )}
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <Button variant="ghost" size="icon" onClick={handleChangeTheme} className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Temayı Değiştir">
+              <Palette className="h-5 w-5" />
+            </Button>
+            <Link href="/direct-messages" passHref>
+              <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Direkt Mesajlar">
+                <SendHorizontal className="h-5 w-5" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
-              <div className="p-3 border-b">
-                <h3 className="text-sm font-medium text-foreground">Arkadaşlık İstekleri</h3>
-              </div>
-              {loadingRequests ? (
-                <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>
-              ) : incomingRequests.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground text-center">Yeni arkadaşlık isteği yok.</p>
-              ) : (
-                <div className="max-h-80 overflow-y-auto">
-                  {incomingRequests.map(req => (
-                    <div key={req.id} className="flex items-center justify-between p-3 hover:bg-secondary/50 dark:hover:bg-secondary/30 border-b last:border-b-0">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
-                          <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername || "Bilinmeyen Kullanıcı"}</span>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-400/20"
-                          onClick={() => handleAcceptRequestPopover(req)}
-                          disabled={performingAction[req.id] || !req.userProfile}
-                          aria-label="Kabul Et"
-                        >
-                          {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-400/20"
-                          onClick={() => handleDeclineRequestPopover(req.id)}
-                          disabled={performingAction[req.id]}
-                          aria-label="Reddet"
-                        >
-                         {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
-        </div>
-      </header>
+            </Link>
 
-      <main className="flex-1 overflow-auto bg-background pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]">
-        <div className="px-4 md:px-6">
-          {children}
-        </div>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
+                  <Bell className="h-5 w-5" />
+                  {incomingRequests.length > 0 && (
+                    <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="p-3 border-b">
+                  <h3 className="text-sm font-medium text-foreground">Arkadaşlık İstekleri</h3>
+                </div>
+                {loadingRequests ? (
+                  <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>
+                ) : incomingRequests.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground text-center">Yeni arkadaşlık isteği yok.</p>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {incomingRequests.map(req => (
+                      <div key={req.id} className="flex items-center justify-between p-3 hover:bg-secondary/50 dark:hover:bg-secondary/30 border-b last:border-b-0">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
+                            <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername || "Bilinmeyen Kullanıcı"}</span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-400/20"
+                            onClick={() => handleAcceptRequestPopover(req)}
+                            disabled={performingAction[req.id] || !req.userProfile}
+                            aria-label="Kabul Et"
+                          >
+                            {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserCheck className="h-4 w-4" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-400/20"
+                            onClick={() => handleDeclineRequestPopover(req.id)}
+                            disabled={performingAction[req.id]}
+                            aria-label="Reddet"
+                          >
+                           {performingAction[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserX className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
+        </header>
+      )}
+
+      <main className={cn(
+        "flex-1 overflow-auto bg-background",
+        isChatPage 
+          ? "p-0" 
+          : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]"
+      )}>
+        {children}
       </main>
 
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
       
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
 
-
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
-        {bottomNavItems.map((item) => (
-          <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/" && pathname === "/")} />
-        ))}
-      </nav>
+      {!isChatPage && (
+        <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
+          {bottomNavItems.map((item) => (
+            <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/" && pathname === "/")} />
+          ))}
+        </nav>
+      )}
     </div>
   );
 }
-

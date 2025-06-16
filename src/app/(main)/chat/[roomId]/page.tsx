@@ -970,7 +970,7 @@ export default function ChatRoomPage() {
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
     return (
-      <div className="flex flex-1 items-center justify-center h-[calc(100vh-theme(spacing.20))]">
+      <div className="flex flex-1 items-center justify-center h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="ml-2 text-lg">Oda yükleniyor...</p>
       </div>
@@ -978,7 +978,7 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.20))] bg-card rounded-xl shadow-lg overflow-hidden relative">
+    <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && (
         <GameQuestionCard
           question={activeGameQuestion}
@@ -1263,3 +1263,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
