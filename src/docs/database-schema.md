@@ -45,7 +45,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı)
   - `participants`: Odadaki aktif katılımcıları saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
-    - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean)
+    - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.

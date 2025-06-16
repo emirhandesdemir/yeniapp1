@@ -57,7 +57,7 @@ interface Message {
 interface ChatRoomDetails {
   id: string;
   name: string;
-  description?: string; // Açıklama alanı eklendi
+  description?: string; 
   creatorId: string;
   participantCount?: number;
   maxParticipants: number;
@@ -165,7 +165,6 @@ export default function ChatRoomPage() {
             questionIntervalSeconds: settingsData.questionIntervalSeconds ?? 180
           });
         } else {
-          console.warn("[GameSystem] Game config not found, defaulting to disabled.");
           setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 });
         }
       } catch (error) {
@@ -436,7 +435,6 @@ export default function ChatRoomPage() {
                 isGameMessage: true,
             });
         } catch (msgError) {
-            console.warn("Could not send leave message:", msgError);
         }
     }
 
@@ -461,7 +459,7 @@ export default function ChatRoomPage() {
         const fetchedRoomDetails: ChatRoomDetails = {
           id: docSnap.id,
           name: data.name,
-          description: data.description, // Açıklama eklendi
+          description: data.description, 
           creatorId: data.creatorId,
           participantCount: data.participantCount || 0,
           maxParticipants: data.maxParticipants || 7,
@@ -935,6 +933,7 @@ export default function ChatRoomPage() {
     if (!currentUser?.uid || !targetUserId) return;
     const dmId = generateDmChatId(currentUser.uid, targetUserId);
     router.push(`/dm/${dmId}`);
+    setPopoverOpenForUserId(null); // Close popover on navigation
   };
 
 
@@ -1250,4 +1249,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
