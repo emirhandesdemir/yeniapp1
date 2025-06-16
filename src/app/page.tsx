@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, MessagesSquare, UserCog, Users as UsersIcon, PlusCircle, Compass } from "lucide-react"; // Renamed Users to UsersIcon to avoid conflict
+import { Loader2, Gem, MessagesSquare, UserCog, Users as UsersIcon, PlusCircle, Compass, Globe } from "lucide-react"; 
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -29,13 +29,9 @@ export default function HomePage() {
     }
   }, [currentUser, authLoading, router]);
 
-  // Effect for active rooms count (moved from former (main)/page.tsx)
   useEffect(() => {
     const q = query(
       collection(db, "chatRooms")
-      // where("expiresAt", ">", Timestamp.now()) // This direct usage of Timestamp.now() in query might be problematic depending on Firestore SDK version or if offline persistence is involved.
-                                              // It's generally safer to compare against a client-generated timestamp for "expiresAt" or ensure server timestamps are consistently used and queried.
-                                              // For now, we'll assume 'expiresAt' is a valid Timestamp and filter client-side or use a fixed server-side query if issues persist.
     );
 
     const unsubscribeRooms = onSnapshot(q, (snapshot) => {
@@ -46,11 +42,7 @@ export default function HomePage() {
           if (isFuture(roomData.expiresAt.toDate())) {
             count++;
           }
-        } else if (roomData.expiresAt === null || roomData.expiresAt === undefined) {
-          // Consider rooms without expiry as active, or apply specific logic
-          // For this example, let's assume rooms without expiry are not counted or handled differently.
-          // If they should be active, you might count them here.
-        }
+        } 
       });
       setActiveRoomsCount(count);
       setLoadingActiveRooms(false);
@@ -63,7 +55,6 @@ export default function HomePage() {
     return () => unsubscribeRooms();
   }, []);
 
-  // Effect for friends count (moved from former (main)/page.tsx)
   useEffect(() => {
     if (currentUser?.uid) {
       setLoadingFriendsCount(true);
@@ -86,9 +77,16 @@ export default function HomePage() {
 
   if (authLoading || (currentUser && (loadingActiveRooms || loadingFriendsCount))) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Yükleniyor...</p>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
+        <div className="mb-6">
+          <MessagesSquare className="h-16 w-16 text-primary animate-pulse mx-auto" />
+        </div>
+        <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
+          Anasayfanız Hazırlanıyor
+        </h1>
+        <p className="text-lg text-muted-foreground max-w-md">
+          Sizin için en taze bilgileri ve sohbetleri getiriyoruz. Bu işlem birkaç saniye sürebilir...
+        </p>
       </div>
     );
   }
@@ -124,7 +122,7 @@ export default function HomePage() {
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline" className="border-primary text-primary hover:bg-primary/10">
-                  <Link href="/chat"> {/* Assuming "Yeni Oda Oluştur" also navigates to /chat page where the creation modal is */}
+                  <Link href="/chat"> 
                     <PlusCircle className="mr-2 h-5 w-5" />
                     Yeni Oda Oluştur
                   </Link>
@@ -202,14 +200,17 @@ export default function HomePage() {
     );
   }
 
-  // Fallback for when !currentUser && !authLoading (handled by useEffect for redirect)
-  // or when userData is still loading for an authenticated user but other counts are not yet.
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-      <Loader2 className="h-12 w-12 animate-spin text-primary" />
-      <p className="mt-4 text-muted-foreground">Yükleniyor...</p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
+      <div className="mb-6">
+        <Globe className="h-16 w-16 text-primary animate-pulse mx-auto" />
+      </div>
+      <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
+        Bir An...
+      </h1>
+      <p className="text-lg text-muted-foreground max-w-md">
+        Sayfa yönlendiriliyor veya son kontroller yapılıyor. Lütfen bekleyin.
+      </p>
     </div>
   );
 }
-
-    

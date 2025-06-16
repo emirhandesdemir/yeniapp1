@@ -17,7 +17,7 @@ import { auth, db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { ref as storageRefFunction, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Globe } from 'lucide-react'; // Globe ikonu eklendi
 import { useToast } from '@/hooks/use-toast';
 
 const INITIAL_DIAMONDS = 10;
@@ -28,7 +28,7 @@ export interface UserData {
   displayName: string | null;
   photoURL: string | null;
   diamonds: number;
-  createdAt: Timestamp; // Expect a Firestore Timestamp object here for consistent data type
+  createdAt: Timestamp; 
   role?: "admin" | "user";
 }
 
@@ -64,8 +64,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isUserLoading, setIsUserLoading] = useState(false); // For async auth operations like login/signup
-  const [isUserDataLoading, setIsUserDataLoading] = useState(true); // For fetching/creating user data from Firestore
+  const [isUserLoading, setIsUserLoading] = useState(false); 
+  const [isUserDataLoading, setIsUserDataLoading] = useState(true); 
   const router = useRouter();
   const { toast } = useToast();
 
@@ -97,14 +97,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     await setDoc(userDocRef, dataToSet);
                     console.log(`[AuthContext] Successfully initiated user document creation for ${user.uid}. Fetching document after creation...`);
                     
-                    // Attempt to get the document again to ensure serverTimestamp is resolved if possible, or use client-side as fallback
                     const freshSnap = await getDoc(userDocRef);
                     if (freshSnap.exists()) {
                         console.log(`[AuthContext] User document for ${user.uid} confirmed exists after creation. Data:`, freshSnap.data());
                         setUserData(freshSnap.data() as UserData);
                     } else {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
-                        // Fallback to client-side timestamp if server timestamp isn't immediately available or fetch fails
                         const fallbackUserData: UserData = {
                             uid: user.uid,
                             email: user.email,
@@ -127,13 +125,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         description: `Kullanıcı bilgileriniz veritabanına kaydedilemedi (Hata: ${creationError.message}). Lütfen tekrar deneyin veya destek ile iletişime geçin.`,
                         variant: "destructive",
                     });
-                    setUserData(null); // Clear user data on critical failure
+                    setUserData(null); 
                 }
             }
         } catch (error: any) {
              console.error("[AuthContext] Error fetching/creating user document on auth state change:", error.message, error.code, error.stack);
              toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
-             setUserData(null); // Clear user data on error
+             setUserData(null); 
         } finally {
             console.log(`[AuthContext] Finished processing user data for ${user ? user.uid : 'null user'}. Setting isUserDataLoading to false.`);
             setIsUserDataLoading(false);
@@ -147,11 +145,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
     return unsubscribe;
-  }, [toast]); // Added toast to dependency array as it's used inside the effect
+  }, [toast]); 
 
   const createUserDocument = async (user: User, username?: string) => {
     const userDocRef = doc(db, "users", user.uid);
-    // Prepare data, ensuring serverTimestamp is only used for setDoc and not prematurely resolved
     const dataToSetForLog = { 
       uid: user.uid, 
       email: user.email, 
@@ -159,7 +156,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       photoURL: user.photoURL, 
       diamonds: INITIAL_DIAMONDS, 
       role: "user" as "user" | "admin",
-      createdAt: "serverTimestamp()" // For logging purposes
+      createdAt: "serverTimestamp()" 
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
     
@@ -199,7 +196,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error: any) {
         console.error(`[AuthContext] CRITICAL: Error in createUserDocument for ${user.uid}:`, error.message, error.code, error.stack);
         toast({ title: "Hesap Detayı Kayıt Hatası", description: `Kullanıcı detayları veritabanına kaydedilemedi (Hata: ${error.message}).`, variant: "destructive" });
-        // Optionally, re-throw or handle more gracefully depending on app requirements
     }
   };
 
@@ -236,7 +232,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     console.log(`[AuthContext] Attempting logIn for email: ${email}`);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle fetching user data
       console.log(`[AuthContext] LogIn successful for email: ${email}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Giriş yapıldı." });
@@ -260,21 +255,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       console.log(`[AuthContext] Google sign-in successful for user: ${user.uid}. Checking/creating document...`);
-      // onAuthStateChanged will typically handle document creation/fetching, but we can pre-fetch here for quicker UI update
       const userDocRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
         console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument (will be picked up by onAuthStateChanged too).`);
-        await createUserDocument(user); // This might be redundant if onAuthStateChanged handles it, but ensures quick creation
+        await createUserDocument(user); 
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
-        // Ensure local state is updated if onAuthStateChanged hasn't fired or completed yet
         setUserData(docSnap.data() as UserData);
       }
       console.log(`[AuthContext] Google sign-in process complete for ${user.uid}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Google ile giriş yapıldı." });
-    } catch (error: any) { // Added missing opening brace for catch block
+    } catch (error: any) {
       console.error("[AuthContext] Google sign-in error:", error.message, "Code:", error.code, error.stack);
       let message = "Google ile giriş sırasında bir hata oluştu.";
       if (error.code === 'auth/popup-closed-by-user') {
@@ -333,7 +326,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 await deleteObject(previousImageRef);
                 console.log("[AuthContext] Previous profile picture deleted successfully.");
             } catch (deleteError: any) {
-                if (deleteError.code !== 'storage/object-not-found') { // Don't warn if already deleted
+                if (deleteError.code !== 'storage/object-not-found') { 
                     console.warn("[AuthContext] Could not delete previous profile picture:", deleteError.code, deleteError.message);
                 }
             }
@@ -366,7 +359,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[AuthContext] New photo URL obtained:", newPhotoURL);
         authUpdates.photoURL = newPhotoURL;
         firestoreUpdates.photoURL = newPhotoURL;
-      } else if (updates.photoFile === null && userData?.photoURL) { // Explicitly null means remove
+      } else if (updates.photoFile === null && userData?.photoURL) { 
             console.log("[AuthContext] User requested to remove profile picture.");
              if (userData.photoURL.includes("firebasestorage.googleapis.com")) {
                 try {
@@ -415,16 +408,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(userDocRef, firestoreUpdates);
       }
       
-      // It's important to update local state after successful updates
-      // Fetching fresh data is best, or selectively update
       const updatedDocSnap = await getDoc(userDocRef);
       if (updatedDocSnap.exists()) {
         setUserData(updatedDocSnap.data() as UserData);
       }
-      // Also ensure currentUser reflects changes if displayName/photoURL in Auth changed
-      // Firebase Auth's currentUser object might not update immediately, onAuthStateChanged listener handles this best.
-      // Triggering a reload of the user can sometimes help, but can also cause complexities.
-      // For now, Firestore data update is primary.
 
       console.log("[AuthContext] Profile update successful.");
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
@@ -449,12 +436,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       toast({ title: "Hata", description: "Elmaslar güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return Promise.reject("Kullanıcı bulunamadı");
     }
-    // No need for isUserLoading here as it's a quick Firestore update, unless it's part of a larger user action
     try {
       const userDocRef = doc(db, "users", currentUser.uid);
       await updateDoc(userDocRef, { diamonds: newDiamondCount });
       setUserData(prev => prev ? { ...prev, diamonds: newDiamondCount } : null);
-      // toast({ title: "Başarılı", description: "Elmas bakiyeniz güncellendi." }); // Potentially too noisy
       return Promise.resolve();
     } catch (error) {
       console.error("[AuthContext] Error updating diamonds:", error);
@@ -463,12 +448,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  // This loading screen is for the initial auth state check and initial user data load
   if (loading || (currentUser && isUserDataLoading)) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Kullanıcı verileri yükleniyor...</p>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
+        <div className="mb-6">
+          <Globe className="h-16 w-16 text-primary animate-pulse mx-auto" />
+        </div>
+        <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
+          Sohbet Küresi'ne Hoş Geldiniz!
+        </h1>
+        <p className="text-lg text-muted-foreground max-w-md">
+          Harika bir sohbet deneyimi için her şeyi hazırlıyoruz. Lütfen biraz bekleyin...
+        </p>
       </div>
     );
   }
@@ -476,9 +467,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const value = {
     currentUser,
     userData,
-    loading, // True until initial onAuthStateChanged completes
-    isUserLoading, // True during async auth operations (login, signup, profile update)
-    isUserDataLoading, // True when fetching/creating user data for an authenticated user
+    loading, 
+    isUserLoading, 
+    isUserDataLoading, 
     signUp,
     logIn,
     logOut,
