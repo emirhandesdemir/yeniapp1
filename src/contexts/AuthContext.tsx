@@ -13,9 +13,9 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, db, storage } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase'; // storage import removed
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
-import { ref as storageRefFunction, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+// Firebase storage imports removed: ref as storageRefFunction, uploadBytesResumable, getDownloadURL, deleteObject
 import { useRouter } from 'next/navigation';
 import { Loader2, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -26,7 +26,7 @@ export interface UserData {
   uid: string;
   email: string | null;
   displayName: string | null;
-  photoURL: string | null;
+  photoURL: string | null; // Can now be a local path like /uploads/filename.jpg
   diamonds: number;
   createdAt: Timestamp; 
   role?: "admin" | "user";
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     uid: user.uid,
                     email: user.email,
                     displayName: user.displayName,
-                    photoURL: user.photoURL,
+                    photoURL: user.photoURL, // Google might provide a photoURL
                     diamonds: INITIAL_DIAMONDS,
                     role: "user" as "user" | "admin",
                     createdAt: serverTimestamp(),
@@ -143,7 +143,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[AuthContext] No user authenticated. Clearing user data.");
         setUserData(null);
         setIsUserDataLoading(false);
-        setIsAdminPanelOpen(false); // Kullanıcı yoksa admin paneli de kapalı olmalı
+        setIsAdminPanelOpen(false);
       }
       console.log("[AuthContext] Auth state processing finished. Setting loading to false.");
       setLoading(false);
@@ -153,11 +153,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const createUserDocument = async (user: User, username?: string) => {
     const userDocRef = doc(db, "users", user.uid);
+    const initialPhotoURL = user.photoURL; // Keep Google's photo if available initially
     const dataToSetForLog = { 
       uid: user.uid, 
       email: user.email, 
       displayName: username || user.displayName, 
-      photoURL: user.photoURL, 
+      photoURL: initialPhotoURL, 
       diamonds: INITIAL_DIAMONDS, 
       role: "user" as "user" | "admin",
       createdAt: "serverTimestamp()" 
@@ -169,7 +170,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             uid: user.uid,
             email: user.email,
             displayName: username || user.displayName,
-            photoURL: user.photoURL,
+            photoURL: initialPhotoURL,
             diamonds: INITIAL_DIAMONDS,
             role: "user",
             createdAt: serverTimestamp(),
@@ -186,7 +187,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 uid: user.uid,
                 email: user.email,
                 displayName: username || user.displayName,
-                photoURL: user.photoURL,
+                photoURL: initialPhotoURL,
                 diamonds: INITIAL_DIAMONDS,
                 role: "user",
                 createdAt: Timestamp.now(),
@@ -209,7 +210,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
-      await updateFirebaseProfile(userCredential.user, { displayName: username });
+      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null }); // Initialize photoURL as null
       console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
       await createUserDocument(userCredential.user, username);
       console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
@@ -262,11 +263,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userDocRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
-        console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument (will be picked up by onAuthStateChanged too).`);
+        console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
         await createUserDocument(user); 
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
-        setUserData(docSnap.data() as UserData);
+        // Potentially update displayName or photoURL from Google if Firestore doc is stale
+        const firestoreData = docSnap.data() as UserData;
+        const updatesToFirestore: Partial<UserData> = {};
+        if (user.displayName && user.displayName !== firestoreData.displayName) {
+            updatesToFirestore.displayName = user.displayName;
+        }
+        if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
+            updatesToFirestore.photoURL = user.photoURL;
+        }
+        if (Object.keys(updatesToFirestore).length > 0) {
+            await updateDoc(userDocRef, updatesToFirestore);
+            setUserData({ ...firestoreData, ...updatesToFirestore });
+        } else {
+            setUserData(firestoreData);
+        }
       }
       console.log(`[AuthContext] Google sign-in process complete for ${user.uid}. Navigating to /`);
       router.push('/');
@@ -293,7 +308,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await signOut(auth);
       console.log("[AuthContext] LogOut successful. Navigating to /login.");
-      setIsAdminPanelOpen(false); // Çıkış yaparken admin panelini kapat
+      setIsAdminPanelOpen(false);
       router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
@@ -315,68 +330,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
-    let newPhotoURL: string | null = null;
+    let newLocalPhotoPath: string | null = null;
 
     try {
       if (updates.photoFile) {
-        console.log("[AuthContext] Photo file provided, starting upload:", updates.photoFile.name);
-        const fileExtension = updates.photoFile.name.split('.').pop();
-        const imageFileName = `profile_${auth.currentUser.uid}_${Date.now()}.${fileExtension}`;
-        const imageRef = storageRefFunction(storage, `profile_pictures/${auth.currentUser.uid}/${imageFileName}`);
-        
-        if (userData?.photoURL && userData.photoURL.includes("firebasestorage.googleapis.com")) {
-            try {
-                const previousImageRef = storageRefFunction(storage, userData.photoURL);
-                console.log("[AuthContext] Attempting to delete previous profile picture:", userData.photoURL);
-                await deleteObject(previousImageRef);
-                console.log("[AuthContext] Previous profile picture deleted successfully.");
-            } catch (deleteError: any) {
-                if (deleteError.code !== 'storage/object-not-found') { 
-                    console.warn("[AuthContext] Could not delete previous profile picture:", deleteError.code, deleteError.message);
-                }
-            }
-        }
+        console.log("[AuthContext] Photo file provided, sending to API upload:", updates.photoFile.name);
+        const formData = new FormData();
+        formData.append('photoFile', updates.photoFile);
 
-        const uploadTask = uploadBytesResumable(imageRef, updates.photoFile);
-        newPhotoURL = await new Promise<string>((resolve, reject) => {
-          uploadTask.on(
-            "state_changed",
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log("[AuthContext] Upload is " + progress + "% done");
-            },
-            (error) => {
-              console.error("[AuthContext] Firebase Storage upload error:", error.code, error.message, error.serverResponse);
-              reject(error);
-            },
-            async () => {
-              try {
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                console.log("[AuthContext] File available at", downloadURL);
-                resolve(downloadURL);
-              } catch (urlError: any) {
-                console.error("[AuthContext] Error getting download URL:", urlError.code, urlError.message);
-                reject(urlError);
-              }
-            }
-          );
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
         });
-        console.log("[AuthContext] New photo URL obtained:", newPhotoURL);
-        authUpdates.photoURL = newPhotoURL;
-        firestoreUpdates.photoURL = newPhotoURL;
-      } else if (updates.photoFile === null && userData?.photoURL) { 
-            console.log("[AuthContext] User requested to remove profile picture.");
-             if (userData.photoURL.includes("firebasestorage.googleapis.com")) {
-                try {
-                    const imageToDeleteRef = storageRefFunction(storage, userData.photoURL);
-                    await deleteObject(imageToDeleteRef);
-                    console.log("[AuthContext] Profile picture deleted from storage.");
-                } catch (deleteError: any) {
-                     if (deleteError.code !== 'storage/object-not-found') {
-                        console.warn("[AuthContext] Could not delete profile picture from storage:", deleteError.code, deleteError.message);
-                    }
-                }
-            }
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `API Upload failed with status ${response.status}`);
+        }
+        const result = await response.json();
+        newLocalPhotoPath = result.filePath;
+        console.log("[AuthContext] New local photo path obtained from API:", newLocalPhotoPath);
+        authUpdates.photoURL = newLocalPhotoPath; // Store local path in Auth
+        firestoreUpdates.photoURL = newLocalPhotoPath; // And in Firestore
+      } else if (updates.photoFile === null) { 
+            console.log("[AuthContext] User requested to remove profile picture (local file).");
+            // For local files, we just remove the reference.
+            // Deleting from /public/uploads via API would be more complex and is skipped for now.
             authUpdates.photoURL = null; 
             firestoreUpdates.photoURL = null; 
       }
@@ -423,10 +402,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return true;
 
     } catch (error: any) {
-      console.error("[AuthContext] General profile update failed:", error.code, error.message, error.stack);
+      console.error("[AuthContext] General profile update failed:", error.code || error.name, error.message, error.stack);
       toast({ 
         title: "Profil Güncelleme Hatası", 
-        description: `Genel bir sorun oluştu: ${error.code || error.message}`, 
+        description: `Profil güncellenirken bir sorun oluştu: ${error.message || 'Bilinmeyen hata'}`, 
         variant: "destructive" 
       });
       return false;
@@ -487,4 +466,3 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-

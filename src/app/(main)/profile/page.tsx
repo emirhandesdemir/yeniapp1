@@ -3,7 +3,6 @@
 
 import { useState, useEffect, type ChangeEvent, useRef } from "react"; 
 import Image from "next/image"; 
-// import Link from "next/link"; // Link kaldırıldı, AuthContext kullanılacak
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +19,7 @@ interface UserProfileForm {
 }
 
 export default function ProfilePage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth(); // setIsAdminPanelOpen eklendi
+  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth(); 
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -36,6 +35,8 @@ export default function ProfilePage() {
         username: userData.displayName || currentUser.displayName || "",
         bio: "", 
       });
+      // If photoURL is a local path (e.g., /uploads/...), keep it as is.
+      // Otherwise, it might be an external URL (like from Google).
       setPreviewImage(userData.photoURL || currentUser.photoURL); 
     } else if (currentUser) {
         setTempProfile({
@@ -75,7 +76,7 @@ export default function ProfilePage() {
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
         toast({ title: "Hata", description: "Dosya boyutu 5MB'den büyük olamaz.", variant: "destructive" });
         return;
       }
@@ -89,13 +90,13 @@ export default function ProfilePage() {
   };
   
   const handleRemoveProfilePicture = async () => {
-    if (!currentUser || !userData?.photoURL) {
+    if (!currentUser || !userData?.photoURL) { // Check if there's a photoURL to remove
         toast({ title: "Bilgi", description: "Kaldırılacak bir profil fotoğrafı bulunmuyor." });
         return;
     }
     if (!confirm("Profil fotoğrafınızı kaldırmak istediğinizden emin misiniz?")) return;
 
-    const success = await updateUserProfile({ photoFile: null }); 
+    const success = await updateUserProfile({ photoFile: null }); // Pass null to indicate removal
     if (success) {
       setPreviewImage(null); 
       setSelectedFile(null);
@@ -134,6 +135,7 @@ export default function ProfilePage() {
     if (success) {
       setIsEditing(false);
       setSelectedFile(null); 
+      // The photoURL in userData will be updated by AuthContext, triggering a re-render.
     }
   };
   
@@ -162,9 +164,16 @@ export default function ProfilePage() {
     );
   }
   
-  const displayPhotoUrl = isEditing 
+  let displayPhotoUrl = isEditing 
     ? (previewImage || userData?.photoURL || currentUser?.photoURL) 
     : (userData?.photoURL || currentUser?.photoURL);
+
+  // Ensure local paths are treated correctly by next/image
+  // If it's an external URL (http/https), next/image handles it.
+  // If it's a local path (e.g., /uploads/...), it's served from /public.
+  if (displayPhotoUrl && !displayPhotoUrl.startsWith('http') && !displayPhotoUrl.startsWith('/')) {
+    displayPhotoUrl = `/${displayPhotoUrl}`; // Prepend slash if missing for local paths
+  }
 
 
   return (
@@ -174,12 +183,14 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center text-center -mt-12 sm:-mt-16">
           <div className="relative group">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
-              <AvatarImage 
-                src={displayPhotoUrl || "https://placehold.co/128x128.png"} 
-                alt={tempProfile.username || "Kullanıcı"} 
-                data-ai-hint="user portrait" 
-                key={displayPhotoUrl} 
-              />
+              {displayPhotoUrl ? (
+                  <AvatarImage 
+                    src={displayPhotoUrl} 
+                    alt={tempProfile.username || "Kullanıcı"} 
+                    data-ai-hint="user portrait" 
+                    key={displayPhotoUrl} // Re-render if URL changes
+                  />
+              ) : null }
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
             {isEditing && (
@@ -204,7 +215,7 @@ export default function ProfilePage() {
               disabled={isUserLoading || !isEditing}
             />
           </div>
-           {isEditing && userData?.photoURL && (
+           {isEditing && (userData?.photoURL || previewImage) && ( // Show remove button if there's a current or preview image
             <Button 
                 type="button" 
                 variant="ghost" 
@@ -245,10 +256,10 @@ export default function ProfilePage() {
                   disabled 
                 />
               </div>
-              {previewImage && selectedFile && ( 
+              {previewImage && selectedFile && displayPhotoUrl && ( 
                 <div className="my-4">
                     <Label>Yeni Fotoğraf Önizlemesi</Label>
-                    <Image src={previewImage} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md mt-1 object-cover h-32 w-32 border" />
+                    <Image src={displayPhotoUrl} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md mt-1 object-cover h-32 w-32 border" />
                 </div>
               )}
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 sm:pt-4">
@@ -310,4 +321,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
