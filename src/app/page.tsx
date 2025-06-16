@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, MessagesSquare, UserCog, Users as UsersIcon, PlusCircle, Compass, Globe } from "lucide-react"; 
+import { Loader2, Gem, MessagesSquare, UserCog, Users as UsersIcon, PlusCircle, Compass, Globe, Sparkles } from "lucide-react"; 
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -12,6 +12,41 @@ import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, Timestamp, where } from "firebase/firestore";
 import { isFuture } from 'date-fns';
+import { motion } from "framer-motion";
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 30 },
+  visible: { 
+    opacity: 1, 
+    y: 0, 
+    transition: { 
+      type: "spring",
+      stiffness: 100,
+      damping: 15,
+      duration: 0.6 
+    } 
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+};
+
+const buttonsContainerVariants = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.15,
+      delayChildren: 0.3,
+    },
+  },
+};
+
+const buttonItemVariants = {
+  hidden: { opacity: 0, scale: 0.9 },
+  visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 260, damping: 12 } },
+};
 
 
 export default function HomePage() {
@@ -96,43 +131,72 @@ export default function HomePage() {
     return (
       <AppLayout>
         <div className="space-y-6">
-          <Card className="shadow-lg bg-gradient-to-r from-primary/10 via-transparent to-accent/10 border-primary/20 overflow-hidden">
-            <CardHeader className="p-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="text-3xl font-headline text-primary-foreground/90">
-                    Tekrar Hoş Geldin, {greetingName}!
-                  </CardTitle>
-                  <CardDescription className="text-lg text-muted-foreground mt-1">
-                    Bugün yeni bağlantılar kurmaya veya keyifli sohbetlere katılmaya ne dersin?
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6 pt-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
-                <Gem className="h-5 w-5 text-yellow-500" />
-                <span>Mevcut Elmasların: {userData?.diamonds ?? 0}</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Button asChild size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground animate-subtle-pulse">
-                  <Link href="/chat">
-                    <Compass className="mr-2 h-5 w-5" />
-                    Odalara Göz At
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="outline" className="border-primary text-primary hover:bg-primary/10">
-                  <Link href="/chat"> 
-                    <PlusCircle className="mr-2 h-5 w-5" />
-                    Yeni Oda Oluştur
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <motion.div
+            variants={cardVariants}
+            initial="hidden"
+            animate="visible"
+            whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
+          >
+            <Card className="shadow-xl bg-gradient-to-br from-primary/20 via-accent/10 to-primary/20 border-primary/30 overflow-hidden rounded-2xl">
+              <CardHeader className="p-6 sm:p-8">
+                <motion.div 
+                  className="flex justify-between items-start mb-4"
+                  variants={itemVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.1 }}
+                >
+                  <div>
+                    <CardTitle className="text-3xl sm:text-4xl font-headline text-primary-foreground/95">
+                      Tekrar Hoş Geldin, {greetingName}!
+                    </CardTitle>
+                    <CardDescription className="text-base sm:text-lg text-muted-foreground mt-1.5">
+                      Bugün yeni bağlantılar kurmaya veya keyifli sohbetlere katılmaya ne dersin?
+                    </CardDescription>
+                  </div>
+                  <Sparkles className="h-10 w-10 sm:h-12 sm:w-12 text-accent opacity-80" />
+                </motion.div>
+              </CardHeader>
+              <CardContent className="p-6 sm:p-8 pt-0">
+                <motion.div 
+                  className="flex items-center gap-2 text-sm text-muted-foreground mb-6"
+                  variants={itemVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.2 }}
+                >
+                  <Gem className="h-5 w-5 text-yellow-400" />
+                  <span className="font-medium">Mevcut Elmasların: {userData?.diamonds ?? 0}</span>
+                </motion.div>
+                <motion.div 
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                  variants={buttonsContainerVariants}
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <motion.div variants={buttonItemVariants}>
+                    <Button asChild size="lg" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground animate-subtle-pulse rounded-lg py-6 text-base">
+                      <Link href="/chat">
+                        <Compass className="mr-2.5 h-5 w-5" />
+                        Odalara Göz At
+                      </Link>
+                    </Button>
+                  </motion.div>
+                  <motion.div variants={buttonItemVariants}>
+                    <Button asChild size="lg" variant="outline" className="w-full border-primary/70 text-primary hover:bg-primary/10 hover:text-primary rounded-lg py-6 text-base">
+                      <Link href="/chat"> 
+                        <PlusCircle className="mr-2.5 h-5 w-5" />
+                        Yeni Oda Oluştur
+                      </Link>
+                    </Button>
+                  </motion.div>
+                </motion.div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col">
+            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-xl font-medium">Sohbet Dünyası</CardTitle>
                 <MessagesSquare className="h-6 w-6 text-accent" />
@@ -155,7 +219,7 @@ export default function HomePage() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col">
+            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-xl font-medium">Bağlantıların</CardTitle>
                 <UsersIcon className="h-6 w-6 text-accent" />
@@ -178,7 +242,7 @@ export default function HomePage() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col">
+            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-xl font-medium">Hesabım</CardTitle>
                 <UserCog className="h-6 w-6 text-accent" />
@@ -214,3 +278,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+    
