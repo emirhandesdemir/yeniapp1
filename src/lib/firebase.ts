@@ -5,16 +5,17 @@ import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, type Analytics } from "firebase/analytics";
 
-// Your web app's Firebase configuration using environment variables
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig: FirebaseOptions = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyAUPc1suCoz5DtJb9v2BA9qG2QZ_0h-eHs",
+  authDomain: "yeni-tinder.firebaseapp.com",
+  projectId: "yeni-tinder",
+  storageBucket: "yeni-tinder.appspot.com", // Genellikle .appspot.com kullanılır, .firebasestorage.app yerine. Konsoldaki değeri kontrol edin.
+  messagingSenderId: "584052934053",
+  appId: "1:584052934053:web:c20a004d9b3bf39358144c",
+  measurementId: "G-BW4XTD8TRQ",
+  databaseURL: "https://yeni-tinder-default-rtdb.firebaseio.com" // projectId'ye göre varsayılan olarak eklendi
 };
 
 // Initialize Firebase
@@ -24,45 +25,26 @@ let db: Firestore;
 let storage: FirebaseStorage;
 let analytics: Analytics | null = null;
 
-// Check if all necessary Firebase config values are present
-const requiredConfigs = [
-  firebaseConfig.apiKey,
-  firebaseConfig.authDomain,
-  firebaseConfig.projectId,
-  firebaseConfig.storageBucket,
-  firebaseConfig.messagingSenderId,
-  firebaseConfig.appId,
-];
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
 
-const allConfigsPresent = requiredConfigs.every(config => !!config);
-
-if (!allConfigsPresent) {
-  console.error(
-    "Firebase HATA: Tüm Firebase yapılandırma değişkenleri .env.local dosyasında tanımlanmamış. Lütfen kontrol edin." +
-    "\nEksik olabilecekler: NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN, NEXT_PUBLIC_FIREBASE_PROJECT_ID, " +
-    "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, NEXT_PUBLIC_FIREBASE_APP_ID"
-  );
-  // You might want to throw an error here or handle it gracefully
-  // For now, we'll let the SDK attempt to initialize and potentially fail with its own error message.
-  // This prevents the app from crashing during build if env vars are missing,
-  // but Firebase services will not work.
-}
-
-app = initializeApp(firebaseConfig);
-auth = getAuth(app);
-db = getFirestore(app);
-storage = getStorage(app);
-
-if (typeof window !== 'undefined') {
-  if (firebaseConfig.measurementId && allConfigsPresent) { // Only init analytics if core configs are present
+  if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
     try {
       analytics = getAnalytics(app);
     } catch (error) {
       console.error("Firebase Analytics başlatma hatası:", error);
     }
-  } else if (!firebaseConfig.measurementId) {
+  } else if (typeof window !== 'undefined' && !firebaseConfig.measurementId) {
     console.warn("Firebase Analytics: measurementId, firebaseConfig içinde tanımlanmamış. Analytics başlatılmayacak.");
   }
+} catch (error) {
+  console.error("Firebase başlatma sırasında genel hata oluştu:", error);
+  // Hata durumunda app, auth, db, storage değişkenleri tanımsız kalabilir.
+  // Uygulamanın bu durumu uygun şekilde işlemesi gerekebilir.
+  // Örneğin, bir hata mesajı gösterilebilir veya bazı özellikler devre dışı bırakılabilir.
 }
 
 export { app, auth, db, storage, analytics };
