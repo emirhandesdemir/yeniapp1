@@ -7,7 +7,7 @@ import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, Shoppi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch, getDoc } from "firebase/firestore"; // getDoc eklendi
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast } from 'date-fns';
+import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns'; // addSeconds eklendi
 import { tr } from 'date-fns/locale';
 import { Badge } from "@/components/ui/badge";
 
@@ -37,6 +37,7 @@ interface ChatRoom {
   expiresAt: Timestamp;
   participantCount?: number;
   maxParticipants: number;
+  // Oyunla ilgili alanlar burada listelemek için gerekli değil, Firestore'da olacaklar
 }
 
 const placeholderImages = [
@@ -125,25 +126,48 @@ export default function ChatRoomsPage() {
     }
     setIsCreatingRoom(true);
 
+    let gameConfigData: { isGameEnabled?: boolean; questionIntervalSeconds?: number } | null = null;
+    try {
+      const gameConfigDocRef = doc(db, "appSettings", "gameConfig");
+      const gameConfigSnap = await getDoc(gameConfigDocRef);
+      if (gameConfigSnap.exists()) {
+        gameConfigData = gameConfigSnap.data() as { isGameEnabled?: boolean; questionIntervalSeconds?: number };
+      }
+    } catch (configError) {
+      console.warn("[ChatPage] Error fetching game config during room creation:", configError);
+    }
+
     const imageUrl = defaultRoomImage.url; 
     const imageHint = defaultRoomImage.hint; 
 
-    try {
-      const currentTime = new Date();
-      const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
+    const currentTime = new Date();
+    const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
-      const roomDataToCreate = {
-        name: newRoomName.trim(),
-        description: newRoomDescription.trim(),
-        creatorId: currentUser.uid,
-        creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAtDate),
-        image: imageUrl, 
-        imageAiHint: imageHint, 
-        participantCount: 0,
-        maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
-      };
+    const roomDataToCreate: any = { // any kullanıldı, opsiyonel oyun alanları için
+      name: newRoomName.trim(),
+      description: newRoomDescription.trim(),
+      creatorId: currentUser.uid,
+      creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
+      createdAt: serverTimestamp(),
+      expiresAt: Timestamp.fromDate(expiresAtDate),
+      image: imageUrl, 
+      imageAiHint: imageHint, 
+      participantCount: 0,
+      maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
+    };
+
+    if (gameConfigData?.isGameEnabled && typeof gameConfigData.questionIntervalSeconds === 'number' && gameConfigData.questionIntervalSeconds >= 30) {
+      roomDataToCreate.gameInitialized = true;
+      roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameConfigData.questionIntervalSeconds));
+      roomDataToCreate.currentGameQuestionId = null;
+    } else {
+      // Oyun etkin değilse veya ayarlar geçersizse, bu alanları null veya false olarak ayarla
+      roomDataToCreate.gameInitialized = false;
+      roomDataToCreate.nextGameQuestionTimestamp = null;
+      roomDataToCreate.currentGameQuestionId = null;
+    }
+
+    try {
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
       await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
 
@@ -179,10 +203,6 @@ export default function ChatRoomsPage() {
           variant: "destructive",
           duration: 10000,
         });
-        // İsteğe bağlı: Yetersiz elmas durumunda diyaloğu açmayabiliriz.
-        // Ancak, kullanıcıya yine de diyaloğu gösterip, orada ek seçenekler sunmak daha iyi bir UX olabilir.
-        // setIsCreateModalOpen(false); 
-        // return;
     }
     setIsCreateModalOpen(true);
 };
@@ -248,7 +268,7 @@ export default function ChatRoomsPage() {
         }}>
           <DialogTrigger asChild>
             <Button
-              onClick={handleOpenCreateRoomDialog} // Direkt setIsCreateModalOpen(true) yerine bu fonksiyonu çağır
+              onClick={handleOpenCreateRoomDialog} 
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
               disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
@@ -432,6 +452,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-    
-
     
