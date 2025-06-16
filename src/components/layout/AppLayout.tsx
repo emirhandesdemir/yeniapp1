@@ -6,15 +6,11 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, // Admin paneli ikonu için
+  LayoutDashboard, 
   MessageSquare,
   Users,
-  LogOut, // Kaldırıldı ama gerekirse eklenebilir
-  Settings, // Kaldırıldı ama gerekirse eklenebilir
   Bell,
   Loader2,
-  Sun, // Tema değiştirme için kaldırıldı, ThemeContext kullanılıyor
-  Moon, // Tema değiştirme için kaldırıldı, ThemeContext kullanılıyor
   SendHorizontal,
   Home,
   UserRound,
@@ -26,7 +22,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTheme } from '@/contexts/ThemeContext'; // Tema için bu kullanılacak
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -41,7 +36,7 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
-
+import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; // Yeni eklendi
 
 interface FriendRequestForPopover {
   id: string;
@@ -56,7 +51,7 @@ interface BottomNavItemType {
   href: string;
   label: string;
   icon: React.ElementType;
-  activeIcon?: React.ElementType; // Aktif durum için farklı ikon (opsiyonel)
+  activeIcon?: React.ElementType; 
 }
 
 const bottomNavItems: BottomNavItemType[] = [
@@ -76,17 +71,48 @@ function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: 
   );
 }
 
+const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
+
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
-  const { currentUser, userData, logOut, isUserLoading: isAuthActionLoading } = useAuth();
+  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
-  const { theme, setTheme, resolvedTheme } = useTheme();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({});
   const [incomingInitialized, setIncomingInitialized] = useState(false);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true); // Bileşenin client tarafında mount edildiğini belirt
+  }, []);
+
+  useEffect(() => {
+    if (isClient && currentUser && userData && !isUserDataLoading) {
+      try {
+        const onboardingCompleted = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+        if (!onboardingCompleted) {
+          setShowOnboarding(true);
+        }
+      } catch (error) {
+        console.warn("Error accessing localStorage for onboarding:", error);
+        // localStorage erişilemiyorsa, varsayılan olarak onboarding'i gösterme
+        // veya farklı bir strateji izle. Şimdilik göstermiyoruz.
+      }
+    }
+  }, [isClient, currentUser, userData, isUserDataLoading]);
+
+  const handleCloseOnboarding = () => {
+    setShowOnboarding(false);
+     try {
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+    } catch (error) {
+      console.warn("Failed to set onboarding flag in localStorage:", error);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser?.uid) {
@@ -212,10 +238,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {/* Minimal Top Header */}
       <header className="flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
         <Link href="/" className="flex items-center gap-2 font-semibold text-primary dark:text-sidebar-primary">
-          <Flame className="h-7 w-7" /> {/* Instagram-like logo example */}
+          <Flame className="h-7 w-7" /> 
           <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
         </Link>
 
@@ -295,16 +320,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-auto bg-background pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]">
-        {/* Content padding is applied here so that fixed bottom nav doesn't overlap.
-            pb-16 for bottom nav height + p-4/p-6 for main content's own padding */}
         <div className="px-4 md:px-6">
           {children}
         </div>
       </main>
 
-      {/* Bottom Navigation Bar */}
+      {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
+
       <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
         {bottomNavItems.map((item) => (
           <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/" && pathname === "/")} />

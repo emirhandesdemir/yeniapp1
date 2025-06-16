@@ -3,8 +3,6 @@
 // Bu dosya artık gereksizdir ve projenizden güvenle silinebilir.
 // Firebase Studio'da dosya silemediğim için içeriğini boşaltıyorum.
 
-export default function PlaceholderPage() {
+export default function PlaceholderMainIndexPage() {
   return null;
 }
-
-    
