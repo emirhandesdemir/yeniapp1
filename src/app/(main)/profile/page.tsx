@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent, useRef } from "react"; // useRef eklendi
+import { useState, useEffect, type ChangeEvent, useRef } from "react"; 
 import Image from "next/image"; 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2 } from "lucide-react"; // Camera ve Trash2 eklendi
+import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOut as LogOutIcon } from "lucide-react"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,7 +19,7 @@ interface UserProfileForm {
 }
 
 export default function ProfilePage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading } = useAuth();
+  const { currentUser, userData, updateUserProfile, isUserLoading, logOut } = useAuth();
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -278,9 +278,18 @@ export default function ProfilePage() {
                   {tempProfile.bio || "Henüz bir biyografi eklenmemiş. Bu özellik yakında eklenecektir."}
                 </p>
               </div>
-              <div className="flex justify-end pt-4">
-                <Button onClick={handleEditToggle} variant="outline" className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row justify-end items-center gap-2 pt-4">
+                <Button onClick={handleEditToggle} variant="outline" className="w-full sm:w-auto">
                   <Edit3 className="mr-2 h-4 w-4" /> Profili Düzenle
+                </Button>
+                <Button
+                  onClick={async () => await logOut()}
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  disabled={isUserLoading}
+                >
+                  {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOutIcon className="mr-2 h-4 w-4" />}
+                  Çıkış Yap
                 </Button>
               </div>
             </div>
@@ -300,3 +309,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
