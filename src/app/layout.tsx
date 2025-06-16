@@ -4,6 +4,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext'; // Eklendi
 
 export const metadata: Metadata = {
   title: 'Sohbet Küresi',
@@ -37,8 +38,10 @@ export default function RootLayout({
           storageKey="sohbet-kuresi-theme"
         >
           <AuthProvider>
-            {children}
-            <Toaster />
+            <InAppNotificationProvider> {/* Eklendi */}
+              {children}
+              <Toaster />
+            </InAppNotificationProvider> {/* Eklendi */}
           </AuthProvider>
         </ThemeProvider>
       </body>

@@ -14,7 +14,8 @@ import {
   Home,
   UserRound,
   Flame,
-  ShoppingBag, 
+  ShoppingBag,
+  UserCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -34,10 +35,13 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
+  orderBy, // Eklendi
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
+import { useInAppNotification } from '@/contexts/InAppNotificationContext'; // Eklendi
+import { generateDmChatId } from '@/lib/utils'; // Eklendi
 
 interface FriendRequestForPopover {
   id: string;
@@ -58,7 +62,7 @@ interface BottomNavItemType {
 const bottomNavItems: BottomNavItemType[] = [
   { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
   { href: '/chat', label: 'Sohbet', icon: MessageSquare, activeIcon: MessageSquare },
-  { href: '/store', label: 'Mağaza', icon: ShoppingBag, activeIcon: ShoppingBag }, // Mağaza eklendi
+  { href: '/store', label: 'Mağaza', icon: ShoppingBag, activeIcon: ShoppingBag },
   { href: '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: Users },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
@@ -75,10 +79,15 @@ function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: 
 
 const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
 
+interface LastShownNotification {
+    [chatId: string]: Timestamp;
+}
+
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
   const { toast } = useToast();
+  const { showNotification: showInAppNotification } = useInAppNotification(); // Eklendi
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -87,6 +96,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
+  const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<LastShownNotification>({}); // DM bildirimleri için
 
   useEffect(() => {
     setIsClient(true); 
@@ -129,34 +140,57 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const incomingQuery = query(
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
-      where("status", "==", "pending")
+      where("status", "==", "pending"),
+      orderBy("createdAt", "desc") // Son gelenler üste gelsin (popover için)
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
+      const newNotifiedIds = new Set(notifiedRequestIds);
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
+        const requestId = reqDoc.id;
         let userProfileData: UserData | undefined = undefined;
-        try {
-          const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
-          if (senderProfileDoc.exists()) {
-            userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
+
+        // Yeni ve bildirilmemiş arkadaşlık istekleri için bildirim göster
+        if (data.status === "pending" && !notifiedRequestIds.has(requestId)) {
+          try {
+            const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
+            if (senderProfileDoc.exists()) {
+              userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
+              showInAppNotification({
+                title: "Yeni Arkadaşlık İsteği",
+                message: `${userProfileData.displayName || 'Bir kullanıcı'} sana arkadaşlık isteği gönderdi.`,
+                type: 'friend_request',
+                avatarUrl: userProfileData.photoURL,
+                senderName: userProfileData.displayName,
+                link: '/friends', // Bildirime tıklayınca arkadaşlar sayfasına gitsin
+              });
+              newNotifiedIds.add(requestId);
+            }
+          } catch (profileError) {
+            console.error(`Error fetching profile for sender ${data.fromUserId} for notification:`, profileError);
           }
-        } catch (profileError) {
-          console.error(`Error fetching profile for sender ${data.fromUserId}:`, profileError);
+        } else if (data.status === "pending") { // Zaten bildirilmişse profili yine de çek
+            const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
+            if (senderProfileDoc.exists()) {
+                userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
+            }
         }
+
         return {
-          id: reqDoc.id,
+          id: requestId,
           fromUserId: data.fromUserId,
           fromUsername: data.fromUsername,
           fromAvatarUrl: data.fromAvatarUrl,
           createdAt: data.createdAt as Timestamp,
-          userProfile: userProfileData,
+          userProfile: userProfileData, // Profil bilgisi eklendi
         } as FriendRequestForPopover;
       });
 
       try {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
+        setNotifiedRequestIds(newNotifiedIds); // Bildirilen ID'leri güncelle
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
         if(incomingInitialized) {
@@ -179,7 +213,71 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       }
     });
     return () => unsubscribeIncoming();
-  }, [currentUser?.uid, incomingInitialized, toast]);
+  }, [currentUser?.uid, incomingInitialized, toast, showInAppNotification, notifiedRequestIds]);
+
+
+  // DM Bildirimleri için Listener
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    const dmsQuery = query(
+      collection(db, "directMessages"),
+      where("participantUids", "array-contains", currentUser.uid)
+    );
+
+    const unsubscribeDms = onSnapshot(dmsQuery, (snapshot) => {
+        snapshot.docChanges().forEach(async (change) => {
+            if (change.type === "modified" || change.type === "added") { // Yeni veya güncellenmiş DM
+                const dmData = change.doc.data();
+                const dmId = change.doc.id;
+
+                if (dmData.lastMessageSenderId && dmData.lastMessageSenderId !== currentUser.uid && dmData.lastMessageTimestamp) {
+                    const lastMessageTime = (dmData.lastMessageTimestamp as Timestamp);
+                    const lastShownTime = lastShownDmTimestamps[dmId];
+
+                    // Eğer bu mesaj için daha önce bildirim gösterilmediyse VEYA mesaj son gösterilen bildirimden daha yeniyse
+                    // VE kullanıcı o anda bu DM sayfasında değilse bildirim göster.
+                    if ((!lastShownTime || lastMessageTime.toMillis() > lastShownTime.toMillis()) && pathname !== `/dm/${dmId}`) {
+                        const senderUid = dmData.lastMessageSenderId;
+                        let senderName = "Bir kullanıcı";
+                        let senderAvatar: string | null = null;
+
+                        if (dmData.participantInfo && dmData.participantInfo[senderUid]) {
+                            senderName = dmData.participantInfo[senderUid].displayName || senderName;
+                            senderAvatar = dmData.participantInfo[senderUid].photoURL;
+                        } else {
+                            // Fallback: Kullanıcı bilgisini user koleksiyonundan çek
+                            try {
+                                const userSnap = await getDoc(doc(db, "users", senderUid));
+                                if (userSnap.exists()) {
+                                    const senderData = userSnap.data() as UserData;
+                                    senderName = senderData.displayName || senderName;
+                                    senderAvatar = senderData.photoURL;
+                                }
+                            } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
+                        }
+                        
+                        showInAppNotification({
+                            title: `Yeni Mesaj: ${senderName}`,
+                            message: dmData.lastMessageText || "Sana bir mesaj gönderdi.",
+                            type: 'new_dm',
+                            avatarUrl: senderAvatar,
+                            senderName: senderName,
+                            link: `/dm/${dmId}`,
+                        });
+                        setLastShownDmTimestamps(prev => ({ ...prev, [dmId]: lastMessageTime }));
+                    }
+                }
+            }
+        });
+    }, (error) => {
+        console.error("Error fetching DMs for notifications:", error);
+        // toast({ title: "DM Bildirim Hatası", description: "Yeni mesajlar kontrol edilirken bir sorun oluştu.", variant: "destructive" });
+    });
+
+    return () => unsubscribeDms();
+  }, [currentUser?.uid, pathname, showInAppNotification, lastShownDmTimestamps]);
+
 
   const setActionLoading = (id: string, isLoading: boolean) => {
     setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
@@ -277,7 +375,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 ) : (
                   <div className="max-h-80 overflow-y-auto">
                     {incomingRequests.map(req => (
-                      <div key={req.id} className="flex items-center justify-between p-3 hover:bg-secondary/50 dark:hover:bg-secondary/30 border-b last:border-b-0">
+                      <div key={req.id} className="flex items-center justify-between p-3 hover:bg-secondary/50 dark:hover:bg-secondary/20 border-b last:border-b-0">
                         <div className="flex items-center gap-2.5">
                           <Avatar className="h-8 w-8">
                             <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
@@ -340,6 +438,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
-
-    
