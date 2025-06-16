@@ -14,14 +14,13 @@ import {
   Home,
   UserRound,
   Flame,
-  // Palette, // Tema ikonu kaldırıldı
+  ShoppingBag, 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -59,6 +58,7 @@ interface BottomNavItemType {
 const bottomNavItems: BottomNavItemType[] = [
   { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
   { href: '/chat', label: 'Sohbet', icon: MessageSquare, activeIcon: MessageSquare },
+  { href: '/store', label: 'Mağaza', icon: ShoppingBag, activeIcon: ShoppingBag }, // Mağaza eklendi
   { href: '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: Users },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
@@ -78,7 +78,6 @@ const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
-  // const { theme, setTheme } = useTheme(); // Tema yönetimi artık profil sayfasında
   const { toast } = useToast();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
@@ -249,7 +248,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-1 sm:gap-1.5">
-            {/* Tema değiştirici ikon ve işlevi buradan kaldırıldı */}
             <Link href="/direct-messages" passHref>
               <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Direkt Mesajlar">
                 <SendHorizontal className="h-5 w-5" />
@@ -342,3 +340,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+
+    

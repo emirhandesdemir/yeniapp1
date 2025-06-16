@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound } from "lucide-react";
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
@@ -30,7 +30,7 @@ import { Badge } from "@/components/ui/badge";
 interface ChatRoom {
   id: string;
   name: string;
-  description: string; // Açıklama alanı eklendi
+  description: string;
   creatorId: string;
   creatorName: string;
   createdAt: Timestamp;
@@ -46,7 +46,7 @@ const placeholderImages = [
 ];
 const defaultRoomImage = placeholderImages[0];
 
-const ROOM_CREATION_COST = 10; // Oda oluşturma maliyeti 10 elmas olarak güncellendi
+const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
 
@@ -56,7 +56,7 @@ export default function ChatRoomsPage() {
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomDescription, setNewRoomDescription] = useState(""); // Açıklama state'i eklendi
+  const [newRoomDescription, setNewRoomDescription] = useState("");
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
@@ -76,7 +76,7 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        const roomData = doc.data() as Omit<ChatRoom, 'id'>; // Omit 'id' as it's added separately
+        const roomData = doc.data() as Omit<ChatRoom, 'id'>;
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -92,18 +92,27 @@ export default function ChatRoomsPage() {
 
   const resetCreateRoomForm = () => {
     setNewRoomName("");
-    setNewRoomDescription(""); // Açıklama state'ini de sıfırla
+    setNewRoomDescription("");
   };
 
-
-  const handleCreateRoom = async (e: React.FormEvent) => {
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !userData) {
-      toast({ title: "Hata", description: "Oda oluşturmak için giriş yapmalısınız.", variant: "destructive" });
+      toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için giriş yapmalısınız.", variant: "destructive" });
       return;
     }
     if ((userData.diamonds ?? 0) < ROOM_CREATION_COST) {
-      toast({ title: "Yetersiz Elmas", description: `Oda oluşturmak için ${ROOM_CREATION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds ?? 0}`, variant: "destructive" });
+      toast({ 
+        title: "Yetersiz Elmas!", 
+        description: (
+          <div>
+            <p>Oda oluşturmak için {ROOM_CREATION_COST} elmasa ihtiyacın var. Mevcut elmas: {userData.diamonds ?? 0}.</p>
+            <p className="mt-2">Sohbet odalarındaki oyunlara katılarak elmas kazanabilir veya mağazadan elmas alabilirsin!</p>
+          </div>
+        ),
+        variant: "destructive",
+        duration: 7000, 
+      });
       return;
     }
     if (!newRoomName.trim()) {
@@ -125,7 +134,7 @@ export default function ChatRoomsPage() {
 
       const roomDataToCreate = {
         name: newRoomName.trim(),
-        description: newRoomDescription.trim(), // Açıklamayı ekle
+        description: newRoomDescription.trim(),
         creatorId: currentUser.uid,
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
@@ -148,6 +157,36 @@ export default function ChatRoomsPage() {
       setIsCreatingRoom(false);
     }
   };
+  
+  const handleOpenCreateRoomDialog = () => {
+    if (!currentUser || isUserLoading || isUserDataLoading) {
+        toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için lütfen giriş yapın.", variant: "destructive" });
+        return;
+    }
+    if ((userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
+        toast({ 
+          title: "Yetersiz Elmas!", 
+          description: (
+            <div>
+              <p>Oda oluşturmak için {ROOM_CREATION_COST} elmasa ihtiyacın var. Mevcut elmas: {userData?.diamonds ?? 0}.</p>
+              <p className="mt-2">Sohbet odalarındaki oyunlara katılarak elmas kazanabilir veya mağazadan elmas alabilirsin!</p>
+              <div className="mt-3 flex gap-2">
+                <Button asChild size="sm"><Link href="/store">Elmas Mağazası</Link></Button>
+                <Button variant="outline" size="sm" onClick={() => toast({ title: "Yakında!", description: "Video izleyerek elmas kazanma özelliği yakında eklenecektir."})}>Video İzle</Button>
+              </div>
+            </div>
+          ),
+          variant: "destructive",
+          duration: 10000,
+        });
+        // İsteğe bağlı: Yetersiz elmas durumunda diyaloğu açmayabiliriz.
+        // Ancak, kullanıcıya yine de diyaloğu gösterip, orada ek seçenekler sunmak daha iyi bir UX olabilir.
+        // setIsCreateModalOpen(false); 
+        // return;
+    }
+    setIsCreateModalOpen(true);
+};
+
 
   const handleDeleteRoom = async (roomId: string, roomName: string) => {
     if (!confirm(`"${roomName}" odasını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`)) {
@@ -194,6 +233,7 @@ export default function ChatRoomsPage() {
   }
 
   const activeChatRooms = chatRooms.filter(room => !(room.expiresAt && isPast(room.expiresAt.toDate())));
+  const hasEnoughDiamonds = (userData?.diamonds ?? 0) >= ROOM_CREATION_COST;
 
   return (
     <div className="space-y-6">
@@ -208,14 +248,15 @@ export default function ChatRoomsPage() {
         }}>
           <DialogTrigger asChild>
             <Button
+              onClick={handleOpenCreateRoomDialog} // Direkt setIsCreateModalOpen(true) yerine bu fonksiyonu çağır
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
-              disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && (userData.diamonds ?? 0) < ROOM_CREATION_COST) }
+              disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
               Yeni Oda Oluştur ({ROOM_CREATION_COST} <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[480px]">
-            <form onSubmit={handleCreateRoom}>
+            <form onSubmit={handleCreateRoomSubmit}>
               <DialogHeader>
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
@@ -248,7 +289,36 @@ export default function ChatRoomsPage() {
                     maxLength={150}
                   />
                 </div>
+                
+                {!hasEnoughDiamonds && currentUser && (
+                  <Card className="mt-4 border-orange-500/50 bg-orange-500/10 p-4">
+                    <CardHeader className="p-0 mb-2">
+                      <CardTitle className="text-base text-orange-700 dark:text-orange-400">Elmasların Yetersiz!</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <p className="text-xs text-orange-600 dark:text-orange-300 mb-3">
+                        Oda oluşturmak için {ROOM_CREATION_COST} elmasa ihtiyacın var. Sohbet odalarındaki oyunlara katılarak elmas kazanabilir veya aşağıdaki seçenekleri değerlendirebilirsin:
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button asChild size="sm" className="flex-1 bg-primary hover:bg-primary/80">
+                          <Link href="/store">
+                            <ShoppingBag className="mr-1.5 h-4 w-4" /> Elmas Mağazası
+                          </Link>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => toast({ title: "Yakında!", description: "Video izleyerek elmas kazanma özelliği yakında eklenecektir."})}
+                        >
+                          <Youtube className="mr-1.5 h-4 w-4" /> Video İzle Kazan
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
+
               <DialogFooter>
                 <DialogClose asChild>
                     <Button type="button" variant="outline" disabled={isCreatingRoom} onClick={resetCreateRoomForm}>İptal</Button>
@@ -259,7 +329,7 @@ export default function ChatRoomsPage() {
                     isCreatingRoom ||
                     !currentUser ||
                     !userData ||
-                    ((userData.diamonds ?? 0) < ROOM_CREATION_COST)
+                    !hasEnoughDiamonds
                   }
                 >
                   {isCreatingRoom && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -283,9 +353,9 @@ export default function ChatRoomsPage() {
                 </p>
                 <div className="mt-6">
                   <Button
-                    onClick={() => setIsCreateModalOpen(true)}
+                    onClick={handleOpenCreateRoomDialog}
                     className="bg-accent hover:bg-accent/90 text-accent-foreground text-base px-6 py-3"
-                    disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && (userData.diamonds ?? 0) < ROOM_CREATION_COST) }
+                    disabled={!currentUser || isUserLoading || isUserDataLoading }
                   >
                     Hemen Yeni Oda Oluştur! ({ROOM_CREATION_COST} <Gem className="inline h-4 w-4 ml-1 mr-0.5" />)
                   </Button>
@@ -362,4 +432,6 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+    
+
     
