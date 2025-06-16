@@ -57,6 +57,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp)
+- **Gerekli İndeksler:**
+  - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir. Bu, DM listesi sayfasının düzgün çalışması için önemlidir. Firebase konsolundan oluşturabilirsiniz. Hata mesajındaki bağlantı genellikle doğrudur.
 
 ## `friendRequests`
 Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
