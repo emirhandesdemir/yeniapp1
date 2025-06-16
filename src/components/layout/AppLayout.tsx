@@ -6,7 +6,6 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, 
   MessageSquare,
   Users,
   Bell,
@@ -15,6 +14,7 @@ import {
   Home,
   UserRound,
   Flame,
+  LayoutDashboard, // Admin ikonu kaldırıldı, panel context'ten yönetilecek
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -37,6 +37,7 @@ import {
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
+import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel'; // Yeni admin paneli eklendi
 
 interface FriendRequestForPopover {
   id: string;
@@ -75,7 +76,7 @@ const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading } = useAuth();
+  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth(); // isAdminPanelOpen eklendi
   const { toast } = useToast();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
@@ -318,6 +319,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </main>
 
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
+      
+      {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
+
 
       <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
         {bottomNavItems.map((item) => (
@@ -327,3 +331,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+

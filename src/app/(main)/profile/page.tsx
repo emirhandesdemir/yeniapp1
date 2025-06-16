@@ -3,7 +3,7 @@
 
 import { useState, useEffect, type ChangeEvent, useRef } from "react"; 
 import Image from "next/image"; 
-import Link from "next/link";
+// import Link from "next/link"; // Link kaldırıldı, AuthContext kullanılacak
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ interface UserProfileForm {
 }
 
 export default function ProfilePage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading, logOut } = useAuth();
+  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth(); // setIsAdminPanelOpen eklendi
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -271,13 +271,16 @@ export default function ProfilePage() {
               </div>
               <div className="flex flex-col sm:flex-row justify-end items-center gap-2 pt-4">
                 {userData?.role === 'admin' && (
-                  <Button asChild variant="outline" className="w-full sm:w-auto border-purple-500 text-purple-500 hover:bg-purple-500/10">
-                    <Link href="/admin/dashboard">
-                      <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
-                    </Link>
+                  <Button 
+                    variant="outline" 
+                    className="w-full sm:w-auto border-purple-500 text-purple-500 hover:bg-purple-500/10"
+                    onClick={() => setIsAdminPanelOpen(true)}
+                    disabled={isUserLoading}
+                  >
+                    <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
                   </Button>
                 )}
-                <Button onClick={handleEditToggle} variant="outline" className="w-full sm:w-auto">
+                <Button onClick={handleEditToggle} variant="outline" className="w-full sm:w-auto" disabled={isUserLoading}>
                   <Edit3 className="mr-2 h-4 w-4" /> Profili Düzenle
                 </Button>
                 <Button

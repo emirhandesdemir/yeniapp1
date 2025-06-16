@@ -17,7 +17,7 @@ import { auth, db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { ref as storageRefFunction, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { useRouter } from 'next/navigation';
-import { Loader2, Globe } from 'lucide-react'; // Globe ikonu eklendi
+import { Loader2, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const INITIAL_DIAMONDS = 10;
@@ -44,6 +44,8 @@ interface AuthContextType {
   updateUserProfile: (updates: { displayName?: string; photoFile?: File | null }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  isAdminPanelOpen: boolean;
+  setIsAdminPanelOpen: (isOpen: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,6 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
   const [isUserLoading, setIsUserLoading] = useState(false); 
   const [isUserDataLoading, setIsUserDataLoading] = useState(true); 
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -140,6 +143,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[AuthContext] No user authenticated. Clearing user data.");
         setUserData(null);
         setIsUserDataLoading(false);
+        setIsAdminPanelOpen(false); // Kullanıcı yoksa admin paneli de kapalı olmalı
       }
       console.log("[AuthContext] Auth state processing finished. Setting loading to false.");
       setLoading(false);
@@ -289,6 +293,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await signOut(auth);
       console.log("[AuthContext] LogOut successful. Navigating to /login.");
+      setIsAdminPanelOpen(false); // Çıkış yaparken admin panelini kapat
       router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
@@ -476,7 +481,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     updateUserProfile,
     updateUserDiamonds,
     signInWithGoogle,
+    isAdminPanelOpen,
+    setIsAdminPanelOpen,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
+
