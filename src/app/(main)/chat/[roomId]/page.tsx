@@ -183,7 +183,7 @@ export default function ChatRoomPage() {
         roomId && 
         roomDetails) {
       
-      if (nextQuestionCountdown === null || nextQuestionCountdown > gameSettings.questionIntervalSeconds) {
+      if (nextQuestionCountdown === null || nextQuestionCountdown <= 0 || nextQuestionCountdown > gameSettings.questionIntervalSeconds) {
          setNextQuestionCountdown(gameSettings.questionIntervalSeconds);
       }
   
@@ -227,13 +227,11 @@ export default function ChatRoomPage() {
         gameQuestionTimerRef.current = null;
       }
     };
-  }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails, activeGameQuestion, availableGameQuestions]); // Added activeGameQuestion and availableGameQuestions
+  }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails, activeGameQuestion, availableGameQuestions]);
   
 
   const handleCloseGameQuestionCard = () => {
     setShowGameQuestionCard(false);
-    // Kullanıcı kartı kapattığında soruyu pas geçmiş saymıyoruz, sadece kartı gizliyoruz.
-    // Sorunun süresi veya başka bir soru gelmesiyle ilgili mantık ana zamanlayıcıda devam eder.
   };
 
 
@@ -299,35 +297,38 @@ export default function ChatRoomPage() {
       setIsCurrentUserParticipant(true);
       toast({ title: "Odaya Katıldınız!", description: `${roomDetails.name} odasına başarıyla katıldınız.` });
 
+      const userDisplayNameForJoin = userData.displayName || currentUser.displayName || "Bir kullanıcı";
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-        text: `[SİSTEM] ${userData.displayName || currentUser.displayName || "Bir kullanıcı"} odaya katıldı.`,
+        text: `[SİSTEM] ${userDisplayNameForJoin} odaya katıldı.`,
         senderId: "system",
         senderName: "Sistem",
         senderAvatar: null,
         timestamp: serverTimestamp(),
         isGameMessage: true, 
       });
+      
+      if (gameSettings?.isGameEnabled) {
+        let gameInfoMessage = `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `;
+        if (activeGameQuestion) {
+          gameInfoMessage += `Aktif bir soru var: "${activeGameQuestion.text}". Cevaplamak için /answer <cevabınız> yazın.`;
+        } else if (nextQuestionCountdown !== null && typeof gameSettings.questionIntervalSeconds === 'number') {
+            const actualRemainingTime = nextQuestionCountdown > 0 ? nextQuestionCountdown : gameSettings.questionIntervalSeconds;
+            gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(actualRemainingTime)} sonra gelecek.`;
+        } else if (typeof gameSettings.questionIntervalSeconds === 'number') {
+            gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`;
+        }
 
-      if (gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && !activeGameQuestion) {
-        await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-          text: `[BİLGİ] Hoş geldin ${userData.displayName || currentUser.displayName || "katılımcı"}! Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`,
-          senderId: "system",
-          senderName: "Sistem",
-          senderAvatar: null,
-          timestamp: serverTimestamp(),
-          isGameMessage: true,
-        });
-      } else if (gameSettings?.isGameEnabled && activeGameQuestion) {
-         await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-          text: `[BİLGİ] Hoş geldin ${userData.displayName || currentUser.displayName || "katılımcı"}! Aktif bir soru var: "${activeGameQuestion.text}". Cevaplamak için /answer <cevabınız> yazın.`,
-          senderId: "system",
-          senderName: "Sistem",
-          senderAvatar: null,
-          timestamp: serverTimestamp(),
-          isGameMessage: true,
-        });
+        if (gameInfoMessage !== `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `) {
+            await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+                text: gameInfoMessage,
+                senderId: "system",
+                senderName: "Sistem",
+                senderAvatar: null,
+                timestamp: serverTimestamp(),
+                isGameMessage: true,
+            });
+        }
       }
-
 
     } catch (error) {
       console.error("Error joining room:", error);
@@ -335,7 +336,7 @@ export default function ChatRoomPage() {
     } finally {
       setIsProcessingJoinLeave(false);
     }
-  }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings, activeGameQuestion]);
+  }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings, activeGameQuestion, nextQuestionCountdown]);
 
   const handleLeaveRoom = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve();
