@@ -3,11 +3,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Gem, ShoppingBag, Tag, CreditCard, AlertTriangle } from "lucide-react";
+import { Gem, ShoppingBag, Tag, CreditCard, AlertTriangle, Youtube } from "lucide-react"; // Youtube ikonu buraya eklendi
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useEffect } from "react";
 
 interface DiamondPackage {
   id: string;
@@ -182,6 +183,3 @@ export default function DiamondStorePage() {
     </div>
   );
 }
-
-
-    
