@@ -188,7 +188,7 @@ export default function AdminChatRoomsPage() {
 
   if (adminUserData === undefined || adminUserData === null && loading) {
     return (
-     <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+     <div className="flex flex-1 items-center justify-center p-8">
        <Loader2 className="h-12 w-12 animate-spin text-primary" />
        <p className="ml-2 text-lg">Oda yönetimi yükleniyor...</p>
      </div>
@@ -197,7 +197,7 @@ export default function AdminChatRoomsPage() {
 
  if (adminUserData?.role !== 'admin') {
     return (
-     <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+     <div className="flex flex-1 items-center justify-center p-8">
        <Card className="w-full max-w-md text-center p-6 shadow-lg">
            <CardHeader>
                <ShieldAlert className="mx-auto h-12 w-12 text-destructive mb-4" />
@@ -211,7 +211,7 @@ export default function AdminChatRoomsPage() {
 
  if (loading) { // admin yetkisi var ama veriler yükleniyor
    return (
-     <div className="flex flex-1 items-center justify-center min-h-[calc(100vh-theme(spacing.20))]">
+     <div className="flex flex-1 items-center justify-center p-8">
        <Loader2 className="h-12 w-12 animate-spin text-primary" />
        <p className="ml-2 text-lg">Sohbet odaları yükleniyor...</p>
      </div>
@@ -320,3 +320,4 @@ export default function AdminChatRoomsPage() {
     </div>
   );
 }
+
