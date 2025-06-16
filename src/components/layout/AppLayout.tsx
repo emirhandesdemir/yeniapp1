@@ -36,7 +36,7 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
-import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; // Yeni eklendi
+import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
 
 interface FriendRequestForPopover {
   id: string;
@@ -87,7 +87,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    setIsClient(true); // Bileşenin client tarafında mount edildiğini belirt
+    setIsClient(true); 
   }, []);
 
   useEffect(() => {
@@ -99,8 +99,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.warn("Error accessing localStorage for onboarding:", error);
-        // localStorage erişilemiyorsa, varsayılan olarak onboarding'i gösterme
-        // veya farklı bir strateji izle. Şimdilik göstermiyoruz.
       }
     }
   }, [isClient, currentUser, userData, isUserDataLoading]);
@@ -245,13 +243,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </Link>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {userData?.role === 'admin' && (
-            <Link href="/admin/dashboard" passHref>
-              <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-primary w-9 h-9 sm:w-10 sm:h-10" aria-label="Admin Paneli">
-                <LayoutDashboard className="h-5 w-5" />
-              </Button>
-            </Link>
-          )}
           <Link href="/direct-messages" passHref>
             <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Direkt Mesajlar">
               <SendHorizontal className="h-5 w-5" />

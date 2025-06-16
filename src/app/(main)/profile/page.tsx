@@ -3,13 +3,14 @@
 
 import { useState, useEffect, type ChangeEvent, useRef } from "react"; 
 import Image from "next/image"; 
+import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOut as LogOutIcon } from "lucide-react"; 
+import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard } from "lucide-react"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,9 +34,9 @@ export default function ProfilePage() {
     if (currentUser && userData) {
       setTempProfile({
         username: userData.displayName || currentUser.displayName || "",
-        bio: "", // userData.bio eklenebilir eğer varsa
+        bio: "", 
       });
-      setPreviewImage(userData.photoURL || currentUser.photoURL); // Mevcut fotoğrafı önizleme olarak ayarla
+      setPreviewImage(userData.photoURL || currentUser.photoURL); 
     } else if (currentUser) {
         setTempProfile({
             username: currentUser.displayName || "",
@@ -45,7 +46,6 @@ export default function ProfilePage() {
     }
   }, [currentUser, userData]);
   
-  // userData güncellendiğinde previewImage'ı da senkronize et
   useEffect(() => {
     if (userData?.photoURL) {
       setPreviewImage(userData.photoURL);
@@ -55,15 +55,14 @@ export default function ProfilePage() {
 
   const handleEditToggle = () => {
     if (isEditing) {
-      // Düzenlemeyi iptal et
       if (currentUser && userData) {
-        setTempProfile({ username: userData.displayName || currentUser.displayName || "", bio: "" }); // userData.bio
+        setTempProfile({ username: userData.displayName || currentUser.displayName || "", bio: "" }); 
         setPreviewImage(userData.photoURL || currentUser.photoURL);
       } else if (currentUser) {
         setTempProfile({ username: currentUser.displayName || "", bio: "" });
         setPreviewImage(currentUser.photoURL);
       }
-      setSelectedFile(null); // Seçili dosyayı temizle
+      setSelectedFile(null); 
     }
     setIsEditing(!isEditing);
   };
@@ -76,12 +75,10 @@ export default function ProfilePage() {
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      // Boyut kontrolü (örneğin 5MB)
       if (file.size > 5 * 1024 * 1024) {
         toast({ title: "Hata", description: "Dosya boyutu 5MB'den büyük olamaz.", variant: "destructive" });
         return;
       }
-      // Tip kontrolü
       if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
         toast({ title: "Hata", description: "Sadece JPG, PNG, GIF veya WEBP formatında resim yükleyebilirsiniz.", variant: "destructive" });
         return;
@@ -98,13 +95,11 @@ export default function ProfilePage() {
     }
     if (!confirm("Profil fotoğrafınızı kaldırmak istediğinizden emin misiniz?")) return;
 
-    const success = await updateUserProfile({ photoFile: null }); // null göndererek fotoğrafın silinmesini tetikle
+    const success = await updateUserProfile({ photoFile: null }); 
     if (success) {
-      setPreviewImage(null); // Önizlemeyi temizle
+      setPreviewImage(null); 
       setSelectedFile(null);
-      // Toast mesajı AuthContext tarafından gösterilecek
     }
-    // Hata toast mesajı da AuthContext tarafından gösterilecek
   };
 
 
@@ -138,10 +133,8 @@ export default function ProfilePage() {
     const success = await updateUserProfile(updates);
     if (success) {
       setIsEditing(false);
-      setSelectedFile(null); // Başarılı kayıttan sonra seçili dosyayı temizle
-      // Toast mesajı AuthContext tarafından gösterilecek
+      setSelectedFile(null); 
     }
-    // Hata toast mesajı da AuthContext tarafından gösterilecek
   };
   
   const getAvatarFallbackText = () => {
@@ -169,8 +162,6 @@ export default function ProfilePage() {
     );
   }
   
-  // isEditing durumunda previewImage, selectedFile varsa onu, yoksa userData'dakini kullanır.
-  // isEditing değilse userData'dakini kullanır.
   const displayPhotoUrl = isEditing 
     ? (previewImage || userData?.photoURL || currentUser?.photoURL) 
     : (userData?.photoURL || currentUser?.photoURL);
@@ -187,7 +178,7 @@ export default function ProfilePage() {
                 src={displayPhotoUrl || "https://placehold.co/128x128.png"} 
                 alt={tempProfile.username || "Kullanıcı"} 
                 data-ai-hint="user portrait" 
-                key={displayPhotoUrl} // Resim değiştiğinde AvatarImage'in yeniden render olmasını sağlamak için key ekledik
+                key={displayPhotoUrl} 
               />
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
@@ -251,10 +242,10 @@ export default function ProfilePage() {
                   rows={3} 
                   className="mt-1" 
                   placeholder="Kendinizden bahsedin... (Bu özellik yakında eklenecektir)"
-                  disabled // Şimdilik bio düzenleme devre dışı
+                  disabled 
                 />
               </div>
-              {previewImage && selectedFile && ( // Sadece yeni bir dosya seçildiyse önizlemesini göster
+              {previewImage && selectedFile && ( 
                 <div className="my-4">
                     <Label>Yeni Fotoğraf Önizlemesi</Label>
                     <Image src={previewImage} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md mt-1 object-cover h-32 w-32 border" />
@@ -279,6 +270,13 @@ export default function ProfilePage() {
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row justify-end items-center gap-2 pt-4">
+                {userData?.role === 'admin' && (
+                  <Button asChild variant="outline" className="w-full sm:w-auto border-purple-500 text-purple-500 hover:bg-purple-500/10">
+                    <Link href="/admin/dashboard">
+                      <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
+                    </Link>
+                  </Button>
+                )}
                 <Button onClick={handleEditToggle} variant="outline" className="w-full sm:w-auto">
                   <Edit3 className="mr-2 h-4 w-4" /> Profili Düzenle
                 </Button>
