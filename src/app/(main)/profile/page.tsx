@@ -9,17 +9,38 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard } from "lucide-react"; 
+import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette } from "lucide-react"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useTheme } from "@/contexts/ThemeContext";
+import type { ThemeSetting } from "@/contexts/ThemeContext";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 
 interface UserProfileForm {
   username: string;
   bio: string;
 }
 
+const themeOptions: { value: ThemeSetting; label: string }[] = [
+  { value: 'system', label: 'Sistem Varsayılanı' },
+  { value: 'light', label: 'Açık Tema' },
+  { value: 'dark', label: 'Koyu Tema' },
+  { value: 'forest-light', label: 'Orman (Açık)' },
+  { value: 'forest-dark', label: 'Orman (Koyu)' },
+  { value: 'ocean-light', label: 'Okyanus (Açık)' },
+  { value: 'ocean-dark', label: 'Okyanus (Koyu)' },
+];
+
 export default function ProfilePage() {
   const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth(); 
+  const { theme, setTheme } = useTheme();
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -35,8 +56,6 @@ export default function ProfilePage() {
         username: userData.displayName || currentUser.displayName || "",
         bio: "", 
       });
-      // If photoURL is a local path (e.g., /uploads/...), keep it as is.
-      // Otherwise, it might be an external URL (like from Google).
       setPreviewImage(userData.photoURL || currentUser.photoURL); 
     } else if (currentUser) {
         setTempProfile({
@@ -90,13 +109,13 @@ export default function ProfilePage() {
   };
   
   const handleRemoveProfilePicture = async () => {
-    if (!currentUser || !userData?.photoURL) { // Check if there's a photoURL to remove
+    if (!currentUser || !userData?.photoURL) {
         toast({ title: "Bilgi", description: "Kaldırılacak bir profil fotoğrafı bulunmuyor." });
         return;
     }
     if (!confirm("Profil fotoğrafınızı kaldırmak istediğinizden emin misiniz?")) return;
 
-    const success = await updateUserProfile({ photoFile: null }); // Pass null to indicate removal
+    const success = await updateUserProfile({ photoFile: null });
     if (success) {
       setPreviewImage(null); 
       setSelectedFile(null);
@@ -135,7 +154,6 @@ export default function ProfilePage() {
     if (success) {
       setIsEditing(false);
       setSelectedFile(null); 
-      // The photoURL in userData will be updated by AuthContext, triggering a re-render.
     }
   };
   
@@ -168,11 +186,8 @@ export default function ProfilePage() {
     ? (previewImage || userData?.photoURL || currentUser?.photoURL) 
     : (userData?.photoURL || currentUser?.photoURL);
 
-  // Ensure local paths are treated correctly by next/image
-  // If it's an external URL (http/https), next/image handles it.
-  // If it's a local path (e.g., /uploads/...), it's served from /public.
   if (displayPhotoUrl && !displayPhotoUrl.startsWith('http') && !displayPhotoUrl.startsWith('/')) {
-    displayPhotoUrl = `/${displayPhotoUrl}`; // Prepend slash if missing for local paths
+    displayPhotoUrl = `/${displayPhotoUrl}`; 
   }
 
 
@@ -188,7 +203,7 @@ export default function ProfilePage() {
                     src={displayPhotoUrl} 
                     alt={tempProfile.username || "Kullanıcı"} 
                     data-ai-hint="user portrait" 
-                    key={displayPhotoUrl} // Re-render if URL changes
+                    key={displayPhotoUrl}
                   />
               ) : null }
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
@@ -215,7 +230,7 @@ export default function ProfilePage() {
               disabled={isUserLoading || !isEditing}
             />
           </div>
-           {isEditing && (userData?.photoURL || previewImage) && ( // Show remove button if there's a current or preview image
+           {isEditing && (userData?.photoURL || previewImage) && (
             <Button 
                 type="button" 
                 variant="ghost" 
@@ -306,6 +321,33 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Palette className="h-6 w-6 text-primary" />
+            <CardTitle className="text-xl sm:text-2xl">Görünüm Ayarları</CardTitle>
+          </div>
+          <CardDescription>Uygulamanın temasını ve görünümünü kişiselleştirin.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="theme-select" className="text-base">Uygulama Teması</Label>
+            <Select value={theme} onValueChange={(value) => setTheme(value as ThemeSetting)}>
+              <SelectTrigger id="theme-select" className="mt-1">
+                <SelectValue placeholder="Tema Seçin" />
+              </SelectTrigger>
+              <SelectContent>
+                {themeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 

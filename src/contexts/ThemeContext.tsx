@@ -4,7 +4,8 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-type ThemeSetting = 'system' | 'light' | 'dark' | 'forest-light' | 'forest-dark' | 'ocean-light' | 'ocean-dark';
+// ThemeSetting tipini export ediyoruz, böylece ProfilePage'de kullanılabilir
+export type ThemeSetting = 'system' | 'light' | 'dark' | 'forest-light' | 'forest-dark' | 'ocean-light' | 'ocean-dark';
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -31,7 +32,7 @@ export function useTheme() {
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
-  storageKey = 'sohbet-kuresi-theme', // Updated storage key
+  storageKey = 'sohbet-kuresi-theme',
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<ThemeSetting>(() => {
     if (typeof window !== 'undefined') {
@@ -70,7 +71,9 @@ export function ThemeProvider({
         root.classList.add('dark'); 
       } else { // ends with '-light'
         currentResolvedMode = 'light';
-        root.classList.add('light'); 
+        // 'light' sınıfını direkt eklemiyoruz, çünkü özel tema sınıfları (örn: theme-forest-light)
+        // zaten kendi açık mod stillerini içermeli. Temel 'light' veya 'dark' sınıfı,
+        // özel tema aktifken sadece 'dark' modu için gerekli.
       }
     }
     
@@ -90,19 +93,17 @@ export function ThemeProvider({
     setThemeState(newTheme);
   }, [storageKey]);
 
-  // Handle system theme changes
   useEffect(() => {
     if (theme !== 'system') {
       return;
     }
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
-      // Re-evaluate system theme by setting it to 'system', which triggers the main useEffect
       setThemeState('system'); 
     };
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]); // Only re-run if theme itself changes to/from system
+  }, [theme]);
   
 
   const value = {

@@ -14,14 +14,14 @@ import {
   Home,
   UserRound,
   Flame,
-  Palette, // Tema ikonu eklendi
+  // Palette, // Tema ikonu kaldırıldı
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext'; // useTheme eklendi
+import { useTheme } from '@/contexts/ThemeContext';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -74,14 +74,11 @@ function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: 
 }
 
 const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
-type ThemeSetting = 'system' | 'light' | 'dark' | 'forest-light' | 'forest-dark' | 'ocean-light' | 'ocean-dark';
-const availableThemes: ThemeSetting[] = ['system', 'light', 'dark', 'forest-light', 'forest-dark', 'ocean-light', 'ocean-dark'];
-
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
-  const { theme, setTheme } = useTheme(); // useTheme hook'u kullanıldı
+  // const { theme, setTheme } = useTheme(); // Tema yönetimi artık profil sayfasında
   const { toast } = useToast();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
@@ -240,12 +237,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return "SK";
   };
 
-  const handleChangeTheme = () => {
-    const currentIndex = availableThemes.indexOf(theme as ThemeSetting);
-    const nextIndex = (currentIndex + 1) % availableThemes.length;
-    setTheme(availableThemes[nextIndex]);
-  };
-
   const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/');
 
   return (
@@ -258,9 +249,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-1 sm:gap-1.5">
-            <Button variant="ghost" size="icon" onClick={handleChangeTheme} className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Temayı Değiştir">
-              <Palette className="h-5 w-5" />
-            </Button>
+            {/* Tema değiştirici ikon ve işlevi buradan kaldırıldı */}
             <Link href="/direct-messages" passHref>
               <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Direkt Mesajlar">
                 <SendHorizontal className="h-5 w-5" />
