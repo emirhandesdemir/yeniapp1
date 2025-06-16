@@ -344,18 +344,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `API Upload failed with status ${response.status}`);
+          let errorMessage = `API Yükleme hatası: ${response.status}`;
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorData.message || errorMessage;
+            } catch (e) {
+              console.error("API'den gelen JSON hata yanıtı ayrıştırılamadı:", e);
+            }
+          } else {
+            try {
+              const errorText = await response.text();
+              console.error("API hata yanıtı (JSON olmayan):", errorText.substring(0, 500));
+              // errorMessage zaten response.status'u içeriyor, bu genellikle yeterlidir.
+            } catch (e2) {
+                // Hata metni de alınamadı.
+            }
+          }
+          throw new Error(errorMessage);
         }
         const result = await response.json();
         newLocalPhotoPath = result.filePath;
-        console.log("[AuthContext] New local photo path obtained from API:", newLocalPhotoPath);
-        authUpdates.photoURL = newLocalPhotoPath; // Store local path in Auth
-        firestoreUpdates.photoURL = newLocalPhotoPath; // And in Firestore
+        console.log("[AuthContext] Yeni yerel fotoğraf yolu API'den alındı:", newLocalPhotoPath);
+        authUpdates.photoURL = newLocalPhotoPath; 
+        firestoreUpdates.photoURL = newLocalPhotoPath; 
       } else if (updates.photoFile === null) { 
-            console.log("[AuthContext] User requested to remove profile picture (local file).");
-            // For local files, we just remove the reference.
-            // Deleting from /public/uploads via API would be more complex and is skipped for now.
+            console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi (yerel dosya).");
             authUpdates.photoURL = null; 
             firestoreUpdates.photoURL = null; 
       }
@@ -367,7 +382,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
               setIsUserLoading(false);
               return false; 
           }
-          console.log("[AuthContext] Display name update provided:", updates.displayName);
+          console.log("[AuthContext] Görünen ad güncellemesi sağlandı:", updates.displayName);
           authUpdates.displayName = updates.displayName.trim();
           firestoreUpdates.displayName = updates.displayName.trim();
       }
@@ -376,19 +391,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
-        console.log("[AuthContext] No actual changes to apply to profile.");
+        console.log("[AuthContext] Profile uygulanacak gerçek bir değişiklik yok.");
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         setIsUserLoading(false);
         return true;
       }
 
       if (hasAuthUpdates && auth.currentUser) {
-        console.log("[AuthContext] Updating Firebase Auth profile with:", authUpdates);
+        console.log("[AuthContext] Firebase Auth profili şununla güncelleniyor:", authUpdates);
         await updateFirebaseProfile(auth.currentUser, authUpdates);
       }
 
       if (hasFirestoreUpdates) {
-        console.log("[AuthContext] Updating Firestore user document with:", firestoreUpdates);
+        console.log("[AuthContext] Firestore kullanıcı belgesi şununla güncelleniyor:", firestoreUpdates);
         await updateDoc(userDocRef, firestoreUpdates);
       }
       
@@ -397,12 +412,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUserData(updatedDocSnap.data() as UserData);
       }
 
-      console.log("[AuthContext] Profile update successful.");
+      console.log("[AuthContext] Profil güncelleme başarılı.");
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
       return true;
 
     } catch (error: any) {
-      console.error("[AuthContext] General profile update failed:", error.code || error.name, error.message, error.stack);
+      console.error("[AuthContext] Genel profil güncelleme başarısız:", error.code || error.name, error.message, error.stack);
       toast({ 
         title: "Profil Güncelleme Hatası", 
         description: `Profil güncellenirken bir sorun oluştu: ${error.message || 'Bilinmeyen hata'}`, 
@@ -410,7 +425,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       return false;
     } finally {
-      console.log("[AuthContext] Profile update process finished. Setting isUserLoading to false.");
+      console.log("[AuthContext] Profil güncelleme işlemi bitti. isUserLoading false olarak ayarlanıyor.");
       setIsUserLoading(false);
     }
   };
@@ -466,3 +481,4 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
+
