@@ -14,6 +14,7 @@ Kullanıcı profil bilgilerini saklar.
   - `diamonds`: (Number) Kullanıcının uygulama içi para birimi bakiyesi
   - `createdAt`: (Timestamp) Kullanıcı belgesinin oluşturulduğu zaman
   - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin")
+  - `bio`: (String, nullable) Kullanıcının hakkında yazdığı kısa metin.
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`

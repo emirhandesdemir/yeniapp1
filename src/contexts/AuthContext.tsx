@@ -13,9 +13,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase'; // storage import removed
+import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
-// Firebase storage imports removed: ref as storageRefFunction, uploadBytesResumable, getDownloadURL, deleteObject
 import { useRouter } from 'next/navigation';
 import { Loader2, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -26,10 +25,11 @@ export interface UserData {
   uid: string;
   email: string | null;
   displayName: string | null;
-  photoURL: string | null; // Can now be a local path like /uploads/filename.jpg
+  photoURL: string | null; 
   diamonds: number;
   createdAt: Timestamp; 
   role?: "admin" | "user";
+  bio?: string; // Hakkımda alanı eklendi
 }
 
 interface AuthContextType {
@@ -41,7 +41,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string) => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; photoFile?: File | null }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; photoFile?: File | null; bio?: string }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -86,18 +86,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 setUserData(docSnap.data() as UserData);
             } else {
                 console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
-                const dataToSet = {
+                const dataToSet: UserData = {
                     uid: user.uid,
                     email: user.email,
                     displayName: user.displayName,
-                    photoURL: user.photoURL, // Google might provide a photoURL
+                    photoURL: user.photoURL, 
                     diamonds: INITIAL_DIAMONDS,
-                    role: "user" as "user" | "admin",
-                    createdAt: serverTimestamp(),
+                    role: "user",
+                    createdAt: Timestamp.now(), // Geçici olarak client-side, setDoc içinde serverTimestamp olacak
+                    bio: "", // Yeni bio alanı
                 };
 
                 try {
-                    await setDoc(userDocRef, dataToSet);
+                    await setDoc(userDocRef, { ...dataToSet, createdAt: serverTimestamp() });
                     console.log(`[AuthContext] Successfully initiated user document creation for ${user.uid}. Fetching document after creation...`);
                     
                     const freshSnap = await getDoc(userDocRef);
@@ -107,12 +108,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     } else {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
                         const fallbackUserData: UserData = {
-                            uid: user.uid,
-                            email: user.email,
-                            displayName: user.displayName,
-                            photoURL: user.photoURL,
-                            diamonds: INITIAL_DIAMONDS,
-                            role: "user",
+                            ...dataToSet,
                             createdAt: Timestamp.now(), 
                         };
                         setUserData(fallbackUserData);
@@ -153,28 +149,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const createUserDocument = async (user: User, username?: string) => {
     const userDocRef = doc(db, "users", user.uid);
-    const initialPhotoURL = user.photoURL; // Keep Google's photo if available initially
-    const dataToSetForLog = { 
+    const initialPhotoURL = user.photoURL; 
+    const dataToSetForLog: Partial<UserData> & {createdAt: string} = { 
       uid: user.uid, 
       email: user.email, 
       displayName: username || user.displayName, 
       photoURL: initialPhotoURL, 
       diamonds: INITIAL_DIAMONDS, 
-      role: "user" as "user" | "admin",
-      createdAt: "serverTimestamp()" 
+      role: "user",
+      createdAt: "serverTimestamp()",
+      bio: "", // Yeni bio alanı
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
     
     try {
-        await setDoc(userDocRef, {
+        const dataToSave = {
             uid: user.uid,
             email: user.email,
             displayName: username || user.displayName,
             photoURL: initialPhotoURL,
             diamonds: INITIAL_DIAMONDS,
-            role: "user",
+            role: "user" as "user" | "admin",
             createdAt: serverTimestamp(),
-        });
+            bio: "", // Yeni bio alanı
+        };
+        await setDoc(userDocRef, dataToSave);
         console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
         
         const docSnap = await getDoc(userDocRef);
@@ -191,6 +190,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 diamonds: INITIAL_DIAMONDS,
                 role: "user",
                 createdAt: Timestamp.now(),
+                bio: "",
             };
             setUserData(fallbackUserData);
              toast({
@@ -210,7 +210,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
-      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null }); // Initialize photoURL as null
+      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null }); 
       console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
       await createUserDocument(userCredential.user, username);
       console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
@@ -267,7 +267,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await createUserDocument(user); 
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
-        // Potentially update displayName or photoURL from Google if Firestore doc is stale
         const firestoreData = docSnap.data() as UserData;
         const updatesToFirestore: Partial<UserData> = {};
         if (user.displayName && user.displayName !== firestoreData.displayName) {
@@ -276,6 +275,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
             updatesToFirestore.photoURL = user.photoURL;
         }
+        // Ensure bio is initialized if missing from an older document
+        if (firestoreData.bio === undefined) {
+            updatesToFirestore.bio = ""; 
+        }
+
         if (Object.keys(updatesToFirestore).length > 0) {
             await updateDoc(userDocRef, updatesToFirestore);
             setUserData({ ...firestoreData, ...updatesToFirestore });
@@ -319,13 +323,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const updateUserProfile = async (updates: { displayName?: string; photoFile?: File | null }): Promise<boolean> => {
+  const updateUserProfile = async (updates: { displayName?: string; photoFile?: File | null; bio?: string }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", { displayName: updates.displayName, photoFileName: updates.photoFile?.name });
+    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", { displayName: updates.displayName, photoFileName: updates.photoFile?.name, bio: updates.bio });
     
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
@@ -357,7 +361,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
             try {
               const errorText = await response.text();
               console.error("API hata yanıtı (JSON olmayan):", errorText.substring(0, 500));
-              // errorMessage zaten response.status'u içeriyor, bu genellikle yeterlidir.
             } catch (e2) {
                 // Hata metni de alınamadı.
             }
@@ -386,6 +389,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
           authUpdates.displayName = updates.displayName.trim();
           firestoreUpdates.displayName = updates.displayName.trim();
       }
+
+      const currentBio = userData?.bio || "";
+      if (updates.bio !== undefined && updates.bio.trim() !== currentBio) {
+          console.log("[AuthContext] Bio güncellemesi sağlandı:", updates.bio);
+          firestoreUpdates.bio = updates.bio.trim();
+      }
+
 
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
@@ -481,4 +491,3 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-

@@ -32,10 +32,6 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'system', label: 'Sistem Varsayılanı' },
   { value: 'light', label: 'Açık Tema' },
   { value: 'dark', label: 'Koyu Tema' },
-  { value: 'forest-light', label: 'Orman (Açık)' },
-  { value: 'forest-dark', label: 'Orman (Koyu)' },
-  { value: 'ocean-light', label: 'Okyanus (Açık)' },
-  { value: 'ocean-dark', label: 'Okyanus (Koyu)' },
 ];
 
 export default function ProfilePage() {
@@ -54,13 +50,13 @@ export default function ProfilePage() {
     if (currentUser && userData) {
       setTempProfile({
         username: userData.displayName || currentUser.displayName || "",
-        bio: "", 
+        bio: userData.bio || "", 
       });
       setPreviewImage(userData.photoURL || currentUser.photoURL); 
     } else if (currentUser) {
         setTempProfile({
             username: currentUser.displayName || "",
-            bio: "",
+            bio: "", // userData olmadığı için bio boş kalır
         });
          setPreviewImage(currentUser.photoURL);
     }
@@ -70,13 +66,19 @@ export default function ProfilePage() {
     if (userData?.photoURL) {
       setPreviewImage(userData.photoURL);
     }
-  }, [userData?.photoURL]);
+    if (userData?.bio) {
+        setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
+    }
+  }, [userData?.photoURL, userData?.bio]);
 
 
   const handleEditToggle = () => {
     if (isEditing) {
       if (currentUser && userData) {
-        setTempProfile({ username: userData.displayName || currentUser.displayName || "", bio: "" }); 
+        setTempProfile({ 
+            username: userData.displayName || currentUser.displayName || "", 
+            bio: userData.bio || "" 
+        }); 
         setPreviewImage(userData.photoURL || currentUser.photoURL);
       } else if (currentUser) {
         setTempProfile({ username: currentUser.displayName || "", bio: "" });
@@ -126,7 +128,7 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!currentUser) return;
     
-    const updates: { displayName?: string; photoFile?: File | null } = {};
+    const updates: { displayName?: string; photoFile?: File | null; bio?: string } = {};
     let profileChanged = false;
 
     const currentDisplayName = userData?.displayName || currentUser.displayName || "";
@@ -136,6 +138,12 @@ export default function ProfilePage() {
             return;
         }
         updates.displayName = tempProfile.username.trim();
+        profileChanged = true;
+    }
+    
+    const currentBio = userData?.bio || "";
+    if (tempProfile.bio.trim() !== currentBio) {
+        updates.bio = tempProfile.bio.trim();
         profileChanged = true;
     }
 
@@ -267,8 +275,8 @@ export default function ProfilePage() {
                   onChange={handleInputChange} 
                   rows={3} 
                   className="mt-1" 
-                  placeholder="Kendinizden bahsedin... (Bu özellik yakında eklenecektir)"
-                  disabled 
+                  placeholder="Kendinizden bahsedin..."
+                  disabled={isUserLoading} 
                 />
               </div>
               {previewImage && selectedFile && displayPhotoUrl && ( 
@@ -292,7 +300,7 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold text-primary-foreground/80">Hakkımda</h3>
                 <p className="text-muted-foreground whitespace-pre-wrap text-sm sm:text-base">
-                  {tempProfile.bio || "Henüz bir biyografi eklenmemiş. Bu özellik yakında eklenecektir."}
+                  {userData?.bio || "Henüz bir biyografi eklenmemiş."}
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row justify-end items-center gap-2 pt-4">
@@ -330,7 +338,7 @@ export default function ProfilePage() {
             <Palette className="h-6 w-6 text-primary" />
             <CardTitle className="text-xl sm:text-2xl">Görünüm Ayarları</CardTitle>
           </div>
-          <CardDescription>Uygulamanın temasını ve görünümünü kişiselleştirin.</CardDescription>
+          <CardDescription>Uygulamanın temasını kişiselleştirin.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>

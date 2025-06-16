@@ -33,7 +33,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col">
         <ThemeProvider
-          defaultTheme="system"
+          defaultTheme="dark"
           storageKey="sohbet-kuresi-theme"
         >
           <AuthProvider>

@@ -4,8 +4,7 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-// ThemeSetting tipini export ediyoruz, böylece ProfilePage'de kullanılabilir
-export type ThemeSetting = 'system' | 'light' | 'dark' | 'forest-light' | 'forest-dark' | 'ocean-light' | 'ocean-dark';
+export type ThemeSetting = 'system' | 'light' | 'dark';
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -46,38 +45,31 @@ export function ThemeProvider({
     return defaultTheme;
   });
 
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
+    if (theme === 'system') {
+      if (typeof window !== 'undefined') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      return 'light'; // SSR fallback for system
+    }
+    return theme;
+  });
+
 
   useEffect(() => {
     const root = window.document.documentElement;
     
-    const allThemeClasses = ['light', 'dark', 'theme-forest-light', 'theme-forest-dark', 'theme-ocean-light', 'theme-ocean-dark'];
-    root.classList.remove(...allThemeClasses);
+    root.classList.remove('light', 'dark');
 
     let currentResolvedMode: 'light' | 'dark';
-    let classToApplyToRoot: string;
 
     if (theme === 'system') {
-      const systemMode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      currentResolvedMode = systemMode;
-      classToApplyToRoot = systemMode; 
-    } else if (theme === 'light' || theme === 'dark') {
+      currentResolvedMode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } else {
       currentResolvedMode = theme;
-      classToApplyToRoot = theme; 
-    } else { 
-      classToApplyToRoot = theme; 
-      if (theme.endsWith('-dark')) {
-        currentResolvedMode = 'dark';
-        root.classList.add('dark'); 
-      } else { // ends with '-light'
-        currentResolvedMode = 'light';
-        // 'light' sınıfını direkt eklemiyoruz, çünkü özel tema sınıfları (örn: theme-forest-light)
-        // zaten kendi açık mod stillerini içermeli. Temel 'light' veya 'dark' sınıfı,
-        // özel tema aktifken sadece 'dark' modu için gerekli.
-      }
     }
     
-    root.classList.add(classToApplyToRoot);
+    root.classList.add(currentResolvedMode);
     setResolvedTheme(currentResolvedMode);
 
   }, [theme]);
@@ -99,6 +91,7 @@ export function ThemeProvider({
     }
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
+      // When system theme changes, re-trigger the effect that applies the correct class
       setThemeState('system'); 
     };
     mediaQuery.addEventListener('change', handleChange);
