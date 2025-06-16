@@ -77,6 +77,10 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
   - `toAvatarUrl`: (String, nullable) Alıcının avatar URL'si
   - `status`: (String) "pending", "accepted", veya "declined"
   - `createdAt`: (Timestamp) İsteğin oluşturulduğu zaman
+- **Gerekli İndeksler:**
+  - Bildirim popover'ında ve arkadaşlık isteği listelemelerinde kullanılan sorgu için:
+    - Koleksiyon: `friendRequests`
+    - Alanlar: `toUserId` (Artan), `status` (Artan), `createdAt` (Azalan)
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
