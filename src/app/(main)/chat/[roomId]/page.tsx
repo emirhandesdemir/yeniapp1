@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -35,6 +35,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import GameQuestionCard from "@/components/game/GameQuestionCard";
 import { generateDmChatId } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface Message {
   id: string;
@@ -51,12 +57,11 @@ interface Message {
 interface ChatRoomDetails {
   id: string;
   name: string;
-  description?: string;
+  description?: string; // Açıklama alanı eklendi
   creatorId: string;
   participantCount?: number;
   maxParticipants: number;
   expiresAt?: Timestamp;
-  // Oyun Sistemi v1 Alanları
   currentGameQuestionId?: string | null;
   nextGameQuestionTimestamp?: Timestamp | null;
   gameInitialized?: boolean;
@@ -91,12 +96,11 @@ interface GameQuestion {
   id: string;
   text: string;
   answer: string;
-  hint: string; // İpucu alanı eklendi
-  // reward alanı kaldırıldı, sabit 1 elmas olacak
+  hint: string; 
 }
 
-const FIXED_GAME_REWARD = 1; // Sabit ödül miktarı
-const HINT_COST = 1; // İpucu maliyeti
+const FIXED_GAME_REWARD = 1; 
+const HINT_COST = 1; 
 
 const HARDCODED_QUESTIONS: GameQuestion[] = [
   { id: "q1", text: "Hangi anahtar kapı açmaz?", answer: "klavye", hint: "Bilgisayarda yazı yazmak için kullanılır." },
@@ -180,7 +184,6 @@ export default function ChatRoomPage() {
     return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
   
-  // Firestore'dan gelen nextGameQuestionTimestamp'e göre geri sayımı güncelleyen useEffect
   useEffect(() => {
     if (countdownDisplayTimerRef.current) {
       clearInterval(countdownDisplayTimerRef.current);
@@ -192,18 +195,14 @@ export default function ChatRoomPage() {
           const nextTime = roomDetails.nextGameQuestionTimestamp.toDate();
           const diffSeconds = Math.max(0, Math.floor((nextTime.getTime() - now.getTime()) / 1000));
           setNextQuestionCountdown(diffSeconds);
-
-          if (diffSeconds <= 0 && isCurrentUserParticipant && gameSettings?.isGameEnabled && !roomDetails.currentGameQuestionId) {
-             // Süre doldu, potansiyel olarak yeni soru tetiklenecek (aşağıdaki interval timer tarafından)
-          }
         } else {
           setNextQuestionCountdown(null);
         }
       };
-      updateCountdown(); // Hemen güncelle
+      updateCountdown(); 
       countdownDisplayTimerRef.current = setInterval(updateCountdown, 1000);
     } else if (roomDetails?.currentGameQuestionId) {
-        setNextQuestionCountdown(null); // Aktif soru varsa geri sayımı durdur/gizle
+        setNextQuestionCountdown(null); 
     } else {
         setNextQuestionCountdown(null);
     }
@@ -213,7 +212,6 @@ export default function ChatRoomPage() {
   }, [roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId, isCurrentUserParticipant, gameSettings?.isGameEnabled]);
 
 
-  // Yeni soru sorma ve Firestore'u güncelleme zamanlayıcısı
   useEffect(() => {
     if (gameQuestionIntervalTimerRef.current) {
       clearInterval(gameQuestionIntervalTimerRef.current);
@@ -224,27 +222,20 @@ export default function ChatRoomPage() {
         !isCurrentUserParticipant ||
         !gameSettings?.isGameEnabled ||
         !roomId ||
-        !roomDetails || // roomDetails yüklendi mi?
-        roomDetails.currentGameQuestionId || // Zaten aktif bir soru var mı?
-        availableGameQuestions.length === 0 // Sorulacak soru kalmadı mı?
+        !roomDetails || 
+        roomDetails.currentGameQuestionId || 
+        availableGameQuestions.length === 0 
       ) {
         return;
       }
 
-      // Sadece bir client'in (örneğin oda yaratıcısı veya rastgele bir aktif katılımcı)
-      // yeni soruyu tetiklemesini sağlamak için bir mekanizma gerekebilir.
-      // Şimdilik, her client dener, ilk Firestore'a yazan kazanır.
-      // Veya sadece oda yaratıcısı ise tetikle: if (currentUser?.uid !== roomDetails.creatorId) return;
-
       try {
         const roomDocRef = doc(db, "chatRooms", roomId);
-        // Firestore'dan en son durumu tekrar oku, başka bir client zaten soru sormuş olabilir
         const currentRoomSnap = await getDoc(roomDocRef);
         if (!currentRoomSnap.exists()) return;
         const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
 
         if (currentRoomData.currentGameQuestionId) {
-          // Başka bir client zaten soru sormuş
           return;
         }
         
@@ -268,28 +259,18 @@ export default function ChatRoomPage() {
         });
 
         await batch.commit();
-        // setActiveGameQuestion ve setShowGameQuestionCard artık roomDetails dinleyicisi tarafından yönetilecek.
-        // setAvailableGameQuestions güncellenmesi doğru cevapta yapılmalı.
       } catch (error) {
         console.error("[GameSystem] Error attempting to ask new question:", error);
       }
     };
     
-    // Bu interval, nextGameQuestionTimestamp'e ulaşıldığında yeni soru sormayı dener.
-    // Sürekli çalışmak yerine, sadece nextGameQuestionTimestamp geldiğinde tetiklenmeli.
-    // Bu yüzden bu intervali kaldırıp, yukarıdaki countdownDisplayTimer'daki kontrolü güçlendireceğiz.
-    // Şimdilik, bir sonraki soru timestamp'i geldiğinde bu fonksiyonu çağıran bir mantık lazım.
-    // Bu useEffect'in bağımlılıkları, client'in aktif olup olmadığına ve oyunun etkin olup olmadığına bağlı.
-    // Asıl tetikleyici, roomDetails.nextGameQuestionTimestamp'in zamanının gelmesi olmalı.
 
     if (gameSettings?.isGameEnabled && isCurrentUserParticipant) {
-        // Bu timer, periyodik olarak yeni soru sorma DENEMESİ yapar.
-        // Asıl senkronizasyon Firestore'daki timestamp ile olacak.
         gameQuestionIntervalTimerRef.current = setInterval(() => {
             if (roomDetails?.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId) {
                 attemptToAskNewQuestion();
             }
-        }, 5000); // Her 5 saniyede bir kontrol et (çok sık olmamalı)
+        }, 5000); 
     }
 
 
@@ -298,7 +279,6 @@ export default function ChatRoomPage() {
     };
   }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails, availableGameQuestions, currentUser?.uid]);
 
-  // roomDetails.currentGameQuestionId değiştiğinde aktif soruyu ve kartı güncelle
   useEffect(() => {
     if (roomDetails?.currentGameQuestionId) {
       const question = HARDCODED_QUESTIONS.find(q => q.id === roomDetails.currentGameQuestionId);
@@ -312,7 +292,7 @@ export default function ChatRoomPage() {
 
 
   const handleCloseGameQuestionCard = () => {
-    setShowGameQuestionCard(false); // Sadece kartı gizle, soruyu null yapma
+    setShowGameQuestionCard(false); 
   };
 
 
@@ -330,7 +310,6 @@ export default function ChatRoomPage() {
         await updateDoc(participantRef, { isTyping });
       }
     } catch (error) {
-      // console.warn("Could not update typing status:", error);
     }
   }, [currentUser, roomId, isCurrentUserParticipant]);
 
@@ -375,7 +354,6 @@ export default function ChatRoomPage() {
       });
       batch.update(roomRef, { participantCount: increment(1) });
 
-      // Oyun başlatma mantığı (sadece bir kez ve oda yaratıcısı tarafından yapılabilir veya ilk giren tarafından)
       if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId) {
           batch.update(roomRef, {
               gameInitialized: true,
@@ -400,8 +378,7 @@ export default function ChatRoomPage() {
       
       if (gameSettings?.isGameEnabled) {
         let gameInfoMessage = `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `;
-        // roomDetails Firestore'dan güncellendikten sonra currentRoomData'yı kullanmak daha doğru olabilir
-        const updatedRoomSnap = await getDoc(roomRef); // Firestore'dan son durumu al
+        const updatedRoomSnap = await getDoc(roomRef); 
         const updatedRoomData = updatedRoomSnap.data() as ChatRoomDetails;
 
         if (updatedRoomData?.currentGameQuestionId) {
@@ -484,7 +461,7 @@ export default function ChatRoomPage() {
         const fetchedRoomDetails: ChatRoomDetails = {
           id: docSnap.id,
           name: data.name,
-          description: data.description,
+          description: data.description, // Açıklama eklendi
           creatorId: data.creatorId,
           participantCount: data.participantCount || 0,
           maxParticipants: data.maxParticipants || 7,
@@ -659,11 +636,10 @@ export default function ChatRoomPage() {
 
     const roomDocRef = doc(db, "chatRooms", roomId);
 
-    // /hint komutu işleme
     if (tempMessage.toLowerCase() === "/hint" && activeGameQuestion && gameSettings?.isGameEnabled) {
         if ((userData.diamonds ?? 0) < HINT_COST) {
             toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"});
-            setNewMessage(tempMessage); // Komutu geri yükle
+            setNewMessage(tempMessage); 
             return;
         }
         setIsSending(true);
@@ -677,7 +653,7 @@ export default function ChatRoomPage() {
                         <span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span>
                     </div>
                 ),
-                duration: 10000, // İpucunu daha uzun göster
+                duration: 10000, 
             });
             await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
                 text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`,
@@ -689,7 +665,6 @@ export default function ChatRoomPage() {
         } catch (error) {
             console.error("[GameSystem] Error processing hint:", error);
             toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"});
-            // Elmas düşürme başarısız olduysa geri yükleme mantığı eklenebilir.
         } finally {
             setIsSending(false);
         }
@@ -697,17 +672,14 @@ export default function ChatRoomPage() {
     }
 
 
-    // /answer komutu işleme
     if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && gameSettings?.isGameEnabled) {
       setIsSending(true);
       const userAnswer = tempMessage.substring(8).trim();
       
-      // Firestore'dan en güncel soru ID'sini al
       const currentRoomSnap = await getDoc(roomDocRef);
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
 
       if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
-        // Soru değişmiş veya cevaplanmış
         toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" });
         setIsSending(false);
         return;
@@ -718,7 +690,7 @@ export default function ChatRoomPage() {
         await updateUserDiamonds((userData.diamonds || 0) + reward);
         
         const batch = writeBatch(db);
-        batch.update(roomDocRef, { currentGameQuestionId: null }); // Soruyu Firestore'dan temizle
+        batch.update(roomDocRef, { currentGameQuestionId: null }); 
         batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
           text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`,
           senderId: "system",
@@ -730,7 +702,6 @@ export default function ChatRoomPage() {
 
         toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` });
         setAvailableGameQuestions(prev => prev.filter(q => q.id !== activeGameQuestion.id));
-        // setActiveGameQuestion(null) ve setShowGameQuestionCard(false) artık Firestore dinleyicisiyle yönetilecek
       } else {
         addDoc(collection(db, `chatRooms/${roomId}/messages`), {
           text: `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`,
@@ -745,7 +716,6 @@ export default function ChatRoomPage() {
       return;
     }
 
-    // Normal mesaj gönderme
     setIsSending(true);
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
@@ -983,12 +953,12 @@ export default function ChatRoomPage() {
         <GameQuestionCard
           question={activeGameQuestion}
           onClose={handleCloseGameQuestionCard}
-          reward={FIXED_GAME_REWARD} // Sabit ödülü props olarak geç
+          reward={FIXED_GAME_REWARD} 
         />
       )}
 
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
             <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
             <Link href="/chat"> 
                 <ArrowLeft className="h-5 w-5" />
@@ -1000,7 +970,24 @@ export default function ChatRoomPage() {
                 <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-                <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
+                <div className="flex items-center gap-2">
+                    <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
+                    {roomDetails.description && (
+                        <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0">
+                                    <Info className="h-4 w-4"/>
+                                    <span className="sr-only">Oda Açıklaması</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-xs">
+                                <p className="text-xs">{roomDetails.description}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                        </TooltipProvider>
+                    )}
+                </div>
                 <div className="flex items-center text-xs text-muted-foreground gap-x-2">
                     {roomDetails.expiresAt && (
                         <div className="flex items-center truncate">

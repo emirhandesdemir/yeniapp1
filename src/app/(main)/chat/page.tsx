@@ -30,21 +30,15 @@ import { Badge } from "@/components/ui/badge";
 interface ChatRoom {
   id: string;
   name: string;
-  description: string;
+  description: string; // Açıklama alanı eklendi
   creatorId: string;
   creatorName: string;
   createdAt: Timestamp;
   expiresAt: Timestamp;
-  // image ve imageAiHint Firestore'da kalacak ama burada gösterilmeyecek.
-  // image: string; 
-  // imageAiHint: string; 
   participantCount?: number;
   maxParticipants: number;
 }
 
-// Bu placeholderImages ve defaultRoomImage oda *oluşturulurken* hala kullanılıyor,
-// Firestore'a kaydedilecek bir resim URL'si ve ipucu sağlamak için.
-// Ancak bu sayfadaki listelemede artık gösterilmeyecek.
 const placeholderImages = [
   { url: "https://placehold.co/600x400.png", hint: "abstract modern" },
   { url: "https://placehold.co/600x400.png", hint: "community discussion" },
@@ -52,7 +46,7 @@ const placeholderImages = [
 ];
 const defaultRoomImage = placeholderImages[0];
 
-const ROOM_CREATION_COST = 1;
+const ROOM_CREATION_COST = 10; // Oda oluşturma maliyeti 10 elmas olarak güncellendi
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
 
@@ -62,7 +56,7 @@ export default function ChatRoomsPage() {
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomDescription, setNewRoomDescription] = useState("");
+  const [newRoomDescription, setNewRoomDescription] = useState(""); // Açıklama state'i eklendi
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
@@ -82,9 +76,7 @@ export default function ChatRoomsPage() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
-        const roomData = doc.data() as ChatRoom;
-        // image ve imageAiHint'i ChatRoom arayüzünden kaldırmadık çünkü Firestore'da hala var,
-        // sadece burada göstermiyoruz.
+        const roomData = doc.data() as Omit<ChatRoom, 'id'>; // Omit 'id' as it's added separately
         rooms.push({ id: doc.id, ...roomData });
       });
       setChatRooms(rooms);
@@ -100,7 +92,7 @@ export default function ChatRoomsPage() {
 
   const resetCreateRoomForm = () => {
     setNewRoomName("");
-    setNewRoomDescription("");
+    setNewRoomDescription(""); // Açıklama state'ini de sıfırla
   };
 
 
@@ -110,17 +102,20 @@ export default function ChatRoomsPage() {
       toast({ title: "Hata", description: "Oda oluşturmak için giriş yapmalısınız.", variant: "destructive" });
       return;
     }
-    if (userData.diamonds < ROOM_CREATION_COST) {
-      toast({ title: "Yetersiz Elmas", description: `Oda oluşturmak için ${ROOM_CREATION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds}`, variant: "destructive" });
+    if ((userData.diamonds ?? 0) < ROOM_CREATION_COST) {
+      toast({ title: "Yetersiz Elmas", description: `Oda oluşturmak için ${ROOM_CREATION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds ?? 0}`, variant: "destructive" });
       return;
     }
     if (!newRoomName.trim()) {
       toast({ title: "Hata", description: "Oda adı boş olamaz.", variant: "destructive" });
       return;
     }
+    if (!newRoomDescription.trim()) {
+      toast({ title: "Hata", description: "Oda açıklaması boş olamaz.", variant: "destructive" });
+      return;
+    }
     setIsCreatingRoom(true);
 
-    // Firestore'a kaydedilecek resim URL'si ve ipucu. Kullanıcı arayüzünde listelemede gösterilmeyecek.
     const imageUrl = defaultRoomImage.url; 
     const imageHint = defaultRoomImage.hint; 
 
@@ -130,7 +125,7 @@ export default function ChatRoomsPage() {
 
       const roomDataToCreate = {
         name: newRoomName.trim(),
-        description: newRoomDescription.trim(),
+        description: newRoomDescription.trim(), // Açıklamayı ekle
         creatorId: currentUser.uid,
         creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         createdAt: serverTimestamp(),
@@ -141,7 +136,7 @@ export default function ChatRoomsPage() {
         maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
       };
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
-      await updateUserDiamonds(userData.diamonds - ROOM_CREATION_COST);
+      await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
 
       toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       resetCreateRoomForm();
@@ -214,9 +209,9 @@ export default function ChatRoomsPage() {
           <DialogTrigger asChild>
             <Button
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
-              disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
+              disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && (userData.diamonds ?? 0) < ROOM_CREATION_COST) }
             >
-              Yeni Oda Oluştur (1 <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
+              Yeni Oda Oluştur ({ROOM_CREATION_COST} <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[480px]">
@@ -237,6 +232,7 @@ export default function ChatRoomsPage() {
                     onChange={(e) => setNewRoomName(e.target.value)}
                     required
                     disabled={isCreatingRoom}
+                    maxLength={50}
                   />
                 </div>
                 <div className="space-y-2">
@@ -245,8 +241,11 @@ export default function ChatRoomsPage() {
                     id="roomDescription"
                     value={newRoomDescription}
                     onChange={(e) => setNewRoomDescription(e.target.value)}
-                    rows={2}
+                    rows={3}
                     disabled={isCreatingRoom}
+                    required
+                    placeholder="Odanızın konusunu veya kurallarını kısaca açıklayın..."
+                    maxLength={150}
                   />
                 </div>
               </div>
@@ -260,7 +259,7 @@ export default function ChatRoomsPage() {
                     isCreatingRoom ||
                     !currentUser ||
                     !userData ||
-                    (userData.diamonds < ROOM_CREATION_COST)
+                    ((userData.diamonds ?? 0) < ROOM_CREATION_COST)
                   }
                 >
                   {isCreatingRoom && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -286,9 +285,9 @@ export default function ChatRoomsPage() {
                   <Button
                     onClick={() => setIsCreateModalOpen(true)}
                     className="bg-accent hover:bg-accent/90 text-accent-foreground text-base px-6 py-3"
-                    disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && userData.diamonds < ROOM_CREATION_COST) }
+                    disabled={!currentUser || isUserLoading || isUserDataLoading || (userData && (userData.diamonds ?? 0) < ROOM_CREATION_COST) }
                   >
-                    Hemen Yeni Oda Oluştur!
+                    Hemen Yeni Oda Oluştur! ({ROOM_CREATION_COST} <Gem className="inline h-4 w-4 ml-1 mr-0.5" />)
                   </Button>
                 </div>
             </CardContent>
@@ -322,8 +321,8 @@ export default function ChatRoomsPage() {
                     <X className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
                 )}
-                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground/80 group-hover:text-muted-foreground transition-colors mt-1.5">
-                  {room.description || "Harika bir sohbet için açıklama bekleniyor..."}
+                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground/80 group-hover:text-muted-foreground transition-colors mt-1.5" title={room.description}>
+                  {room.description || "Açıklama yok."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
@@ -363,5 +362,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
     

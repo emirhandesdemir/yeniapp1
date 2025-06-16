@@ -11,7 +11,7 @@ Kullanıcı profil bilgilerini saklar.
   - `email`: (String) Kullanıcının e-postası
   - `displayName`: (String) Kullanıcının seçtiği görünen ad
   - `photoURL`: (String, nullable) Kullanıcının profil fotoğrafının URL'si
-  - `diamonds`: (Number) Kullanıcının uygulama içi para birimi bakiyesi
+  - `diamonds`: (Number) Kullanıcının uygulama içi para birimi bakiyesi (Varsayılan: 10)
   - `createdAt`: (Timestamp) Kullanıcı belgesinin oluşturulduğu zaman
   - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin")
   - `bio`: (String, nullable) Kullanıcının hakkında yazdığı kısa metin.
@@ -26,22 +26,23 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Yol:** `/chatRooms/{roomId}`
 - **Alanlar:**
   - `name`: (String) Sohbet odasının adı
-  - `description`: (String, isteğe bağlı) Odanın açıklaması
+  - `description`: (String) Odanın açıklaması (Zorunlu)
   - `creatorId`: (String) Odayı oluşturan kullanıcının UID'si
   - `creatorName`: (String) Oluşturanın görünen adı
   - `createdAt`: (Timestamp) Odanın oluşturulduğu zaman
-  - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman
-  - `image`: (String) Odanın resminin URL'si
-  - `imageAiHint`: (String) Odanın resmi için yapay zeka ipucu
-  - `participantCount`: (Number) Mevcut katılımcı sayısı
-  - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı
-  - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir (ilk katılımda ayarlanır).
-  - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si. Eğer `null` ise aktif soru yoktur.
-  - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası. Bu, tüm istemcilerde geri sayımı senkronize etmek için kullanılır.
+  - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman (Varsayılan: Oluşturulma + 20 dakika)
+  - `image`: (String) Odanın resminin URL'si (Placeholder olarak kullanılır)
+  - `imageAiHint`: (String) Odanın resmi için yapay zeka ipucu (Placeholder ile kullanılır)
+  - `participantCount`: (Number) Mevcut katılımcı sayısı (Başlangıç: 0)
+  - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı (Varsayılan: 7)
+  - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir.
+  - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
+  - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
+- **Not:** Oda oluşturma maliyeti varsayılan olarak **10 elmas**tır.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı, oyun sistemi mesajları için true)
+    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı)
   - `participants`: Odadaki aktif katılımcıları saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean)
@@ -49,21 +50,20 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
 - **Yol:** `/directMessages/{dmChatId}`
-  - `dmChatId`, iki kullanıcının UID'sinin alfabetik olarak sıralanıp `_` ile birleştirilmesiyle oluşturulur (örn: `uid1_uid2`).
+  - `dmChatId`, iki kullanıcının UID'sinin alfabetik olarak sıralanıp `_` ile birleştirilmesiyle oluşturulur.
 - **Alanlar:**
   - `participantUids`: (Array<String>) İki katılımcının UID'lerini içerir.
-  - `participantInfo`: (Map) Katılımcıların temel bilgilerini saklar (UID anahtarıyla).
-    - Örn: `{ "uid1": { "displayName": "User1", "photoURL": "url1" }, "uid2": { "displayName": "User2", "photoURL": "url2" } }`
+  - `participantInfo`: (Map) Katılımcıların temel bilgilerini saklar.
   - `createdAt`: (Timestamp) DM sohbetinin ilk mesajla oluşturulduğu zaman.
-  - `lastMessageTimestamp`: (Timestamp) Bu sohbetteki son mesajın zaman damgası (sıralama ve bildirimler için).
-  - `lastMessageText`: (String, isteğe bağlı) Son mesajın kısa bir özeti (DM listesinde göstermek için).
+  - `lastMessageTimestamp`: (Timestamp) Bu sohbetteki son mesajın zaman damgası.
+  - `lastMessageText`: (String, isteğe bağlı) Son mesajın kısa bir özeti.
   - `lastMessageSenderId`: (String, isteğe bağlı) Son mesajı gönderenin UID'si.
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp)
 - **Gerekli İndeksler:**
-  - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir. Bu, DM listesi sayfasının düzgün çalışması için önemlidir. Firebase konsolundan oluşturabilirsiniz. Hata mesajındaki bağlantı genellikle doğrudur.
+  - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
 
 ## `friendRequests`
 Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
@@ -80,22 +80,9 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
-- **Yol:** `/appSettings/gameConfig` (Oyun Sistemi v1 için)
+- **Yol:** `/appSettings/gameConfig`
 - **Alanlar (`gameConfig` için):**
-  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı (varsayılan: false).
-  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık (varsayılan: 180 saniye).
-
-**Oyun Sistemi Notları:**
-- Sorular şimdilik istemci tarafında `HARDCODED_QUESTIONS` dizisinde tanımlıdır.
-- Doğru cevap ödülü sabit **1 elmas** olarak ayarlanmıştır.
-- Kullanıcılar, aktif bir soru için `/hint` komutuyla **1 elmas** karşılığında ipucu alabilirler. İpucu sadece isteyen kullanıcıya gösterilir.
-
-**Koleksiyonlar Nasıl Oluşturulur:**
-Uygulama kodu, kullanıcılar özelliklerle etkileşimde bulundukça bu koleksiyonları ve belgeleri dinamik olarak oluşturacak şekilde tasarlanmıştır:
-- `users` koleksiyonundaki belgeler, bir kullanıcı kaydolduğunda veya profili güncellendiğinde oluşturulur/güncellenir.
-- `chatRooms` koleksiyonundaki belgeler (ve alt koleksiyonları), bir kullanıcı yeni bir sohbet odası oluşturduğunda veya bir oda içinde etkileşimde bulunduğunda oluşturulur.
-- `directMessages` koleksiyonundaki belgeler (ve `messages` alt koleksiyonu), iki kullanıcı arasında ilk DM gönderildiğinde oluşturulur. `directMessages` ana belgesi, son mesaj bilgileriyle güncellenir.
-- `friendRequests` koleksiyonundaki belgeler, bir kullanıcı arkadaşlık isteği gönderdiğinde oluşturulur.
-- `appSettings/gameConfig` gibi başlangıç için gerekli olabilecek belirli yapılandırma belgeleri, genellikle Firebase Konsolu üzerinden manuel olarak eklenir. Uygulama bu belgeden okuma yapar, ancak eksikse kod içinde tanımlanmış varsayılan değerleri kullanır.
+  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı.
+  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!

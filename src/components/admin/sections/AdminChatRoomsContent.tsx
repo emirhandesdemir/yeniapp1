@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Trash2, Users, Clock, ListChecks as AdminListChecksIcon, ShieldAlert, AlertTriangle } from "lucide-react";
+import { Loader2, Trash2, Users, Clock, ListChecks as AdminListChecksIcon, ShieldAlert, AlertTriangle, Info } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,11 +25,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatDistanceToNow, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface ChatRoomAdminView {
   id: string;
   name: string;
-  description?: string;
+  description?: string; // Açıklama alanı eklendi
   creatorId: string;
   creatorName?: string; 
   createdAt: Timestamp;
@@ -43,7 +49,7 @@ export default function AdminChatRoomsContent() {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { userData: adminUserData } = useAuth();
-  const [now, setNow] = useState(new Date()); // now state'i burada da tutulabilir
+  const [now, setNow] = useState(new Date()); 
   const [processingDelete, setProcessingDelete] = useState<string | null>(null);
   const [processingBulkDelete, setProcessingBulkDelete] = useState(false);
 
@@ -240,6 +246,7 @@ export default function AdminChatRoomsContent() {
                 <TableRow>
                   <TableHead className="w-[60px]">Resim</TableHead>
                   <TableHead>Oda Adı</TableHead>
+                  <TableHead>Açıklama</TableHead>
                   <TableHead>Oluşturan</TableHead>
                   <TableHead className="text-center">Katılımcı</TableHead>
                   <TableHead>Süre</TableHead>
@@ -257,6 +264,24 @@ export default function AdminChatRoomsContent() {
                       </Avatar>
                     </TableCell>
                     <TableCell className="font-medium">{room.name}</TableCell>
+                    <TableCell>
+                        {room.description ? (
+                            <TooltipProvider delayDuration={100}>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <p className="truncate max-w-[150px] text-xs text-muted-foreground cursor-help flex items-center">
+                                            <Info className="h-3 w-3 mr-1 flex-shrink-0"/> {room.description}
+                                        </p>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs bg-popover text-popover-foreground p-2 rounded shadow-lg border">
+                                        <p className="text-xs">{room.description}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        ) : (
+                            <span className="text-xs text-muted-foreground/70 italic">Yok</span>
+                        )}
+                    </TableCell>
                     <TableCell>{room.creatorName || room.creatorId.substring(0,8)}...</TableCell>
                     <TableCell className="text-center">
                       <Badge variant="secondary" className="flex items-center justify-center gap-1 w-fit mx-auto">
@@ -315,3 +340,4 @@ export default function AdminChatRoomsContent() {
     </div>
   );
 }
+
