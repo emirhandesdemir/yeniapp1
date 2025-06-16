@@ -11,26 +11,26 @@ interface GameQuestion {
   id: string;
   text: string;
   answer: string;
-  reward: number;
+  hint: string; // İpucu eklendi, reward kaldırıldı
 }
 
 interface GameQuestionCardProps {
   question: GameQuestion;
   onClose: () => void;
+  reward: number; // Sabit ödülü props olarak alacak
 }
 
-const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose }) => {
+const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Component mount olduğunda görünür yap (animasyon için)
-    const timer = setTimeout(() => setIsVisible(true), 100); // Kısa bir gecikme animasyonun başlamasını sağlar
+    const timer = setTimeout(() => setIsVisible(true), 100);
     return () => clearTimeout(timer);
   }, []);
 
   const handleClose = () => {
     setIsVisible(false);
-    setTimeout(onClose, 300); // Animasyonun bitmesi için bekle
+    setTimeout(onClose, 300);
   };
 
   return (
@@ -51,7 +51,7 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose }) => {
               <span className="sr-only">Soruyu Kapat</span>
             </Button>
           </div>
-          <CardDescription className="text-sm pt-1">Aşağıdaki soruyu doğru cevapla, elmasları kap!</CardDescription>
+          <CardDescription className="text-sm pt-1">Aşağıdaki soruyu doğru cevapla, elmasları kap! (İpucu için <code className="bg-muted px-1 py-0.5 rounded text-xs">/hint</code>)</CardDescription>
         </CardHeader>
         <CardContent className="pb-4">
           <p className="text-base font-medium text-foreground/90">
@@ -64,7 +64,7 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose }) => {
           </div>
           <div className="flex items-center gap-1 text-sm font-semibold text-yellow-500 dark:text-yellow-400">
             <Gem className="h-4 w-4" />
-            <span>{question.reward} Elmas</span>
+            <span>{reward} Elmas</span>
           </div>
         </CardFooter>
       </Card>
@@ -73,4 +73,3 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose }) => {
 };
 
 export default GameQuestionCard;
-  

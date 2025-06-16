@@ -33,6 +33,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `imageAiHint`: (String) Odanın resmi için yapay zeka ipucu
   - `participantCount`: (Number) Mevcut katılımcı sayısı
   - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı
+  - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir (ilk katılımda ayarlanır).
+  - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si. Eğer `null` ise aktif soru yoktur.
+  - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası. Bu, tüm istemcilerde geri sayımı senkronize etmek için kullanılır.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
@@ -75,10 +78,15 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
-- **Yol:** `/appSettings/gameConfig` (Örnek belge, Oyun Sistemi v1 için)
+- **Yol:** `/appSettings/gameConfig` (Oyun Sistemi v1 için)
 - **Alanlar (`gameConfig` için):**
-  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı (varsayılan: false)
-  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık (varsayılan: 180 saniye)
+  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı (varsayılan: false).
+  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık (varsayılan: 180 saniye).
+
+**Oyun Sistemi Notları:**
+- Sorular şimdilik istemci tarafında `HARDCODED_QUESTIONS` dizisinde tanımlıdır.
+- Doğru cevap ödülü sabit **1 elmas** olarak ayarlanmıştır.
+- Kullanıcılar, aktif bir soru için `/hint` komutuyla **1 elmas** karşılığında ipucu alabilirler. İpucu sadece isteyen kullanıcıya gösterilir.
 
 **Koleksiyonlar Nasıl Oluşturulur:**
 Uygulama kodu, kullanıcılar özelliklerle etkileşimde bulundukça bu koleksiyonları ve belgeleri dinamik olarak oluşturacak şekilde tasarlanmıştır:
