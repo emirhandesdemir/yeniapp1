@@ -22,12 +22,12 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  // orderBy, // orderBy kaldırıldı
   limit,
   getDocs
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
+import { generateDmChatId } from "@/lib/utils"; // DM Chat ID üretme fonksiyonu
 
 
 interface Friend extends UserData {
@@ -65,7 +65,6 @@ export default function FriendsPage() {
     }
     setLoadingFriends(true);
     const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-    // orderBy("addedAt", "desc") kaldırıldı. Gerekirse Firestore index oluşturulduktan sonra eklenebilir.
     const q = query(friendsRef); 
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
@@ -83,7 +82,6 @@ export default function FriendsPage() {
         } catch (error) {
             console.error("Error fetching profile for friend:", friendDoc.id, error);
         }
-        // Fallback if user profile doc is somehow missing or error fetching
         return { 
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
@@ -220,7 +218,7 @@ export default function FriendsPage() {
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
        setSearchResults(prev => prev.map(u => 
-        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u // Reset related flags
+        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u 
       ));
     } catch (error) {
       console.error("Error cancelling friend request:", error);
@@ -256,7 +254,6 @@ export default function FriendsPage() {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
-      // myFriends list will update via onSnapshot.
       setSearchResults(prevResults => prevResults.map(sr => 
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
@@ -326,12 +323,13 @@ export default function FriendsPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium text-sm sm:text-base">{friend.displayName || "İsimsiz"}</p>
-                          {/* <p className="text-xs text-muted-foreground">{friend.email}</p> */}
                         </div>
                       </div>
                       <div className="flex gap-1 sm:gap-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9" aria-label="Mesaj Gönder" onClick={() => toast({description: "DM Özelliği Yakında!"})}>
-                          <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5 text-primary hover:text-primary/80" />
+                        <Button asChild variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-primary hover:text-primary/80">
+                          <Link href={`/dm/${generateDmChatId(currentUser.uid, friend.uid)}`} aria-label="Mesaj Gönder">
+                             <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5" />
+                          </Link>
                         </Button>
                         <Button 
                           variant="ghost" 
@@ -409,7 +407,7 @@ export default function FriendsPage() {
                               variant="outline" 
                               size="sm" 
                               className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                              disabled // Action is in notifications popover
+                              disabled 
                             >
                               <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi (Bildirimlerde)
                             </Button>

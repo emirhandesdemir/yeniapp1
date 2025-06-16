@@ -34,6 +34,7 @@ import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import GameQuestionCard from "@/components/game/GameQuestionCard";
+import { generateDmChatId } from "@/lib/utils"; // DM Chat ID üretme fonksiyonu
 
 interface Message {
   id: string;
@@ -226,7 +227,7 @@ export default function ChatRoomPage() {
         gameQuestionTimerRef.current = null;
       }
     };
-  }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails]);
+  }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails, activeGameQuestion, availableGameQuestions]); // Added activeGameQuestion and availableGameQuestions
   
 
   const handleCloseGameQuestionCard = () => {
@@ -811,6 +812,12 @@ export default function ChatRoomPage() {
     }
   };
 
+  const handleDmAction = (targetUserId: string | undefined | null) => {
+    if (!currentUser?.uid || !targetUserId) return;
+    const dmId = generateDmChatId(currentUser.uid, targetUserId);
+    router.push(`/dm/${dmId}`);
+  };
+
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
     return (
@@ -1020,7 +1027,7 @@ export default function ChatRoomPage() {
                                             <UserCircle className="mr-1.5 h-3.5 w-3.5" /> Arkadaş Ekle
                                         </Button>
                                     )}
-                                    <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => toast({ description: "DM özelliği yakında!"})} >
+                                    <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => handleDmAction(popoverTargetUser?.uid)} >
                                     <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> DM Gönder
                                     </Button>
                                 </div>
