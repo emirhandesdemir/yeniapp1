@@ -3,25 +3,40 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-import { warmStrategyCache } from 'workbox-recipes';
-import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
-import { registerRoute, Route } from 'workbox-routing';
-import { CacheableResponsePlugin } from 'workbox-cacheable-response';
-import { ExpirationPlugin } from 'workbox-expiration';
-import { precacheAndRoute } from 'workbox-precaching';
+// import { warmStrategyCache } from 'workbox-recipes'; // Not directly used as next-pwa handles runtime caching
+// import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies'; // Not directly used
+// import { registerRoute, Route } from 'workbox-routing'; // Not directly used
+// import { CacheableResponsePlugin } from 'workbox-cacheable-response'; // Not directly used
+// import { ExpirationPlugin } from 'workbox-expiration'; // Not directly used
+import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 
-// Kendi önbellekleme stratejilerinizi ve rotalarınızı buraya ekleyebilirsiniz
-// Ancak next-pwa zaten runtimeCaching ile bunu büyük ölçüde hallediyor.
-// Bu dosya özellikle push ve notificationclick eventleri için var.
+// Clean up old caches
+cleanupOutdatedCaches();
 
 // Ensure that `precacheAndRoute` is called with an array of manifest entries
-// next-pwa genellikle bu __WB_MANIFEST enjeksiyonunu kendisi yapar.
-// Eğer manuel kontrol istiyorsanız, next-pwa yapılandırmasında `precacheEntries` kullanabilirsiniz.
+// next-pwa usually injects __WB_MANIFEST itself.
 try {
   precacheAndRoute(self.__WB_MANIFEST || []);
 } catch (e) {
-  console.error("Workbox precaching failed: ", e);
+  console.error("[Service Worker] Precaching failed: ", e);
 }
+
+// Install event: triggers when the service worker is first installed.
+self.addEventListener('install', (event) => {
+  console.log('[Service Worker] Install event in progress.');
+  // Perform install steps, like caching static assets (handled by precacheAndRoute)
+  // Force the waiting service worker to become the active service worker.
+  event.waitUntil(self.skipWaiting());
+});
+
+// Activate event: triggers when the service worker becomes active.
+self.addEventListener('activate', (event) => {
+  console.log('[Service Worker] Activate event in progress.');
+  // Perform something when the service worker is activated.
+  // This is a good place to clean up old caches not managed by precacheAndRoute.
+  // Ensure that the newly activated service worker takes control of the page immediately.
+  event.waitUntil(self.clients.claim());
+});
 
 
 // Gelen push mesajlarını dinle
@@ -30,7 +45,7 @@ self.addEventListener('push', (event) => {
   console.log(`[Service Worker] Push had this data: "${event.data?.text()}"`);
 
   const title = 'Sohbet Küresi';
-  const options = {
+  const options: NotificationOptions = { // Type added for clarity
     body: event.data?.text() || 'Yeni bir mesajınız var!',
     icon: '/icons/icon-192x192.png', // Ana ekrana eklenen ikonla aynı
     badge: '/icons/icon-192x192.png', // Android'de bildirim çubuğunda görünecek küçük ikon
@@ -61,18 +76,24 @@ self.addEventListener('notificationclick', (event) => {
   // Odaklanacak bir client yoksa yeni bir tane aç
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // İdeal olarak, bildirimin geldiği sohbet odasına veya ilgili sayfaya yönlendirmek istersiniz.
+      // Örneğin, event.notification.data.url gibi bir veri varsa onu kullanabilirsiniz.
+      const urlToOpen = event.notification.data?.url || '/'; // Varsayılan olarak ana sayfa
+
       for (const client of clientList) {
-        // Eğer uygulama zaten açıksa ona odaklan
-        // Belirli bir URL'ye yönlendirme de yapabilirsiniz: client.navigate('/messages')
-        if (client.url === '/' && 'focus' in client) return client.focus();
+        // Eğer uygulama zaten o URL'de açıksa veya ana sayfada açıksa ona odaklan
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
+        }
       }
-      // Aksi takdirde yeni bir sekmede/pencerede ana sayfayı aç
-      if (self.clients.openWindow) return self.clients.openWindow('/');
+      // Aksi takdirde yeni bir sekmede/pencerede ilgili sayfayı aç
+      if (self.clients.openWindow) return self.clients.openWindow(urlToOpen);
     })
   );
 });
 
 // Service worker'ın güncellemeleri hızlıca alması için
+// Bu zaten withPWAInit içinde skipWaiting: true ile sağlanıyor, ancak ek bir kontrol olarak kalabilir.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();

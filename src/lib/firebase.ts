@@ -5,15 +5,17 @@ import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, type Analytics } from "firebase/analytics";
 
-// Your web app's Firebase configuration
+// Your web app's Firebase configuration using the latest details provided.
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig: FirebaseOptions = {
-  apiKey: "AIzaSyAUPc1suCoz5DtJb9v2BA9qG2QZ_0h-eHs",
-  authDomain: "yeni-tinder.firebaseapp.com",
-  projectId: "yeni-tinder",
-  storageBucket: "yeni-tinder.firebasestorage.app", // Kullanıcının verdiği değer
-  messagingSenderId: "584052934053",
-  appId: "1:584052934053:web:c20a004d9b3bf39358144c",
-  measurementId: "G-BW4XTD8TRQ"
+  apiKey: "AIzaSyBrLeD1sq3p7NtSvPugatN9on052o_An2w",
+  authDomain: "yeniapp-2ecdf.firebaseapp.com",
+  databaseURL: "https://yeniapp-2ecdf-default-rtdb.firebaseio.com",
+  projectId: "yeniapp-2ecdf",
+  storageBucket: "yeniapp-2ecdf.firebasestorage.app", // Using user-provided value. Standard is often .appspot.com but respecting direct input.
+  messagingSenderId: "918568967257",
+  appId: "1:918568967257:web:101ff6a20723011cfe6548",
+  measurementId: "G-CW2QFPWJ7F"
 };
 
 // Initialize Firebase
