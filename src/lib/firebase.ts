@@ -1,3 +1,4 @@
+
 // Import the functions you need from the SDKs you need
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
@@ -11,7 +12,7 @@ const firebaseConfig: FirebaseOptions = {
   apiKey: "AIzaSyAUPc1suCoz5DtJb9v2BA9qG2QZ_0h-eHs",
   authDomain: "yeni-tinder.firebaseapp.com",
   projectId: "yeni-tinder",
-  storageBucket: "yeni-tinder.firebasestorage.app", // Kullanıcının belirttiği değer
+  storageBucket: "yeni-tinder.firebasestorage.app",
   messagingSenderId: "584052934053",
   appId: "1:584052934053:web:c20a004d9b3bf39358144c",
   measurementId: "G-BW4XTD8TRQ"
