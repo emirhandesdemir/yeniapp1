@@ -6,22 +6,19 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Globe,
-  LayoutDashboard,
+  LayoutDashboard, // Admin paneli ikonu için
   MessageSquare,
   Users,
-  UserCircle,
-  LogOut,
-  Settings,
+  LogOut, // Kaldırıldı ama gerekirse eklenebilir
+  Settings, // Kaldırıldı ama gerekirse eklenebilir
   Bell,
   Loader2,
-  Sun,
-  Moon,
+  Sun, // Tema değiştirme için kaldırıldı, ThemeContext kullanılıyor
+  Moon, // Tema değiştirme için kaldırıldı, ThemeContext kullanılıyor
   SendHorizontal,
   Home,
-  Flame,
   UserRound,
-  Palette, // Example for theme if needed elsewhere
+  Flame,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -29,7 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { useTheme } from '@/contexts/ThemeContext';
+import { useTheme } from '@/contexts/ThemeContext'; // Tema için bu kullanılacak
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -59,7 +56,7 @@ interface BottomNavItemType {
   href: string;
   label: string;
   icon: React.ElementType;
-  activeIcon?: React.ElementType;
+  activeIcon?: React.ElementType; // Aktif durum için farklı ikon (opsiyonel)
 }
 
 const bottomNavItems: BottomNavItemType[] = [
@@ -223,16 +220,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </Link>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {userData?.role === 'admin' && (
+            <Link href="/admin/dashboard" passHref>
+              <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-primary w-9 h-9 sm:w-10 sm:h-10" aria-label="Admin Paneli">
+                <LayoutDashboard className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
           <Link href="/direct-messages" passHref>
-            <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10">
+            <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Direkt Mesajlar">
               <SendHorizontal className="h-5 w-5" />
-              <span className="sr-only">Direkt Mesajlar</span>
             </Button>
           </Link>
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10">
+              <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
                 <Bell className="h-5 w-5" />
                 {incomingRequests.length > 0 && (
                   <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
@@ -240,7 +243,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
                   </span>
                 )}
-                <span className="sr-only">Arkadaşlık İstekleri</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0" align="end">
@@ -311,5 +313,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
-    
