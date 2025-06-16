@@ -24,8 +24,6 @@ import {
   UserX,
   UserCog, 
   ListChecks,
-  // BellRing, // Bildirim için ikon
-  // BellOff, // Bildirim kapalıyken ikon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -57,14 +55,6 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-// import { 
-//   requestNotificationPermission, 
-//   subscribeUserToPush, 
-//   unsubscribeUserFromPush,
-//   isPushSubscribed as checkIsPushSubscribed,
-//   getNotificationPermissionStatus
-// } from '@/lib/notificationUtils';
-
 
 interface NavItem {
   href: string;
@@ -72,7 +62,6 @@ interface NavItem {
   icon: React.ElementType;
   adminOnly?: boolean;
   subItems?: NavItem[];
-  isHeaderOnly?: boolean; 
 }
 
 const navItems: NavItem[] = [
@@ -85,8 +74,8 @@ const navItems: NavItem[] = [
     label: 'Admin Paneli',
     icon: ShieldCheck,
     adminOnly: true,
-    isHeaderOnly: true, 
     subItems: [
+      { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard, adminOnly: true },
       { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog, adminOnly: true },
       { href: '/admin/chat-rooms', label: 'Oda Yönetimi', icon: ListChecks, adminOnly: true },
     ],
@@ -105,15 +94,15 @@ interface FriendRequestForPopover {
 function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, onClick?: () => void, isAdmin?: boolean, currentPathname: string }) {
   const isActivePath = (path: string) => {
     if (path === '/') return currentPathname === '/';
-    if (item.href.startsWith('/admin/') && item.subItems) {
-        return currentPathname.startsWith(item.href) || item.subItems.some(sub => currentPathname === sub.href);
+    if (item.href.startsWith('/admin/') && item.subItems) { // Admin paneli ana öğesi için
+        return currentPathname.startsWith(item.href) || item.subItems.some(sub => currentPathname.startsWith(sub.href));
     }
     return currentPathname.startsWith(path);
   };
   
   const isDirectActive = currentPathname === item.href;
   const isParentOfActive = item.subItems?.some(subItem => currentPathname.startsWith(subItem.href)) ?? false;
-  const finalIsActive = isDirectActive || isParentOfActive;
+  const finalIsActive = isDirectActive || isParentOfActive || (item.href === '/admin/dashboard' && isParentOfActive);
 
 
   if (item.adminOnly && !isAdmin) {
@@ -133,11 +122,20 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
               "dark:text-sidebar-foreground/70 dark:hover:text-sidebar-foreground dark:hover:bg-sidebar-primary/20",
               "[&[data-state=open]>svg:last-child]:rotate-180"
             )}
+            // Admin Paneli ana öğesi tıklandığında dashboard'a gitmesi için Link'e sar
+            asChild={item.href === '/admin/dashboard'} 
           >
-             <div className="flex items-center gap-3">
-                <item.icon className="h-5 w-5" />
-                {item.label}
-              </div>
+            {item.href === '/admin/dashboard' ? (
+                 <Link href={item.href} onClick={onClick} className="flex items-center gap-3 flex-1">
+                    <item.icon className="h-5 w-5" />
+                    {item.label}
+                 </Link>
+            ) : (
+                 <div className="flex items-center gap-3">
+                    <item.icon className="h-5 w-5" />
+                    {item.label}
+                  </div>
+            )}
           </AccordionTrigger>
           <AccordionContent className="pb-0 pl-5 pr-1 pt-1">
             <nav className="grid items-start gap-1">
@@ -172,7 +170,7 @@ function NavLink({ item, onClick, isAdmin, currentPathname }: { item: NavItem, o
 }
 
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
-  const { logOut, isUserLoading: isAuthActionLoading, userData } = useAuth(); // Renamed isUserLoading to avoid conflict
+  const { logOut, isUserLoading: isAuthActionLoading, userData } = useAuth(); 
   const { toast } = useToast(); 
   const pathname = usePathname();
 
@@ -215,7 +213,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false);
   const router = useRouter();
-  const { currentUser, userData, logOut, isUserLoading: isAuthActionLoading } = useAuth(); // Renamed isUserLoading
+  const { currentUser, userData, logOut, isUserLoading: isAuthActionLoading } = useAuth(); 
   const { toast } = useToast();
   const { theme, setTheme, resolvedTheme } = useTheme();
 
@@ -223,59 +221,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [loadingRequests, setLoadingRequests] = React.useState(true);
   const [performingAction, setPerformingAction] = React.useState<Record<string, boolean>>({});
   const [incomingInitialized, setIncomingInitialized] = React.useState(false);
-
-  // Notification states (temporarily disabled)
-  // const [isNotificationPermissionGranted, setIsNotificationPermissionGranted] = React.useState(false);
-  // const [isPushSubscribed, setIsPushSubscribed] = React.useState(false);
-  // const [isNotificationProcessing, setIsNotificationProcessing] = React.useState(false);
-
-
-  // React.useEffect(() => {
-  //   if (typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator) {
-  //     setIsNotificationPermissionGranted(getNotificationPermissionStatus() === 'granted');
-  //     setIsPushSubscribed(checkIsPushSubscribed());
-  //   }
-  // }, []);
-
-  // const handleTogglePushSubscription = async () => {
-  //   setIsNotificationProcessing(true);
-  //   if (isPushSubscribed) {
-  //     const success = await unsubscribeUserFromPush();
-  //     if (success) {
-  //       toast({ title: "Bildirimler Kapatıldı", description: "Artık push bildirimleri almayacaksınız." });
-  //       setIsPushSubscribed(false);
-  //     } else {
-  //       toast({ title: "Hata", description: "Bildirim aboneliği iptal edilemedi.", variant: "destructive" });
-  //     }
-  //   } else {
-  //     if (!isNotificationPermissionGranted) {
-  //       const permission = await requestNotificationPermission();
-  //       if (permission === 'granted') {
-  //         setIsNotificationPermissionGranted(true);
-  //         const subscription = await subscribeUserToPush();
-  //         if (subscription) {
-  //           toast({ title: "Bildirimler Açıldı!", description: "Yeni mesajlar ve güncellemeler için bildirim alacaksınız." });
-  //           setIsPushSubscribed(true);
-  //         } else {
-  //           toast({ title: "Abonelik Hatası", description: "Bildirimlere abone olunurken bir sorun oluştu.", variant: "destructive" });
-  //           setIsNotificationPermissionGranted(false); // Geri al
-  //         }
-  //       } else {
-  //         toast({ title: "İzin Verilmedi", description: "Bildirimlere izin vermediğiniz için abone olunamadı.", variant: "destructive" });
-  //       }
-  //     } else { // İzin zaten var, sadece abone ol
-  //       const subscription = await subscribeUserToPush();
-  //       if (subscription) {
-  //         toast({ title: "Bildirimler Açıldı!", description: "Yeni mesajlar ve güncellemeler için bildirim alacaksınız." });
-  //         setIsPushSubscribed(true);
-  //       } else {
-  //         toast({ title: "Abonelik Hatası", description: "Bildirimlere abone olunurken bir sorun oluştu.", variant: "destructive" });
-  //       }
-  //     }
-  //   }
-  //   setIsNotificationProcessing(false);
-  // };
-
 
   React.useEffect(() => {
     if (!currentUser?.uid) {
@@ -537,10 +482,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <DropdownMenuItem onClick={() => toast({title: "Ayarlar", description:"Bu özellik yakında eklenecektir."})}>
                   <Settings className="mr-2 h-4 w-4" /> Ayarlar
                 </DropdownMenuItem>
-                {/* <DropdownMenuItem onClick={handleTogglePushSubscription} disabled={isNotificationProcessing || !('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window)}>
-                  {isNotificationProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (isPushSubscribed ? <BellOff className="mr-2 h-4 w-4 text-destructive"/> : <BellRing className="mr-2 h-4 w-4 text-primary"/>)}
-                  {isPushSubscribed ? "Bildirimleri Kapat" : "Bildirimleri Aç"}
-                </DropdownMenuItem> */}
+                {/* Push notification toggle removed as per request */}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logOut} disabled={isAuthActionLoading} className="text-destructive hover:!text-destructive focus:!text-destructive dark:hover:!bg-destructive/80 dark:focus:!bg-destructive/80 dark:hover:!text-destructive-foreground">
                   {isAuthActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <LogOut className="mr-2 h-4 w-4" />}
@@ -557,4 +499,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
