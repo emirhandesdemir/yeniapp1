@@ -11,11 +11,10 @@ const firebaseConfig: FirebaseOptions = {
   apiKey: "AIzaSyAUPc1suCoz5DtJb9v2BA9qG2QZ_0h-eHs",
   authDomain: "yeni-tinder.firebaseapp.com",
   projectId: "yeni-tinder",
-  storageBucket: "yeni-tinder.appspot.com", // Genellikle .appspot.com kullanılır, .firebasestorage.app yerine. Konsoldaki değeri kontrol edin.
+  storageBucket: "yeni-tinder.firebasestorage.app", // Kullanıcının belirttiği değer
   messagingSenderId: "584052934053",
   appId: "1:584052934053:web:c20a004d9b3bf39358144c",
-  measurementId: "G-BW4XTD8TRQ",
-  databaseURL: "https://yeni-tinder-default-rtdb.firebaseio.com" // projectId'ye göre varsayılan olarak eklendi
+  measurementId: "G-BW4XTD8TRQ"
 };
 
 // Initialize Firebase
@@ -31,11 +30,13 @@ try {
   db = getFirestore(app);
   storage = getStorage(app);
 
+  // Initialize Analytics only on the client side and if measurementId is present
   if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
     try {
       analytics = getAnalytics(app);
     } catch (error) {
       console.error("Firebase Analytics başlatma hatası:", error);
+      // analytics null olarak kalacak
     }
   } else if (typeof window !== 'undefined' && !firebaseConfig.measurementId) {
     console.warn("Firebase Analytics: measurementId, firebaseConfig içinde tanımlanmamış. Analytics başlatılmayacak.");
@@ -44,7 +45,6 @@ try {
   console.error("Firebase başlatma sırasında genel hata oluştu:", error);
   // Hata durumunda app, auth, db, storage değişkenleri tanımsız kalabilir.
   // Uygulamanın bu durumu uygun şekilde işlemesi gerekebilir.
-  // Örneğin, bir hata mesajı gösterilebilir veya bazı özellikler devre dışı bırakılabilir.
 }
 
 export { app, auth, db, storage, analytics };
