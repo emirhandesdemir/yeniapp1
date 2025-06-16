@@ -30,13 +30,13 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 
 export async function subscribeUserToPush(): Promise<PushSubscription | null> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.error('Push Messaging is not supported');
+    console.warn('Push Messaging is not supported or VAPID key is not set. Push notifications disabled.');
     return null;
   }
 
   if(VAPID_PUBLIC_KEY === "BURAYA_KENDI_VAPID_GENEL_ANAHTARINIZI_YAPISTIRIN") {
-    console.warn("VAPID Public Key not set. Push subscription will fail.");
-    alert("Bildirim altyapısı henüz tam olarak yapılandırılmamış (VAPID anahtarı eksik).");
+    console.warn("VAPID Public Key not set. Push subscription will fail. Push notifications disabled.");
+    // alert("Bildirim altyapısı henüz tam olarak yapılandırılmamış (VAPID anahtarı eksik)."); // Kullanıcıyı rahatsız etmemek için bu alert'i kaldırabiliriz.
     return null;
   }
 
@@ -67,7 +67,7 @@ export async function subscribeUserToPush(): Promise<PushSubscription | null> {
   } catch (error) {
     console.error('Failed to subscribe the user: ', error);
     localStorage.removeItem('pushSubscribed');
-    if (Notification.permission === 'denied') {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
         console.warn('Permission for notifications was denied');
     } else {
         console.error('Failed to subscribe the user: ', error);
@@ -122,3 +122,4 @@ export function getNotificationPermissionStatus(): NotificationPermission | 'def
     }
     return 'default';
 }
+
