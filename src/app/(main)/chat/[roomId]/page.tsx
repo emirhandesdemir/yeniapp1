@@ -19,7 +19,7 @@ import {
   serverTimestamp,
   doc,
   getDoc,
-  deleteDoc,
+  deleteDoc, // Bu import kalabilir, doğrudan oda silme burada yok ama referans olarak durabilir
   Timestamp,
   updateDoc,
   getDocs,
@@ -40,7 +40,8 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
+import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; // Yeni import
 
 interface Message {
   id: string;
@@ -309,6 +310,7 @@ export default function ChatRoomPage() {
         await updateDoc(participantRef, { isTyping });
       }
     } catch (error) {
+        // console.warn("Error updating typing status (minor):", error); // Düşük öncelikli hata, loglama isteğe bağlı
     }
   }, [currentUser, roomId, isCurrentUserParticipant]);
 
@@ -435,6 +437,7 @@ export default function ChatRoomPage() {
                 isGameMessage: true,
             });
         } catch (msgError) {
+            // console.warn("Error sending leave message (minor):", msgError); // Düşük öncelikli hata
         }
     }
 
@@ -446,6 +449,7 @@ export default function ChatRoomPage() {
       setIsCurrentUserParticipant(false);
     } catch (error) {
       console.error("Error leaving room:", error);
+      // Kullanıcıya hata göstermek isteğe bağlı, genellikle arka planda halledilir.
     }
   }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus, userData?.displayName]);
 
@@ -509,7 +513,9 @@ export default function ChatRoomPage() {
       setActiveParticipants(fetchedParticipants);
       setIsCurrentUserParticipant(currentUserIsStillParticipant);
       if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
+        // Kullanıcı bir şekilde katılımcı listesinden çıkarıldı (örn: admin tarafından atıldı)
         setIsCurrentUserParticipant(false); 
+        // Burada bir toast mesajı gösterilebilir veya /chat'e yönlendirilebilir.
       }
     });
     return () => unsubscribeParticipants();
@@ -742,19 +748,7 @@ export default function ChatRoomPage() {
       return;
     }
     try {
-      const batch = writeBatch(db);
-      
-      const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
-      const messagesSnapshot = await getDocs(messagesQuery);
-      messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
-
-      const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
-      const participantsSnapshot = await getDocs(participantsQuery);
-      participantsSnapshot.forEach((participantDoc) => batch.delete(participantDoc.ref));
-      
-      batch.delete(doc(db, "chatRooms", roomId));
-      
-      await batch.commit();
+      await deleteChatRoomAndSubcollections(roomId); // Merkezi fonksiyonu kullan
       toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` });
       router.push("/chat");
     } catch (error) {
@@ -1249,3 +1243,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+

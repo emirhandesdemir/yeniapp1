@@ -99,5 +99,4 @@ Genel uygulama ayarlarını saklar.
   - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
 ```

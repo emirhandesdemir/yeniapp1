@@ -7,7 +7,7 @@ import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, Shoppi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, Timestamp, updateDoc, writeBatch, getDoc } from "firebase/firestore"; // getDoc eklendi
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc } from "firebase/firestore"; // writeBatch ve getDocs kaldırıldı
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -23,9 +23,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns'; // addSeconds eklendi
+import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Badge } from "@/components/ui/badge";
+import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; // Yeni import
 
 interface ChatRoom {
   id: string;
@@ -37,15 +38,7 @@ interface ChatRoom {
   expiresAt: Timestamp;
   participantCount?: number;
   maxParticipants: number;
-  // Oyunla ilgili alanlar burada listelemek için gerekli değil, Firestore'da olacaklar
 }
-
-const placeholderImages = [
-  { url: "https://placehold.co/600x400.png", hint: "abstract modern" },
-  { url: "https://placehold.co/600x400.png", hint: "community discussion" },
-  { url: "https://placehold.co/600x400.png", hint: "technology connection" },
-];
-const defaultRoomImage = placeholderImages[0];
 
 const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
@@ -137,13 +130,13 @@ export default function ChatRoomsPage() {
       console.warn("[ChatPage] Error fetching game config during room creation:", configError);
     }
 
-    const imageUrl = defaultRoomImage.url; 
-    const imageHint = defaultRoomImage.hint; 
+    const imageUrl = "https://placehold.co/600x400.png"; 
+    const imageHint = "community discussion"; 
 
     const currentTime = new Date();
     const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
-    const roomDataToCreate: any = { // any kullanıldı, opsiyonel oyun alanları için
+    const roomDataToCreate: any = {
       name: newRoomName.trim(),
       description: newRoomDescription.trim(),
       creatorId: currentUser.uid,
@@ -161,7 +154,6 @@ export default function ChatRoomsPage() {
       roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameConfigData.questionIntervalSeconds));
       roomDataToCreate.currentGameQuestionId = null;
     } else {
-      // Oyun etkin değilse veya ayarlar geçersizse, bu alanları null veya false olarak ayarla
       roomDataToCreate.gameInitialized = false;
       roomDataToCreate.nextGameQuestionTimestamp = null;
       roomDataToCreate.currentGameQuestionId = null;
@@ -213,19 +205,9 @@ export default function ChatRoomsPage() {
       return;
     }
     try {
-      const batch = writeBatch(db);
-
-      const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`));
-      const messagesSnapshot = await getDocs(messagesQuery);
-      messagesSnapshot.forEach((messageDoc) => batch.delete(messageDoc.ref));
-
-      const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`));
-      const participantsSnapshot = await getDocs(participantsQuery);
-      participantsSnapshot.forEach((participantDoc) => batch.delete(participantDoc.ref));
-
-      batch.delete(doc(db, "chatRooms", roomId));
-
-      await batch.commit();
+      await deleteChatRoomAndSubcollections(roomId); // Merkezi fonksiyonu kullan
+      // Arayüzden odayı kaldırma (onSnapshot zaten yapmalı ama emin olmak için)
+      setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId));
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
     } catch (error) {
       console.error("Error deleting room: ", error);

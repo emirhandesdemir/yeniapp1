@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, deleteDoc, doc, Timestamp, query, orderBy, writeBatch, where } from "firebase/firestore"; 
+import { collection, getDocs, doc, Timestamp, query, orderBy, where } from "firebase/firestore"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,12 +30,13 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
+import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; // Yeni import
 
 interface ChatRoomAdminView {
   id: string;
   name: string;
-  description?: string; // Açıklama alanı eklendi
+  description?: string;
   creatorId: string;
   creatorName?: string; 
   createdAt: Timestamp;
@@ -97,20 +98,8 @@ export default function AdminChatRoomsContent() {
 
   const handleDeleteRoom = async (roomId: string, roomName: string) => {
     setProcessingDelete(roomId);
-    const batch = writeBatch(db);
     try {
-      const messagesRef = collection(db, `chatRooms/${roomId}/messages`);
-      const messagesSnap = await getDocs(messagesRef);
-      messagesSnap.forEach(msgDoc => batch.delete(msgDoc.ref));
-
-      const participantsRef = collection(db, `chatRooms/${roomId}/participants`);
-      const participantsSnap = await getDocs(participantsRef);
-      participantsSnap.forEach(partDoc => batch.delete(partDoc.ref));
-      
-      batch.delete(doc(db, "chatRooms", roomId));
-
-      await batch.commit();
-
+      await deleteChatRoomAndSubcollections(roomId); // Merkezi fonksiyonu kullan
       setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId));
       toast({ title: "Başarılı", description: `"${roomName}" odası ve tüm içeriği silindi.` });
     } catch (error) {
@@ -139,24 +128,12 @@ export default function AdminChatRoomsContent() {
         return;
       }
       
-      const batchPromises = expiredRoomsSnapshot.docs.map(async (roomDoc) => {
-        const batch = writeBatch(db);
-        const roomId = roomDoc.id;
-        
-        const messagesRef = collection(db, `chatRooms/${roomId}/messages`);
-        const messagesSnap = await getDocs(messagesRef);
-        messagesSnap.forEach(msgDoc => batch.delete(msgDoc.ref));
-
-        const participantsRef = collection(db, `chatRooms/${roomId}/participants`);
-        const participantsSnap = await getDocs(participantsRef);
-        participantsSnap.forEach(partDoc => batch.delete(partDoc.ref));
-        
-        batch.delete(doc(db, "chatRooms", roomId));
-        await batch.commit();
+      const deletePromises = expiredRoomsSnapshot.docs.map(async (roomDoc) => {
+        await deleteChatRoomAndSubcollections(roomDoc.id); // Merkezi fonksiyonu kullan
         deletedCount++;
       });
 
-      await Promise.all(batchPromises);
+      await Promise.all(deletePromises);
 
       setChatRooms(prevRooms => prevRooms.filter(room => 
         !expiredRoomsSnapshot.docs.some(expiredDoc => expiredDoc.id === room.id)
