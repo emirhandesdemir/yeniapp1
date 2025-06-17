@@ -24,6 +24,7 @@ const INITIAL_DIAMONDS = 10;
 export interface PrivacySettings {
   postsVisibleToFriendsOnly?: boolean;
   activeRoomsVisibleToFriendsOnly?: boolean;
+  feedShowsEveryone?: boolean; // Yeni ayar eklendi
 }
 
 export interface UserData {
@@ -90,7 +91,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const docSnap = await getDoc(userDocRef);
             if (docSnap.exists()) {
                 console.log(`[AuthContext] User document found for ${user.uid}. Data:`, docSnap.data());
-                setUserData(docSnap.data() as UserData);
+                const existingData = docSnap.data() as UserData;
+                // Ensure privacySettings and feedShowsEveryone exist with defaults
+                const updatedData = {
+                    ...existingData,
+                    privacySettings: {
+                        postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
+                        activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+                        feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true, // Varsayılan eklendi
+                    },
+                };
+                setUserData(updatedData);
             } else {
                 console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
                 const dataToSet: UserData = {
@@ -100,12 +111,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     photoURL: user.photoURL,
                     diamonds: INITIAL_DIAMONDS,
                     role: "user",
-                    createdAt: Timestamp.now(),
+                    createdAt: Timestamp.now(), // Geçici, setDoc ile serverTimestamp kullanılacak
                     bio: "",
                     gender: "belirtilmemiş",
-                    privacySettings: { // Initialize privacy settings
+                    privacySettings: { 
                         postsVisibleToFriendsOnly: false,
                         activeRoomsVisibleToFriendsOnly: false,
+                        feedShowsEveryone: true, // Varsayılan eklendi
                     },
                 };
 
@@ -119,11 +131,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUserData(freshSnap.data() as UserData);
                     } else {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
-                        const fallbackUserData: UserData = {
-                            ...dataToSet,
-                            createdAt: Timestamp.now(),
-                        };
-                        setUserData(fallbackUserData);
+                        setUserData(dataToSet); // Client-side timestamp ile fallback
                         toast({
                             title: "Kullanıcı Verisi Senkronizasyonu",
                             description: "Kullanıcı bilgileriniz oluşturuldu ancak anlık senkronizasyonda bir gecikme olabilir.",
@@ -175,6 +183,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       privacySettings: {
         postsVisibleToFriendsOnly: false,
         activeRoomsVisibleToFriendsOnly: false,
+        feedShowsEveryone: true, // Varsayılan eklendi
       },
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
@@ -187,12 +196,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
             photoURL: initialPhotoURL,
             diamonds: INITIAL_DIAMONDS,
             role: "user",
-            createdAt: serverTimestamp() as Timestamp, // Cast to Timestamp for type safety
+            createdAt: serverTimestamp() as Timestamp, 
             bio: "",
             gender: gender || "belirtilmemiş",
             privacySettings: {
                 postsVisibleToFriendsOnly: false,
                 activeRoomsVisibleToFriendsOnly: false,
+                feedShowsEveryone: true, // Varsayılan eklendi
             },
         };
         await setDoc(userDocRef, dataToSave);
@@ -205,19 +215,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         } else {
             console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc in createUserDocument. Using fallback with client-side timestamp.`);
             const fallbackUserData: UserData = {
-                uid: user.uid,
-                email: user.email,
-                displayName: username || user.displayName,
-                photoURL: initialPhotoURL,
-                diamonds: INITIAL_DIAMONDS,
-                role: "user",
+                ...dataToSave,
                 createdAt: Timestamp.now(),
-                bio: "",
-                gender: gender || "belirtilmemiş",
-                privacySettings: {
-                    postsVisibleToFriendsOnly: false,
-                    activeRoomsVisibleToFriendsOnly: false,
-                },
             };
             setUserData(fallbackUserData);
              toast({
@@ -296,6 +295,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
         const firestoreData = docSnap.data() as UserData;
         const updatesToFirestore: Partial<UserData> = {};
+         // Ensure privacySettings and its sub-properties are initialized if they don't exist
+        const currentPrivacySettings = firestoreData.privacySettings || {};
+        updatesToFirestore.privacySettings = {
+            postsVisibleToFriendsOnly: currentPrivacySettings.postsVisibleToFriendsOnly ?? false,
+            activeRoomsVisibleToFriendsOnly: currentPrivacySettings.activeRoomsVisibleToFriendsOnly ?? false,
+            feedShowsEveryone: currentPrivacySettings.feedShowsEveryone ?? true,
+        };
+
         if (user.displayName && user.displayName !== firestoreData.displayName) {
             updatesToFirestore.displayName = user.displayName;
         }
@@ -308,14 +315,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (firestoreData.gender === undefined) {
             updatesToFirestore.gender = "belirtilmemiş";
         }
-        if (firestoreData.privacySettings === undefined) {
-            updatesToFirestore.privacySettings = {
-                postsVisibleToFriendsOnly: false,
-                activeRoomsVisibleToFriendsOnly: false,
-            };
+
+        // Check if any actual update to privacySettings or other fields is needed
+        let needsUpdate = false;
+        if (user.displayName && user.displayName !== firestoreData.displayName) needsUpdate = true;
+        if (user.photoURL && user.photoURL !== firestoreData.photoURL) needsUpdate = true;
+        if (firestoreData.bio === undefined) needsUpdate = true;
+        if (firestoreData.gender === undefined) needsUpdate = true;
+        if (updatesToFirestore.privacySettings.postsVisibleToFriendsOnly !== (firestoreData.privacySettings?.postsVisibleToFriendsOnly ?? false) ||
+            updatesToFirestore.privacySettings.activeRoomsVisibleToFriendsOnly !== (firestoreData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false) ||
+            updatesToFirestore.privacySettings.feedShowsEveryone !== (firestoreData.privacySettings?.feedShowsEveryone ?? true)
+        ) {
+            needsUpdate = true;
         }
 
-        if (Object.keys(updatesToFirestore).length > 0) {
+
+        if (needsUpdate) {
             await updateDoc(userDocRef, updatesToFirestore);
             setUserData({ ...firestoreData, ...updatesToFirestore });
         } else {
@@ -404,10 +419,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (updates.privacySettings) {
         console.log("[AuthContext] Gizlilik ayarları güncellemesi sağlandı:", updates.privacySettings);
-        // Firestore'da map alanını güncellerken, mevcut diğer ayarları korumak için merge:true kullanılır.
-        // Veya spesifik alanları güncellemek için dot notation da kullanılabilir (e.g., "privacySettings.postsVisibleToFriendsOnly": true).
-        // Burada basitlik için tüm privacySettings objesini gönderiyoruz.
-        firestoreUpdates.privacySettings = { ...userData?.privacySettings, ...updates.privacySettings };
+        firestoreUpdates.privacySettings = { 
+            ...(userData?.privacySettings || { 
+                postsVisibleToFriendsOnly: false, 
+                activeRoomsVisibleToFriendsOnly: false,
+                feedShowsEveryone: true, // Varsayılan değer
+             }), 
+            ...updates.privacySettings 
+        };
       }
 
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;

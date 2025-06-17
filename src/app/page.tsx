@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare } from "lucide-react";
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -14,7 +14,7 @@ import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
 import RoomInFeedCard, { type ChatRoomFeedDisplayData } from "@/components/feed/RoomInFeedCard";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, Timestamp, where, limit } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, Timestamp, where, limit, getDocs } from "firebase/firestore";
 import { isPast } from 'date-fns';
 
 const cardVariants = {
@@ -70,20 +70,23 @@ export default function HomePage() {
   const router = useRouter();
   const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
 
-  const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true);
+  const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true); // Default to true
 
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [activeRooms, setActiveRooms] = useState<ChatRoomFeedDisplayData[]>([]);
   const [combinedFeedItems, setCombinedFeedItems] = useState<FeedDisplayItem[]>([]);
 
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingRooms, setLoadingRooms] = useState(true);
+  
+  const [friends, setFriends] = useState<string[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedPreference = sessionStorage.getItem(WELCOME_CARD_SESSION_KEY);
       if (storedPreference === 'true') {
-        setIsWelcomeCardVisible(false);
+        setIsWelcomeCardVisible(false); // Only hide if explicitly dismissed in this session
       }
     }
   }, []);
@@ -95,9 +98,8 @@ export default function HomePage() {
     const handleScroll = () => {
       if (window.scrollY > SCROLL_HIDE_THRESHOLD) {
         setIsWelcomeCardVisible(false);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
-        }
+        // No longer setting "permanently hidden" on scroll, only on explicit close
+        // sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
       }
     };
 
@@ -114,6 +116,7 @@ export default function HomePage() {
     }
   }, [currentUser, authLoading, router]);
 
+  // Fetch all posts
   useEffect(() => {
     setLoadingPosts(true);
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
@@ -122,7 +125,7 @@ export default function HomePage() {
       snapshot.forEach((doc) => {
         fetchedPosts.push({ id: doc.id, ...doc.data() } as Post);
       });
-      setPosts(fetchedPosts);
+      setAllPosts(fetchedPosts);
       setLoadingPosts(false);
     }, (error) => {
       console.error("Error fetching posts: ", error);
@@ -131,21 +134,21 @@ export default function HomePage() {
     return () => unsubscribe();
   }, []);
 
+  // Fetch active rooms
   useEffect(() => {
     setLoadingRooms(true);
     const now = Timestamp.now();
     const qRooms = query(
       collection(db, "chatRooms"),
       where("expiresAt", ">", now),
-      orderBy("participantCount", "desc"), // Sort by most participants first
-      orderBy("createdAt", "desc"),       // Then by newest
+      orderBy("participantCount", "desc"), 
+      orderBy("createdAt", "desc"),       
       limit(3)
     );
     const unsubscribeRooms = onSnapshot(qRooms, (snapshot) => {
       const fetchedRooms: ChatRoomFeedDisplayData[] = [];
       snapshot.forEach((doc) => {
         const roomData = doc.data();
-        // Client-side check just in case, though query should handle it
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
           fetchedRooms.push({
             id: doc.id,
@@ -166,10 +169,47 @@ export default function HomePage() {
     return () => unsubscribeRooms();
   }, []);
 
+  // Fetch friends if feed is set to "friends only"
   useEffect(() => {
-    if (loadingPosts || loadingRooms) return;
+    if (currentUser && userData?.privacySettings?.feedShowsEveryone === false) {
+      setLoadingFriends(true);
+      const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
+      const unsubscribeFriends = onSnapshot(friendsRef, (snapshot) => {
+        const friendIds = snapshot.docs.map(doc => doc.id);
+        setFriends(friendIds);
+        setLoadingFriends(false);
+      }, (error) => {
+        console.error("Error fetching friends for feed:", error);
+        setLoadingFriends(false);
+      });
+      return () => unsubscribeFriends();
+    } else {
+      setFriends([]); // Clear friends if setting is true or no user
+      setLoadingFriends(false); // Ensure loading is false
+    }
+  }, [currentUser, userData?.privacySettings?.feedShowsEveryone]);
 
-    const postItems: FeedDisplayItem[] = posts.map(p => ({ ...p, feedItemType: 'post' }));
+
+  // Combine and filter feed items
+  useEffect(() => {
+    const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true; // Default to true
+
+    if (loadingPosts || loadingRooms || (!feedShowsEveryone && loadingFriends)) {
+      // If filtering by friends, wait for friends list to load
+      return;
+    }
+
+    let filteredPosts = allPosts;
+    if (!feedShowsEveryone && currentUser) {
+      filteredPosts = allPosts.filter(post => 
+        post.userId === currentUser.uid || friends.includes(post.userId)
+      );
+    }
+    // TODO: Add filtering for posts from other users based on *their* privacySettings.
+    // This would require fetching author's UserData for each post if not denormalized.
+    // For now, we're only filtering based on the current user's feed preference.
+
+    const postItems: FeedDisplayItem[] = filteredPosts.map(p => ({ ...p, feedItemType: 'post' }));
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
     const combined = [...postItems, ...roomItems].sort((a, b) => {
@@ -179,7 +219,7 @@ export default function HomePage() {
     });
     setCombinedFeedItems(combined);
 
-  }, [posts, activeRooms, loadingPosts, loadingRooms]);
+  }, [allPosts, activeRooms, loadingPosts, loadingRooms, userData?.privacySettings?.feedShowsEveryone, friends, loadingFriends, currentUser]);
 
 
   if (authLoading || (currentUser && isUserDataLoading)) {
@@ -200,7 +240,7 @@ export default function HomePage() {
 
   if (currentUser && userData) {
     const greetingName = userData?.displayName || currentUser?.displayName || "Kullanıcı";
-    const isLoadingFeed = loadingPosts || loadingRooms;
+    const isLoadingFeed = loadingPosts || loadingRooms || (userData?.privacySettings?.feedShowsEveryone === false && loadingFriends);
 
     return (
       <AppLayout>
@@ -213,8 +253,22 @@ export default function HomePage() {
                 initial="hidden"
                 animate="visible"
                 exit="exit"
+                // Explicitly add a close button to allow permanent dismissal
               >
-                <Card className="shadow-lg bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl">
+                <Card className="shadow-lg bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl relative">
+                   <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1 h-7 w-7 text-muted-foreground/70 hover:text-foreground hover:bg-transparent/10"
+                    onClick={() => {
+                      setIsWelcomeCardVisible(false);
+                      if (typeof window !== 'undefined') {
+                        sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
+                      }
+                    }}
+                  >
+                    <XCircle className="h-4 w-4"/>
+                  </Button>
                   <CardHeader className="p-3 sm:p-4">
                     <motion.div
                       className="flex justify-between items-start mb-1 sm:mb-2"
@@ -278,12 +332,18 @@ export default function HomePage() {
           {!isLoadingFeed && combinedFeedItems.length === 0 && (
              <Card className="text-center py-10 sm:py-12 bg-card border border-border/20 rounded-xl shadow-md">
                 <CardHeader className="pb-2">
-                    <MessageSquare className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
-                    <CardTitle className="text-xl sm:text-2xl font-semibold text-primary-foreground/90">Akışta Henüz Bir Şey Yok!</CardTitle>
+                    <Users className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" /> {/* Icon changed */}
+                    <CardTitle className="text-xl sm:text-2xl font-semibold text-primary-foreground/90">
+                      {(userData?.privacySettings?.feedShowsEveryone === false) 
+                        ? "Arkadaş Akışın Henüz Boş!" 
+                        : "Akışta Henüz Bir Şey Yok!"}
+                    </CardTitle>
                 </CardHeader>
                 <CardContent>
                     <p className="text-muted-foreground text-sm sm:text-base max-w-xs mx-auto">
-                    İlk gönderiyi sen paylaşarak veya yeni bir sohbet odası bularak etkileşimi başlat!
+                     {(userData?.privacySettings?.feedShowsEveryone === false)
+                       ? "Arkadaşların henüz bir şey paylaşmamış veya kendi gönderin yok. Yeni arkadaşlar edin veya ilk gönderini sen paylaş!"
+                       : "İlk gönderiyi sen paylaşarak veya yeni bir sohbet odası bularak etkileşimi başlat!"}
                     </p>
                 </CardContent>
             </Card>

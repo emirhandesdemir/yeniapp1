@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette, Users, LockKeyhole, ShieldCheck } from "lucide-react";
+import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound } from "lucide-react"; // Eye ve UsersRound ikonları eklendi
 import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -47,10 +47,10 @@ export default function ProfilePage() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Privacy settings state
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
     postsVisibleToFriendsOnly: false,
     activeRoomsVisibleToFriendsOnly: false,
+    feedShowsEveryone: true, // Yeni ayar eklendi
   });
 
   useEffect(() => {
@@ -61,9 +61,10 @@ export default function ProfilePage() {
         bio: userData.bio || "",
       });
       setPreviewImage(userData.photoURL || currentUser.photoURL);
-      setPrivacySettings({ // Initialize privacy settings from userData
+      setPrivacySettings({ 
         postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
         activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+        feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true, // userData'dan oku
       });
     } else if (currentUser) {
         setTempProfile({
@@ -71,10 +72,10 @@ export default function ProfilePage() {
             bio: "",
         });
          setPreviewImage(currentUser.photoURL);
-         // Default privacy settings if userData is not yet available but currentUser is
          setPrivacySettings({
             postsVisibleToFriendsOnly: false,
             activeRoomsVisibleToFriendsOnly: false,
+            feedShowsEveryone: true, // Varsayılan
          });
     }
   }, [currentUser, userData]);
@@ -87,7 +88,12 @@ export default function ProfilePage() {
         setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
     }
     if (userData?.privacySettings) {
-        setPrivacySettings(userData.privacySettings);
+        setPrivacySettings(prev => ({
+            ...prev,
+            postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
+            activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+            feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
+        }));
     }
   }, [userData?.photoURL, userData?.bio, userData?.privacySettings]);
 
@@ -100,14 +106,15 @@ export default function ProfilePage() {
             bio: userData.bio || ""
         });
         setPreviewImage(userData.photoURL || currentUser.photoURL);
-        setPrivacySettings({ // Reset privacy settings to saved state on cancel
+        setPrivacySettings({ 
             postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
             activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+            feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
         });
       } else if (currentUser) {
         setTempProfile({ username: currentUser.displayName || "", bio: "" });
         setPreviewImage(currentUser.photoURL);
-        setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false });
+        setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true });
       }
       setSelectedFile(null);
     }
@@ -180,10 +187,16 @@ export default function ProfilePage() {
         profileChanged = true;
     }
 
-    // Check if privacy settings changed
-    const currentPrivacySettings = userData?.privacySettings || { postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false };
-    if (privacySettings.postsVisibleToFriendsOnly !== currentPrivacySettings.postsVisibleToFriendsOnly ||
-        privacySettings.activeRoomsVisibleToFriendsOnly !== currentPrivacySettings.activeRoomsVisibleToFriendsOnly) {
+    const currentPrivacySettings = userData?.privacySettings || { 
+        postsVisibleToFriendsOnly: false, 
+        activeRoomsVisibleToFriendsOnly: false,
+        feedShowsEveryone: true,
+    };
+
+    if (privacySettings.postsVisibleToFriendsOnly !== (currentPrivacySettings.postsVisibleToFriendsOnly ?? false) ||
+        privacySettings.activeRoomsVisibleToFriendsOnly !== (currentPrivacySettings.activeRoomsVisibleToFriendsOnly ?? false) ||
+        privacySettings.feedShowsEveryone !== (currentPrivacySettings.feedShowsEveryone ?? true)
+       ) {
         updates.privacySettings = privacySettings;
         profileChanged = true;
     }
@@ -323,7 +336,6 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {/* Privacy Settings in Edit Mode */}
               <Card className="pt-4 bg-transparent border-border/50">
                 <CardHeader className="p-0 px-2 pb-3">
                     <div className="flex items-center gap-2">
@@ -351,6 +363,17 @@ export default function ProfilePage() {
                             id="activeRoomsVisibleToFriendsOnly"
                             checked={privacySettings.activeRoomsVisibleToFriendsOnly}
                             onCheckedChange={(checked) => handlePrivacySettingChange('activeRoomsVisibleToFriendsOnly', checked)}
+                            disabled={isUserLoading}
+                        />
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
+                        <Label htmlFor="feedShowsEveryone" className="flex-1 cursor-pointer text-sm">
+                            Akışımda herkesin gönderilerini gör
+                        </Label>
+                        <Switch
+                            id="feedShowsEveryone"
+                            checked={privacySettings.feedShowsEveryone}
+                            onCheckedChange={(checked) => handlePrivacySettingChange('feedShowsEveryone', checked)}
                             disabled={isUserLoading}
                         />
                     </div>
@@ -415,8 +438,9 @@ export default function ProfilePage() {
             <CardDescription>Mevcut profil gizlilik ayarlarınız.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>Gönderiler: <span className="font-medium text-foreground">{privacySettings.postsVisibleToFriendsOnly ? "Sadece Arkadaşlar" : "Herkese Açık"}</span></p>
-                <p>Aktif Odalar: <span className="font-medium text-foreground">{privacySettings.activeRoomsVisibleToFriendsOnly ? "Sadece Arkadaşlar" : "Herkese Açık"}</span></p>
+                <p className="flex items-center gap-1.5"><UsersRound className="h-4 w-4"/> Gönderiler: <span className="font-medium text-foreground">{privacySettings.postsVisibleToFriendsOnly ? "Sadece Arkadaşlar" : "Herkese Açık"}</span></p>
+                <p className="flex items-center gap-1.5"><UsersRound className="h-4 w-4"/> Aktif Odalar: <span className="font-medium text-foreground">{privacySettings.activeRoomsVisibleToFriendsOnly ? "Sadece Arkadaşlar" : "Herkese Açık"}</span></p>
+                <p className="flex items-center gap-1.5"><Eye className="h-4 w-4"/> Akış Gösterimi: <span className="font-medium text-foreground">{privacySettings.feedShowsEveryone ? "Herkes" : "Sadece Arkadaşlar"}</span></p>
             </CardContent>
         </Card>
       )}

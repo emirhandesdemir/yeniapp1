@@ -19,6 +19,7 @@ Kullanıcı profil bilgilerini saklar.
   - `privacySettings`: (Map, nullable) Kullanıcının gizlilik ayarlarını saklar.
     - `postsVisibleToFriendsOnly`: (Boolean) `true` ise gönderiler sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
     - `activeRoomsVisibleToFriendsOnly`: (Boolean) `true` ise kullanıcının aktif odaları sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
+    - `feedShowsEveryone`: (Boolean) `true` ise kullanıcının ana sayfa akışında herkesin gönderileri gösterilir, `false` ise sadece arkadaşlarının gönderileri gösterilir. (Varsayılan: `true`)
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`
@@ -176,4 +177,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
