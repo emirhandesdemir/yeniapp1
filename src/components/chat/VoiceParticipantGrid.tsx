@@ -58,7 +58,7 @@ const VoiceParticipantSlot: React.FC<{
   if (!participant) {
     return (
       <div 
-        className={`relative aspect-square bg-muted/30 dark:bg-muted/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors group border-2 border-dashed border-border hover:border-primary
+        className={`relative aspect-square bg-muted/30 dark:bg-muted/20 rounded-full flex items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors group border-2 border-dashed border-border hover:border-primary
                     ${isHostSlot ? 'col-span-2 row-span-2' : ''}`} // Host slot can be larger
         onClick={onClick}
       >
@@ -69,7 +69,7 @@ const VoiceParticipantSlot: React.FC<{
 
   return (
     <div 
-      className={`relative aspect-square rounded-lg flex flex-col items-center justify-center p-1.5 shadow-md transition-all duration-200 ease-in-out transform group
+      className={`relative aspect-square rounded-full flex flex-col items-center justify-center p-1.5 shadow-md transition-all duration-200 ease-in-out transform group
                   ${participant.isSpeaking ? 'border-2 border-green-500 scale-105' : 'border border-border'}
                   ${isCurrentUser ? 'bg-primary/10' : 'bg-card hover:bg-secondary/30'}
                   ${isHostSlot ? 'col-span-2 row-span-2' : ''}`} // Host slot styling
@@ -228,3 +228,4 @@ const VoiceParticipantGrid: React.FC<VoiceParticipantGridProps> = ({
 };
 
 export default VoiceParticipantGrid;
+
