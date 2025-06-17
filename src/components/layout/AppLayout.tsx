@@ -16,6 +16,7 @@ import {
   Flame,
   ShoppingBag,
   UserCircle,
+  Palette, // Palette ikonu burada kalabilir, profil sayfasından yönetilecek
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -35,13 +36,14 @@ import {
   Timestamp,
   writeBatch,
   getDoc,
-  orderBy, // Eklendi
+  orderBy,
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
-import { useInAppNotification } from '@/contexts/InAppNotificationContext'; // Eklendi
-import { generateDmChatId } from '@/lib/utils'; // Eklendi
+import { useInAppNotification } from '@/contexts/InAppNotificationContext';
+import { generateDmChatId } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion'; // Eklendi
 
 interface FriendRequestForPopover {
   id: string;
@@ -83,11 +85,34 @@ interface LastShownNotification {
     [chatId: string]: Timestamp;
 }
 
+// Sayfa geçiş animasyonları için variant'lar
+const pageVariants = {
+  initial: {
+    opacity: 0,
+    y: 8, // Hafifçe aşağıdan başla
+  },
+  in: {
+    opacity: 1,
+    y: 0,
+  },
+  out: {
+    opacity: 0,
+    y: -8, // Hafifçe yukarıya doğru çık
+  },
+};
+
+const pageTransition = {
+  type: "tween", // Daha yumuşak bir geçiş için 'tween'
+  ease: "anticipate", // Başlangıç ve bitişte hafif bir yaylanma
+  duration: 0.35, // Süreyi biraz artırdık
+};
+
+
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
   const { toast } = useToast();
-  const { showNotification: showInAppNotification } = useInAppNotification(); // Eklendi
+  const { showNotification: showInAppNotification } = useInAppNotification(); 
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -97,7 +122,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
-  const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<LastShownNotification>({}); // DM bildirimleri için
+  const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<LastShownNotification>({});
 
   useEffect(() => {
     setIsClient(true); 
@@ -141,7 +166,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending"),
-      orderBy("createdAt", "desc") // Son gelenler üste gelsin (popover için)
+      orderBy("createdAt", "desc") 
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
@@ -151,7 +176,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         const requestId = reqDoc.id;
         let userProfileData: UserData | undefined = undefined;
 
-        // Yeni ve bildirilmemiş arkadaşlık istekleri için bildirim göster
         if (data.status === "pending" && !notifiedRequestIds.has(requestId)) {
           try {
             const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
@@ -163,14 +187,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 type: 'friend_request',
                 avatarUrl: userProfileData.photoURL,
                 senderName: userProfileData.displayName,
-                link: '/friends', // Bildirime tıklayınca arkadaşlar sayfasına gitsin
+                link: '/friends', 
               });
               newNotifiedIds.add(requestId);
             }
           } catch (profileError) {
             console.error(`Error fetching profile for sender ${data.fromUserId} for notification:`, profileError);
           }
-        } else if (data.status === "pending") { // Zaten bildirilmişse profili yine de çek
+        } else if (data.status === "pending") { 
             const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
             if (senderProfileDoc.exists()) {
                 userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
@@ -183,14 +207,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           fromUsername: data.fromUsername,
           fromAvatarUrl: data.fromAvatarUrl,
           createdAt: data.createdAt as Timestamp,
-          userProfile: userProfileData, // Profil bilgisi eklendi
+          userProfile: userProfileData,
         } as FriendRequestForPopover;
       });
 
       try {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
-        setNotifiedRequestIds(newNotifiedIds); // Bildirilen ID'leri güncelle
+        setNotifiedRequestIds(newNotifiedIds);
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
         if(incomingInitialized) {
@@ -216,7 +240,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }, [currentUser?.uid, incomingInitialized, toast, showInAppNotification, notifiedRequestIds]);
 
 
-  // DM Bildirimleri için Listener
   useEffect(() => {
     if (!currentUser?.uid) return;
 
@@ -227,7 +250,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
     const unsubscribeDms = onSnapshot(dmsQuery, (snapshot) => {
         snapshot.docChanges().forEach(async (change) => {
-            if (change.type === "modified" || change.type === "added") { // Yeni veya güncellenmiş DM
+            if (change.type === "modified" || change.type === "added") { 
                 const dmData = change.doc.data();
                 const dmId = change.doc.id;
 
@@ -235,8 +258,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     const lastMessageTime = (dmData.lastMessageTimestamp as Timestamp);
                     const lastShownTime = lastShownDmTimestamps[dmId];
 
-                    // Eğer bu mesaj için daha önce bildirim gösterilmediyse VEYA mesaj son gösterilen bildirimden daha yeniyse
-                    // VE kullanıcı o anda bu DM sayfasında değilse bildirim göster.
                     if ((!lastShownTime || lastMessageTime.toMillis() > lastShownTime.toMillis()) && pathname !== `/dm/${dmId}`) {
                         const senderUid = dmData.lastMessageSenderId;
                         let senderName = "Bir kullanıcı";
@@ -246,7 +267,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             senderName = dmData.participantInfo[senderUid].displayName || senderName;
                             senderAvatar = dmData.participantInfo[senderUid].photoURL;
                         } else {
-                            // Fallback: Kullanıcı bilgisini user koleksiyonundan çek
                             try {
                                 const userSnap = await getDoc(doc(db, "users", senderUid));
                                 if (userSnap.exists()) {
@@ -272,7 +292,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         });
     }, (error) => {
         console.error("Error fetching DMs for notifications:", error);
-        // toast({ title: "DM Bildirim Hatası", description: "Yeni mesajlar kontrol edilirken bir sorun oluştu.", variant: "destructive" });
     });
 
     return () => unsubscribeDms();
@@ -335,6 +354,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/');
+  const mainContentClasses = cn(
+    "flex-1 overflow-auto bg-background",
+    isChatPage 
+      ? "p-0" 
+      : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]"
+  );
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -414,21 +439,33 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
       )}
+      
+      {isClient ? (
+        <AnimatePresence mode="wait">
+          <motion.main
+            key={pathname}
+            className={cn(mainContentClasses, "flex flex-col")} // flex-col eklendi
+            variants={pageVariants}
+            initial="initial"
+            animate="in"
+            exit="out"
+            transition={pageTransition}
+          >
+            {children}
+          </motion.main>
+        </AnimatePresence>
+      ) : (
+        <main className={mainContentClasses}>
+          {children}
+        </main>
+      )}
 
-      <main className={cn(
-        "flex-1 overflow-auto bg-background",
-        isChatPage 
-          ? "p-0" 
-          : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]"
-      )}>
-        {children}
-      </main>
 
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
       
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
 
-      {!isChatPage && (
+      {!isChatPage && isClient && ( // isClient kontrolü eklendi
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
           {bottomNavItems.map((item) => (
             <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/" && pathname === "/")} />
@@ -438,3 +475,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
