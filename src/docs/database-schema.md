@@ -46,6 +46,10 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `participants`: Odadaki aktif katılımcıları saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
+- **Gerekli İndeksler:**
+  - Ana sayfadaki akışta aktif odaları listelemek için (`src/app/page.tsx`):
+    - Koleksiyon: `chatRooms`
+    - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
