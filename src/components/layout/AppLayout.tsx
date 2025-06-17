@@ -13,7 +13,7 @@ import {
   Home,
   UserRound,
   Flame,
-  Rss, 
+  Rss,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -36,10 +36,10 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
-import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
+import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification } from '@/contexts/InAppNotificationContext';
-import { motion, AnimatePresence } from 'framer-motion'; 
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface FriendRequestForPopover {
   id: string;
@@ -54,7 +54,7 @@ interface BottomNavItemType {
   href: string;
   label: string;
   icon: React.ElementType;
-  activeIcon?: React.ElementType; 
+  activeIcon?: React.ElementType;
 }
 
 const bottomNavItems: BottomNavItemType[] = [
@@ -82,7 +82,7 @@ interface LastShownNotification {
 const pageVariants = {
   initial: {
     opacity: 0,
-    y: 8, 
+    y: 8,
   },
   in: {
     opacity: 1,
@@ -90,14 +90,14 @@ const pageVariants = {
   },
   out: {
     opacity: 0,
-    y: -8, 
+    y: -8,
   },
 };
 
 const pageTransition = {
-  type: "tween", 
-  ease: "anticipate", 
-  duration: 0.35, 
+  type: "tween",
+  ease: "anticipate",
+  duration: 0.35,
 };
 
 
@@ -105,7 +105,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
   const { toast } = useToast();
-  const { showNotification: showInAppNotification } = useInAppNotification(); 
+  const { showNotification: showInAppNotification } = useInAppNotification();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -118,7 +118,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<LastShownNotification>({});
 
   useEffect(() => {
-    setIsClient(true); 
+    setIsClient(true);
   }, []);
 
   useEffect(() => {
@@ -247,7 +247,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
     const unsubscribeDms = onSnapshot(dmsQuery, (snapshot) => {
         snapshot.docChanges().forEach(async (change) => {
-            if (change.type === "modified" || change.type === "added") { 
+            if (change.type === "modified" || change.type === "added") {
                 const dmData = change.doc.data();
                 const dmId = change.doc.id;
 
@@ -273,7 +273,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                                 }
                             } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
                         }
-                        
+
                         showInAppNotification({
                             title: `Yeni Mesaj: ${senderName}`,
                             message: dmData.lastMessageText || "Sana bir mesaj gönderdi.",
@@ -353,8 +353,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/');
   const mainContentClasses = cn(
     "flex-1 overflow-auto bg-background",
-    isChatPage 
-      ? "p-0" 
+    isChatPage
+      ? "p-0"
       : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]"
   );
 
@@ -363,7 +363,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {!isChatPage && (
         <header className="flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
           <Link href="/" className="flex items-center gap-2 font-semibold text-primary dark:text-sidebar-primary">
-            <Flame className="h-7 w-7" /> 
+            <Flame className="h-7 w-7" />
             <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
           </Link>
 
@@ -377,13 +377,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
-                  <Bell className="h-5 w-5" />
-                  {incomingRequests.length > 0 && (
-                    <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
-                    </span>
-                  )}
+                  {/* Wrap Button children in a single span for stability with asChild */}
+                  <span className="flex items-center justify-center w-full h-full relative">
+                    <Bell className="h-5 w-5" />
+                    {incomingRequests.length > 0 && (
+                      <span className="absolute top-0 right-0 flex h-3 w-3 -mt-0.5 -mr-0.5"> {/* Adjusted position for better visibility */}
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span>
+                      </span>
+                    )}
+                  </span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
@@ -436,12 +439,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
       )}
-      
+
       {isClient ? (
         <AnimatePresence mode="wait">
           <motion.main
             key={pathname}
-            className={cn(mainContentClasses, "flex flex-col")} 
+            className={cn(mainContentClasses, "flex flex-col")}
             variants={pageVariants}
             initial="initial"
             animate="in"
@@ -459,10 +462,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
 
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
-      
+
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
 
-      {!isChatPage && isClient && ( 
+      {!isChatPage && isClient && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
           {bottomNavItems.map((item) => (
             <BottomNavItem key={item.href} item={item} isActive={pathname === item.href} />
@@ -472,4 +475,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
