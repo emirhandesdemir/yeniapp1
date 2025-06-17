@@ -42,13 +42,20 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı)
+    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı), `isVoiceStatusMessage` (Boolean, isteğe bağlı)
   - `participants`: Odadaki aktif katılımcıları (metin sohbeti) saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
   - `voiceParticipants`: Odadaki sesli sohbete katılmış kullanıcıları saklar.
     - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
-    - **Alanlar:** `uid` (String), `displayName` (String, nullable), `photoURL` (String, nullable), `joinedAt` (Timestamp)
+    - **Alanlar:**
+        - `uid`: (String) Kullanıcının UID'si
+        - `displayName`: (String, nullable) Kullanıcının görünen adı
+        - `photoURL`: (String, nullable) Kullanıcının profil fotoğrafının URL'si
+        - `joinedAt`: (Timestamp) Sesli sohbete katıldığı zaman
+        - `isMuted`: (Boolean, isteğe bağlı) Kullanıcının kendi mikrofonunu sessize alıp almadığı
+        - `mutedByAdmin`: (Boolean, isteğe bağlı) Oda yöneticisi tarafından kullanıcının sessize alınıp alınmadığı
+        - `isSpeaking`: (Boolean, isteğe bağlı) Kullanıcının o anda konuşup konuşmadığı (gelişmiş özellik)
   - `voiceSignaling`: WebRTC sinyalleşme mesajlarını (offer, answer, ICE candidate) saklar. Bu bir **Koleksiyon Grubu** sorgusu için indekslenir.
     - **Yol:** `/chatRooms/{roomId}/voiceSignaling/{signalId}`
     - **Alanlar:**
@@ -181,4 +188,5 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
 

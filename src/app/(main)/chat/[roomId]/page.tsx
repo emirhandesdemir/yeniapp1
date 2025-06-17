@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, Mic, MicOff, PhoneOutgoing, PhoneOff } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, Mic, MicOff, PhoneOutgoing, PhoneOff, UserCog, VolumeX, Crown, Plus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -46,6 +46,7 @@ import {
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import Image from 'next/image';
 import ChatMessageItem from '@/components/chat/ChatMessageItem';
+import VoiceParticipantGrid from '@/components/chat/VoiceParticipantGrid'; // Yeni import
 
 
 interface Message {
@@ -58,6 +59,7 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  isVoiceStatusMessage?: boolean;
 }
 
 interface ChatRoomDetails {
@@ -73,12 +75,14 @@ interface ChatRoomDetails {
   gameInitialized?: boolean;
 }
 
-interface ActiveParticipant {
+export interface ActiveParticipant { // Exported for VoiceParticipantGrid
   id: string;
   displayName: string | null;
   photoURL: string | null;
   joinedAt?: Timestamp;
   isTyping?: boolean;
+  isMutedByAdmin?: boolean;
+  isSpeaking?: boolean; // Basit konuşma göstergesi için
 }
 
 interface GameSettings {
@@ -95,6 +99,7 @@ interface GameQuestion {
 
 const FIXED_GAME_REWARD = 1;
 const HINT_COST = 1;
+const MAX_VOICE_SLOTS = 8; // Litmatch tarzı UI için slot sayısı
 
 const HARDCODED_QUESTIONS: GameQuestion[] = [
   { id: "q1", text: "Hangi anahtar kapı açmaz?", answer: "klavye", hint: "Bilgisayarda yazı yazmak için kullanılır." },
@@ -111,7 +116,6 @@ const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
 
-// WebRTC Configuration
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -161,16 +165,16 @@ export default function ChatRoomPage() {
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // WebRTC State
   const [isVoiceChatActive, setIsVoiceChatActive] = useState(false);
   const [isVoiceConnecting, setIsVoiceConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
-  const [voiceChatParticipants, setVoiceChatParticipants] = useState<ActiveParticipant[]>([]);
+  const [voiceChatParticipants, setVoiceChatParticipants] = useState<ActiveParticipant[]>([]); // For text chat list
+  const [voiceSlotParticipants, setVoiceSlotParticipants] = useState<ActiveParticipant[]>([]); // For voice grid UI
   const remoteAudioRefs = useRef<Record<string, HTMLAudioElement>>({});
-
+  const speakingTimersRef = useRef<Record<string, NodeJS.Timeout>>({}); // For simple speaking indicator
 
   useEffect(() => {
     const fetchGameSettings = async () => {
@@ -229,7 +233,7 @@ export default function ChatRoomPage() {
 
 const attemptToAskNewQuestion = useCallback(async () => {
     if (
-      !isCurrentUserParticipantRef.current || // Use ref
+      !isCurrentUserParticipantRef.current || 
       !gameSettings?.isGameEnabled ||
       !roomId ||
       !roomDetails ||
@@ -270,7 +274,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
   useEffect(() => {
     if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current);
-    if (gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && roomDetails) { // Use ref
+    if (gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && roomDetails) { 
         gameQuestionIntervalTimerRef.current = setInterval(() => {
             if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId) {
                 attemptToAskNewQuestion();
@@ -278,15 +282,15 @@ const attemptToAskNewQuestion = useCallback(async () => {
         }, 5000);
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
-  }, [gameSettings, isCurrentUserParticipant, roomDetails, attemptToAskNewQuestion]); // Keep isCurrentUserParticipant here to re-evaluate if user joins/leaves
+  }, [gameSettings, roomDetails, attemptToAskNewQuestion]); 
 
 
   useEffect(() => {
-    if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && // Use ref
+    if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && 
         !roomDetails.currentGameQuestionId && availableGameQuestions.length > 0 && isPast(roomDetails.nextGameQuestionTimestamp.toDate())) {
       attemptToAskNewQuestion();
     }
-  }, [ isCurrentUserParticipant, gameSettings, roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId, availableGameQuestions, attemptToAskNewQuestion]); // Keep isCurrentUserParticipant here
+  }, [ gameSettings, roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId, availableGameQuestions, attemptToAskNewQuestion]); 
 
 
   useEffect(() => {
@@ -306,13 +310,13 @@ const attemptToAskNewQuestion = useCallback(async () => {
   const getAvatarFallbackText = (name?: string | null) => name ? name.substring(0, 2).toUpperCase() : "PN";
 
   const updateUserTypingStatus = useCallback(async (isTyping: boolean) => {
-    if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return; // Use ref
+    if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return; 
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     try {
       const participantSnap = await getDoc(participantRef);
       if (participantSnap.exists()) await updateDoc(participantRef, { isTyping });
     } catch (error) { /* console.warn("Error updating typing status (minor):", error); */ }
-  }, [currentUser, roomId]); // Removed isCurrentUserParticipant from deps
+  }, [currentUser, roomId]); 
 
   const handleJoinRoom = useCallback(async () => {
     if (!currentUser || !userData || !roomId || !roomDetails) return;
@@ -384,6 +388,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
   }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings]);
 
   const handleLeaveVoiceChat = useCallback(async (isLeavingRoom = false) => {
+    console.log("[WebRTC] handleLeaveVoiceChat called. isLeavingRoom:", isLeavingRoom);
     setIsVoiceConnecting(true);
     Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
     peerConnectionsRef.current = {};
@@ -397,17 +402,21 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (currentUser?.uid && roomId) {
       try {
         await deleteDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid));
+         await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+            text: `${userData?.displayName || "Bir kullanıcı"} sesli sohbetten ayrıldı.`,
+            senderId: "system", senderName: "Sistem Bildirimi", senderAvatar: null, timestamp: serverTimestamp(), isVoiceStatusMessage: true,
+        });
       } catch (error) {
-        console.error("[WebRTC] Error removing user from voice participants:", error);
+        console.error("[WebRTC] Error removing user from voice participants or sending leave message:", error);
       }
     }
     setIsVoiceChatActive(false);
     setIsVoiceConnecting(false);
     if (!isLeavingRoom) toast({ title: "Sesli Sohbetten Ayrıldınız" });
-  }, [currentUser?.uid, roomId, toast]);
+  }, [currentUser?.uid, roomId, toast, userData?.displayName]);
 
   const handleLeaveRoom = useCallback(async (isPageUnload = false) => {
-    if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return Promise.resolve(); // Use ref
+    if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return Promise.resolve(); 
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     await updateUserTypingStatus(false);
     if (isVoiceChatActive) await handleLeaveVoiceChat(true);
@@ -427,9 +436,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       await batch.commit();
       setIsCurrentUserParticipant(false);
     } catch (error) { console.error("Error leaving room:", error); }
-  // }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus, userData?.displayName, isVoiceChatActive, handleLeaveVoiceChat]);
-  // Removed isCurrentUserParticipant from deps, now uses ref. Kept other relevant dependencies.
-  }, [currentUser, roomId, updateUserTypingStatus, userData?.displayName, isVoiceChatActive, handleLeaveVoiceChat, toast]);
+  }, [currentUser, roomId, updateUserTypingStatus, userData?.displayName, isVoiceChatActive, handleLeaveVoiceChat]);
 
 
   useEffect(() => {
@@ -461,7 +468,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
   useEffect(() => {
     if (!roomId || !currentUser || !userData || !roomDetails) return;
-    // Auto-join logic now uses the ref for checking current participation status
     if (!isCurrentUserParticipantRef.current && !isProcessingJoinLeave && !isRoomFullError) {
       handleJoinRoom();
     }
@@ -480,16 +486,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
       });
       setActiveParticipants(fetchedParticipants);
 
-      // Update state based on snapshot and show toast if unexpectedly removed
-      if (isCurrentUserParticipantRef.current !== currentUserIsFoundInSnapshot) { // Compare ref with snapshot
+      if (isCurrentUserParticipantRef.current !== currentUserIsFoundInSnapshot) { 
         if (isCurrentUserParticipantRef.current && !currentUserIsFoundInSnapshot && !isProcessingJoinLeave) {
           toast({title: "Bilgi", description: "Odadan çıkarıldınız veya bağlantınız kesildi.", variant: "default"});
         }
-        setIsCurrentUserParticipant(currentUserIsFoundInSnapshot); // Update state
+        setIsCurrentUserParticipant(currentUserIsFoundInSnapshot); 
       }
     });
     return () => unsubscribeParticipants();
-  // Removed isCurrentUserParticipant from deps, as its update is handled inside and through the ref
   }, [roomId, currentUser, userData, roomDetails, handleJoinRoom, isProcessingJoinLeave, isRoomFullError, toast]);
 
 
@@ -504,6 +508,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         fetchedMessages.push({
           id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName,
           senderAvatar: data.senderAvatar, timestamp: data.timestamp, isGameMessage: data.isGameMessage || false,
+          isVoiceStatusMessage: data.isVoiceStatusMessage || false,
         });
       });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
@@ -518,24 +523,23 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
   useEffect(() => {
     const handleBeforeUnloadInternal = () => {
-        handleLeaveRoom(true); // handleLeaveRoom will check isCurrentUserParticipantRef.current internally
+        handleLeaveRoom(true); 
     };
     window.addEventListener('beforeunload', handleBeforeUnloadInternal);
 
-    // Capture current timer refs for cleanup
     const currentTypingTimeout = typingTimeoutRef.current;
     const currentGameQuestionIntervalTimer = gameQuestionIntervalTimerRef.current;
     const currentCountdownDisplayTimer = countdownDisplayTimerRef.current;
 
     return () => {
         window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
-        handleLeaveRoom(true); // handleLeaveRoom will check isCurrentUserParticipantRef.current internally
+        handleLeaveRoom(true); 
         
         if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
         if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
         if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
     };
-  }, [handleLeaveRoom]); // Now depends on the more stable handleLeaveRoom
+  }, [handleLeaveRoom]); 
 
 
   const scrollToBottom = () => {
@@ -547,11 +551,11 @@ const attemptToAskNewQuestion = useCallback(async () => {
   useEffect(() => { scrollToBottom(); }, [messages]);
 
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
-  const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current; // Use ref
+  const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current; 
 
   const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const currentMessage = e.target.value; setNewMessage(currentMessage);
-    if (!isCurrentUserParticipantRef.current || !canSendMessage) return; // Use ref
+    if (!isCurrentUserParticipantRef.current || !canSendMessage) return; 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     else if (currentMessage.trim() !== "") updateUserTypingStatus(true);
     if (currentMessage.trim() === "") {
@@ -568,7 +572,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         
     setIsSending(true);
     const tempMessage = newMessage.trim();
-    setNewMessage(""); 
+    
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     updateUserTypingStatus(false);
     const roomDocRef = doc(db, "chatRooms", roomId);
@@ -577,22 +581,20 @@ const attemptToAskNewQuestion = useCallback(async () => {
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) {
             toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"}); 
-            setNewMessage(tempMessage); // Restore message
             setIsSending(false); return;
         }
         try {
             await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST);
             toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 });
             await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true });
-        } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"}); setNewMessage(tempMessage); // Restore
-        } finally { setIsSending(false); } return;
+        } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"}); 
+        } finally { setNewMessage(""); setIsSending(false); } return;
       }
       if (tempMessage.toLowerCase().startsWith("/answer ")) {
         const userAnswer = tempMessage.substring(8).trim();
         const currentRoomSnap = await getDoc(roomDocRef); const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
         if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
           toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" }); 
-          setNewMessage(tempMessage); // Restore
           setIsSending(false); return;
         }
         if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
@@ -606,6 +608,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
           addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true });
           toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
         }
+        setNewMessage(""); 
         setIsSending(false); 
         return;
       }
@@ -616,10 +619,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
         text: tempMessage, senderId: currentUser.uid, senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL, timestamp: serverTimestamp(), isGameMessage: false,
       });
+       setNewMessage(""); 
     } catch (error) {
       console.error("Error sending message:", error); 
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      setNewMessage(tempMessage); 
     } finally { 
         setIsSending(false); 
     }
@@ -746,7 +749,8 @@ const attemptToAskNewQuestion = useCallback(async () => {
       console.log(`[WebRTC] Received remote track from ${peerUid}`);
       if (event.streams && event.streams[0]) {
         remoteStreamsRef.current[peerUid] = event.streams[0];
-        setVoiceChatParticipants(prev => [...prev]); 
+        // Update voiceSlotParticipants to trigger re-render of the grid
+        setVoiceSlotParticipants(prev => [...prev.map(p => p.id === peerUid ? {...p, hasRemoteStream: true} : p)]); 
       }
     };
     
@@ -762,7 +766,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
   }, [currentUser?.uid, roomId]);
 
   const handleJoinVoiceChat = useCallback(async () => {
-    if (!currentUser || !roomId || !userData) return;
+    if (!currentUser || !roomId || !userData || isVoiceChatActive) return;
     setIsVoiceConnecting(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -774,9 +778,15 @@ const attemptToAskNewQuestion = useCallback(async () => {
         displayName: userData.displayName,
         photoURL: userData.photoURL,
         joinedAt: serverTimestamp(),
+        isMuted: isMuted, // Initial mute state
+        mutedByAdmin: false,
       });
       setIsVoiceChatActive(true);
       toast({ title: "Sesli Sohbettesiniz", description: "Mikrofonunuz açık." });
+       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+            text: `${userData?.displayName || "Bir kullanıcı"} sesli sohbete katıldı.`,
+            senderId: "system", senderName: "Sistem Bildirimi", senderAvatar: null, timestamp: serverTimestamp(), isVoiceStatusMessage: true,
+        });
     } catch (error) {
       console.error("[WebRTC] Error joining voice chat:", error);
       toast({ title: "Ses Hatası", description: "Mikrofon erişimi reddedildi veya bir hata oluştu.", variant: "destructive" });
@@ -787,16 +797,20 @@ const attemptToAskNewQuestion = useCallback(async () => {
     } finally {
       setIsVoiceConnecting(false);
     }
-  }, [currentUser, roomId, userData, toast, isMuted]);
+  }, [currentUser, roomId, userData, toast, isMuted, isVoiceChatActive]);
 
 
   const handleToggleMute = () => {
     if (localStreamRef.current) {
       const audioTracks = localStreamRef.current.getAudioTracks();
+      const newMutedState = !isMuted;
       if (audioTracks.length > 0) {
-        audioTracks[0].enabled = isMuted; 
-        setIsMuted(!isMuted);
-        toast({ title: !isMuted ? "Sessize Alındı" : "Ses Açıldı" });
+        audioTracks[0].enabled = !newMutedState; 
+        setIsMuted(newMutedState);
+        if (currentUser?.uid && roomId) {
+            updateDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), { isMuted: newMutedState });
+        }
+        toast({ title: newMutedState ? "Sessize Alındı" : "Ses Açıldı" });
       }
     }
   };
@@ -806,8 +820,9 @@ const attemptToAskNewQuestion = useCallback(async () => {
       if (isVoiceChatActive) {
         handleLeaveVoiceChat(true);
       }
+      Object.values(speakingTimersRef.current).forEach(clearTimeout);
     };
-  }, [isVoiceChatActive, handleLeaveVoiceChat, roomId, currentUser?.uid]);
+  }, [isVoiceChatActive, handleLeaveVoiceChat]);
 
   useEffect(() => {
     if (!roomId || !currentUser?.uid || !isVoiceChatActive) return;
@@ -815,8 +830,18 @@ const attemptToAskNewQuestion = useCallback(async () => {
     const unsubscribe = onSnapshot(collection(db, `chatRooms/${roomId}/voiceParticipants`), (snapshot) => {
       const currentVoiceUsers: ActiveParticipant[] = [];
       snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          currentVoiceUsers.push({ 
+              id: docSnap.id, 
+              displayName: data.displayName,
+              photoURL: data.photoURL,
+              isMuted: data.isMuted,
+              mutedByAdmin: data.mutedByAdmin,
+              isSpeaking: data.isSpeaking, // Basit konuşma göstergesi
+              ...data 
+          } as ActiveParticipant);
+
         if (docSnap.id !== currentUser.uid) { 
-          currentVoiceUsers.push({ id: docSnap.id, ...docSnap.data() } as ActiveParticipant);
           if (!peerConnectionsRef.current[docSnap.id]) {
             console.log(`[WebRTC] New voice participant ${docSnap.id} detected. Initiating connection.`);
             const pc = createPeerConnection(docSnap.id);
@@ -836,9 +861,16 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 .catch(e => console.error(`[WebRTC] Error creating offer for ${docSnap.id}:`, e));
             }
           }
+        } else { // Current user's own voice participant document
+            if(data.mutedByAdmin && !isMuted) { // If admin muted current user
+                handleToggleMute(); // This will mute locally and update Firestore isMuted
+                 toast({ title: "Sessize Alındınız", description: "Oda yöneticisi tarafından sessize alındınız.", variant: "default" });
+            }
         }
       });
-      setVoiceChatParticipants(currentVoiceUsers);
+      
+      setVoiceSlotParticipants(currentVoiceUsers); // For voice grid UI
+      setVoiceChatParticipants(currentVoiceUsers.filter(p => p.id !== currentUser?.uid)); // For text chat user list
 
       Object.keys(peerConnectionsRef.current).forEach(peerUid => {
         if (!currentVoiceUsers.find(p => p.id === peerUid)) {
@@ -846,13 +878,15 @@ const attemptToAskNewQuestion = useCallback(async () => {
           peerConnectionsRef.current[peerUid]?.close();
           delete peerConnectionsRef.current[peerUid];
           delete remoteStreamsRef.current[peerUid];
-          delete remoteAudioRefs.current[peerUid];
+          if (remoteAudioRefs.current[peerUid]) {
+             remoteAudioRefs.current[peerUid].srcObject = null; // Clear srcObject
+             delete remoteAudioRefs.current[peerUid];
+          }
         }
       });
-      setVoiceChatParticipants(prev => [...prev.filter(p => currentVoiceUsers.some(cp => cp.id === p.id))]);
     });
     return unsubscribe;
-  }, [roomId, currentUser?.uid, isVoiceChatActive, createPeerConnection]);
+  }, [roomId, currentUser?.uid, isVoiceChatActive, createPeerConnection, handleToggleMute, isMuted]);
 
   useEffect(() => {
     if (!roomId || !currentUser?.uid || !isVoiceChatActive) return;
@@ -920,10 +954,41 @@ const attemptToAskNewQuestion = useCallback(async () => {
             }
         }
     });
-  }, [voiceChatParticipants]); 
+  }, [voiceSlotParticipants]); // Depend on voiceSlotParticipants as it's updated when streams arrive
 
 
-  if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current)) { // use ref
+  const handleAdminKickUser = async (targetUserId: string) => {
+    if (!currentUser || !roomId || roomDetails?.creatorId !== currentUser.uid) return;
+    if (!confirm("Bu kullanıcıyı sesli sohbetten atmak istediğinizden emin misiniz?")) return;
+    try {
+      await deleteDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId));
+      toast({ title: "Kullanıcı Atıldı", description: "Kullanıcı sesli sohbetten çıkarıldı." });
+       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+            text: `${voiceSlotParticipants.find(p=>p.id === targetUserId)?.displayName || "Bir kullanıcı"} yöneticisi tarafından sesli sohbetten atıldı.`,
+            senderId: "system", senderName: "Sistem Bildirimi", senderAvatar: null, timestamp: serverTimestamp(), isVoiceStatusMessage: true,
+        });
+    } catch (error) {
+      console.error("[Admin] Error kicking user:", error);
+      toast({ title: "Hata", description: "Kullanıcı atılırken bir sorun oluştu.", variant: "destructive" });
+    }
+  };
+
+  const handleAdminToggleMuteUser = async (targetUserId: string, currentMuteState?: boolean) => {
+    if (!currentUser || !roomId || roomDetails?.creatorId !== currentUser.uid) return;
+    const targetUserParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
+    try {
+      await updateDoc(targetUserParticipantRef, { mutedByAdmin: !currentMuteState });
+      toast({ title: "Başarılı", description: `Kullanıcının yönetici tarafından sessize alma durumu ${!currentMuteState ? 'aktif edildi' : 'kaldırıldı'}.` });
+    } catch (error) {
+      console.error("[Admin] Error toggling user mute by admin:", error);
+      toast({ title: "Hata", description: "Kullanıcının sessize alma durumu değiştirilirken bir sorun oluştu.", variant: "destructive" });
+    }
+  };
+
+  const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
+
+
+  if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current)) { 
     return (
       <div className="flex flex-1 items-center justify-center h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -938,7 +1003,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} />
       )}
 
-      <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+      <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-20">
         <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
             <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
             <Link href="/chat"> <ArrowLeft className="h-5 w-5" /> <span className="sr-only">Geri</span> </Link>
@@ -950,6 +1015,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                     <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
+                    {isCurrentUserRoomCreator && <Crown className="h-4 w-4 text-yellow-500 flex-shrink-0" />}
                     {roomDetails.description && (
                         <TooltipProvider delayDuration={100}>
                         <Tooltip>
@@ -967,7 +1033,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                     {roomDetails.expiresAt && (
                         <div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getExpiryInfo()}>{getExpiryInfo()}</span> </div>
                     )}
-                    {gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && ( // use ref
+                    {gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && ( 
                       <div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}>
                         <Puzzle className="mr-1 h-3.5 w-3.5 text-primary" /> <span className="text-xs text-muted-foreground font-mono"> {formatCountdown(nextQuestionCountdown)} </span>
                       </div>
@@ -976,7 +1042,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
-            {isCurrentUserParticipantRef.current && ( // use ref
+            {isCurrentUserParticipantRef.current && ( 
               <>
                 {!isVoiceChatActive ? (
                   <TooltipProvider delayDuration={150}>
@@ -994,11 +1060,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
                     <TooltipProvider delayDuration={150}>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="outline" size="icon" className={`h-9 w-9 ${isMuted ? 'border-red-500/70 text-red-500 hover:bg-red-500/10 hover:text-red-600' : 'border-gray-500/70 text-gray-500 hover:bg-gray-500/10 hover:text-gray-600'}`} onClick={handleToggleMute}>
-                            {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                          <Button variant="outline" size="icon" className={`h-9 w-9 ${isMuted ? 'border-red-500/70 text-red-500 hover:bg-red-500/10 hover:text-red-600' : 'border-gray-500/70 text-gray-500 hover:bg-gray-500/10 hover:text-gray-600'}`} 
+                           onClick={handleToggleMute}
+                           disabled={voiceSlotParticipants.find(p=>p.id === currentUser?.uid)?.mutedByAdmin}
+                          >
+                            {voiceSlotParticipants.find(p=>p.id === currentUser?.uid)?.mutedByAdmin ? <VolumeX className="h-4 w-4 text-red-500" /> : (isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />) }
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent side="bottom"><p>{isMuted ? 'Sesi Aç' : 'Sessize Al'}</p></TooltipContent>
+                         <TooltipContent side="bottom"><p>{voiceSlotParticipants.find(p=>p.id === currentUser?.uid)?.mutedByAdmin ? 'Yönetici Sessize Aldı' : (isMuted ? 'Sesi Aç' : 'Sessize Al')}</p></TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                     <TooltipProvider delayDuration={150}>
@@ -1034,7 +1103,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                                 <div className="flex-1 min-w-0">
                                     <span className="text-xs font-medium truncate text-muted-foreground block">
                                       {participant.displayName || "Bilinmeyen"}
-                                      {voiceChatParticipants.find(vp => vp.id === participant.id) && <Mic className="inline h-3 w-3 ml-1.5 text-green-500" />}
+                                      {voiceSlotParticipants.find(vp => vp.id === participant.id) && <Mic className="inline h-3 w-3 ml-1.5 text-green-500" />}
                                       {participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}
                                     </span>
                                     <span className="text-[10px] text-muted-foreground/70 block">
@@ -1064,13 +1133,29 @@ const attemptToAskNewQuestion = useCallback(async () => {
         </div>
       </header>
 
+    {/* Voice Participant Grid Area */}
+    {isVoiceChatActive && (
+        <div className="p-2 sm:p-3 border-b bg-background/50 backdrop-blur-sm sticky top-[65px] z-10">
+          <VoiceParticipantGrid 
+            participants={voiceSlotParticipants}
+            currentUserUid={currentUser?.uid}
+            isCurrentUserRoomCreator={isCurrentUserRoomCreator}
+            maxSlots={MAX_VOICE_SLOTS}
+            onAdminKickUser={handleAdminKickUser}
+            onAdminToggleMuteUser={handleAdminToggleMuteUser}
+            getAvatarFallbackText={getAvatarFallbackText}
+            onSlotClick={(participantId) => { /* TODO: Implement user popover or self mute toggle on slot click */ }}
+          />
+        </div>
+      )}
+
     <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
             {loadingMessages && ( <div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div> )}
-            {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && ( // use ref
+            {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && ( 
                 <div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>
             )}
-             {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && ( // use ref
+             {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && ( 
                 <div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>
             )}
             {isRoomFullError && ( <div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div> )}
@@ -1108,7 +1193,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             </Button>
           </div>
         </div>
-        {!canSendMessage && ( <p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p> )} {/* use ref */}
+        {!canSendMessage && ( <p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p> )} 
       </form>
     </div>
   );
