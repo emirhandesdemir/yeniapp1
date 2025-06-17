@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogClose,
+  DialogFooter, // Added DialogFooter import
 } from "@/components/ui/dialog";
 
 const MAX_POST_LENGTH = 280;
