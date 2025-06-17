@@ -625,7 +625,14 @@ export default function ChatRoomPage() {
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && ( <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} countdown={questionAnswerCountdown} /> )}
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-20">
         <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
-          <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9"> <Link href="/chat"> <ArrowLeft className="h-5 w-5" /> <span className="sr-only">Geri</span> </Link> </Button>
+          <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
+            <Link href="/chat">
+              <>
+                <ArrowLeft className="h-5 w-5" />
+                <span className="sr-only">Geri</span>
+              </>
+            </Link>
+          </Button>
           <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint="group chat" /> <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback> </Avatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2"> <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2> {isCurrentUserRoomCreator && <UsersRound className="h-4 w-4 text-yellow-500 flex-shrink-0" />} {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)} </div>
