@@ -49,10 +49,10 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Gerekli İndeksler:**
   - Ana sayfadaki akışta aktif odaları listelemek için (`src/app/page.tsx`):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan)
+    - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan), `__name__` (Artan) - *(Firebase konsol linki bazen `__name__` içerir)*
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
+    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan) - *(Firebase konsol linki bazen `__name__` içerir)*
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -127,7 +127,7 @@ Kullanıcıların paylaştığı gönderileri saklar.
     - Alanlar: `createdAt` (Azalan)
   - Bir gönderinin yorumlarını sıralamak için (`src/components/feed/PostCard.tsx`):
     - Koleksiyon Grubu: `comments` (Tüm `posts` koleksiyonlarındaki `comments` alt koleksiyonlarını hedefler)
-    - Alanlar: `createdAt` (Artan) - Bu, genellikle belirli bir `postId` için sorgulandığından, Firestore bu basit sıralamayı destekleyebilir veya özel indeks gerekebilir. Şimdilik basit sorgu varsayıyoruz.
+    - Alanlar: `createdAt` (Artan)
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
@@ -137,3 +137,4 @@ Genel uygulama ayarlarını saklar.
   - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
