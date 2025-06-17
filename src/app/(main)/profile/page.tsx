@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus } from "lucide-react";
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag } from "lucide-react"; // ShoppingBag eklendi
 import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -74,7 +74,7 @@ export default function ProfilePage() {
         bio: userData.bio || "",
       });
       setPreviewImage(userData.photoURL || currentUser.photoURL || null);
-      setPrivacySettings({ 
+      setPrivacySettings({
         postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
         activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
         feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
@@ -118,7 +118,7 @@ export default function ProfilePage() {
             bio: userData.bio || ""
         });
         setPreviewImage(userData.photoURL || currentUser.photoURL || null); // Orijinal fotoğrafa dön
-        setPrivacySettings({ 
+        setPrivacySettings({
             postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
             activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
             feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
@@ -170,7 +170,7 @@ export default function ProfilePage() {
         updates.bio = tempProfile.bio.trim();
         profileChanged = true;
     }
-    
+
     const originalPhotoURL = userData?.photoURL || currentUser?.photoURL || null;
     if (previewImage !== originalPhotoURL) { // previewImage, düzenleme sırasında seçilen URL'yi tutar
         updates.newPhotoURL = previewImage; // Bu null olabilir (kullanıcı "Avatarı Kaldır" seçtiyse)
@@ -178,8 +178,8 @@ export default function ProfilePage() {
     }
 
 
-    const currentPrivacySettings = userData?.privacySettings || { 
-        postsVisibleToFriendsOnly: false, 
+    const currentPrivacySettings = userData?.privacySettings || {
+        postsVisibleToFriendsOnly: false,
         activeRoomsVisibleToFriendsOnly: false,
         feedShowsEveryone: true,
     };
@@ -229,7 +229,7 @@ export default function ProfilePage() {
       </div>
     );
   }
-  
+
   const displayPhotoUrlToShow = isEditing ? previewImage : (userData?.photoURL || currentUser?.photoURL || null);
 
   return (
@@ -292,7 +292,7 @@ export default function ProfilePage() {
                   disabled={isUserLoading}
                 />
               </div>
-              
+
               <div className="space-y-3 pt-2">
                 <Label className="text-base">Avatar Seç</Label>
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 sm:gap-3">
@@ -311,7 +311,7 @@ export default function ProfilePage() {
                       {avatarUrl ? (
                         <Image src={avatarUrl} alt={`Avatar ${index + 1}`} width={64} height={64} className="rounded-full object-cover" data-ai-hint="predefined avatar choice" />
                       ) : (
-                        <XCircle className="h-8 w-8 text-muted-foreground" /> 
+                        <XCircle className="h-8 w-8 text-muted-foreground" />
                       )}
                     </button>
                   ))}
@@ -448,6 +448,23 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
+            <ShoppingBag className="h-6 w-6 text-primary" />
+            <CardTitle className="text-xl sm:text-2xl">Mağaza</CardTitle>
+          </div>
+          <CardDescription>Elmas satın al veya premium özelliklere göz at.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/store">
+              Mağazaya Git
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
             <Palette className="h-6 w-6 text-primary" />
             <CardTitle className="text-xl sm:text-2xl">Görünüm Ayarları</CardTitle>
           </div>
@@ -484,5 +501,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    
