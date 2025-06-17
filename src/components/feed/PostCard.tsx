@@ -6,19 +6,19 @@ import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"
 import { Timestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal } from "lucide-react"; // MoreHorizontal eklendi
-import { Button } from "@/components/ui/button"; // Button import edildi
-import { useAuth } from "@/contexts/AuthContext"; // useAuth import edildi
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal } from "lucide-react"; 
+import { Button } from "@/components/ui/button"; 
+import { useAuth } from "@/contexts/AuthContext"; 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"; // DropdownMenu import edildi
-import { useToast } from "@/hooks/use-toast"; // useToast import edildi
-import { db } from "@/lib/firebase"; // db import edildi
-import { doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment } from "firebase/firestore"; // Firestore fonksiyonları import edildi
-import { useState } from "react"; // useState import edildi
+} from "@/components/ui/dropdown-menu"; 
+import { useToast } from "@/hooks/use-toast"; 
+import { db } from "@/lib/firebase"; 
+import { doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment } from "firebase/firestore"; 
+import { useState } from "react"; 
 
 export interface Post {
   id: string;

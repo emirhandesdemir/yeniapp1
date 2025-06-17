@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette } from "lucide-react"; 
+import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette, Users } from "lucide-react"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import Link from "next/link";
 
 
 interface UserProfileForm {
@@ -329,6 +330,23 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Users className="h-6 w-6 text-primary" />
+            <CardTitle className="text-xl sm:text-2xl">Bağlantılarım</CardTitle>
+          </div>
+          <CardDescription>Arkadaşlarını yönet ve yeni bağlantılar kur.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/friends">
+              Arkadaşlarım Sayfasına Git
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 

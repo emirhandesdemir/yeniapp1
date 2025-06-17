@@ -7,16 +7,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   MessageSquare,
-  Users,
   Bell,
   Loader2,
   SendHorizontal,
   Home,
   UserRound,
   Flame,
-  ShoppingBag,
-  UserCircle,
-  Palette, 
   Rss, 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,7 +39,6 @@ import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding'; 
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification } from '@/contexts/InAppNotificationContext';
-import { generateDmChatId } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion'; 
 
 interface FriendRequestForPopover {
@@ -63,9 +58,8 @@ interface BottomNavItemType {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Rss }, // Anasayfa (artık akışı içeriyor) için Rss ikonu daha uygun olabilir
+  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Rss },
   { href: '/chat', label: 'Sohbet', icon: MessageSquare, activeIcon: MessageSquare },
-  { href: '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: Users },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
 
