@@ -8,6 +8,7 @@ import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut } fr
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface Message {
   id: string;
@@ -19,6 +20,7 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  mentionedUserIds?: string[];
 }
 
 interface ChatMessageItemProps {
@@ -38,8 +40,8 @@ interface ChatMessageItemProps {
   getAvatarFallbackText: (name?: string | null) => string;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
-  isCurrentUserRoomCreator: boolean; // Yeni prop: Mevcut kullanıcı oda sahibi mi?
-  onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void; // Yeni prop: Katılımcıyı atma fonksiyonu
+  isCurrentUserRoomCreator: boolean; 
+  onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void; 
 }
 
 const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
@@ -62,6 +64,23 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   isCurrentUserRoomCreator,
   onKickParticipantFromTextChat,
 }) => {
+
+  const renderMessageWithMentions = (text: string, currentUsername?: string | null) => {
+    const parts = text.split(/(@[\w.-]+)/g); // Split by mentions, keeping the mention
+    return parts.map((part, index) => {
+      if (part.startsWith('@')) {
+        const username = part.substring(1);
+        if (username === currentUsername) {
+          return <strong key={index} className="text-yellow-300 dark:text-yellow-400 bg-yellow-500/20 dark:bg-yellow-600/30 px-1 rounded">{part}</strong>;
+        }
+        // Genel bahsetme vurgusu (isteğe bağlı, şimdilik sadece mevcut kullanıcıyı farklı vurguluyoruz)
+        return <strong key={index} className="text-blue-400 dark:text-blue-300">{part}</strong>;
+      }
+      return part;
+    });
+  };
+
+
   if (msg.isGameMessage) {
     let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
     return (
@@ -73,6 +92,27 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       </div>
     );
   }
+
+  const isMentioned = msg.mentionedUserIds && msg.mentionedUserIds.includes(currentUserUid || '');
+
+  let bubbleClasses = msg.isOwn
+    ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
+    : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl";
+
+  let textClasses = "text-sm whitespace-pre-wrap break-words";
+
+  if (isMentioned) {
+    if (msg.isOwn) {
+      // Kullanıcı kendi kendini etiketledi (opsiyonel: daha hafif bir vurgu)
+      bubbleClasses = "bg-primary/90 text-primary-foreground rounded-t-2xl rounded-l-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform";
+      textClasses = "text-sm font-medium whitespace-pre-wrap break-words";
+    } else {
+      // Kullanıcı başkası tarafından etiketlendi
+      bubbleClasses = "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950 rounded-t-2xl rounded-r-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out";
+      textClasses = "text-sm font-semibold whitespace-pre-wrap break-words"; // Kalın ve biraz daha büyük
+    }
+  }
+
 
   return (
     <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
@@ -139,18 +179,16 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             </PopoverContent>
         </Popover>
       )}
-      <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
+      <div className={cn(`flex flex-col max-w-[70%] sm:max-w-[65%]`, isMentioned && !msg.isOwn && 'max-w-[75%] sm:max-w-[70%]')}>
           {!msg.isOwn && (
                 <Link href={`/profile/${msg.senderId}`} className="self-start">
                     <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline">{msg.senderName}</span>
                 </Link>
           )}
-          <div className={`p-2.5 sm:p-3 shadow-md ${
-              msg.isOwn
-              ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
-              : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl"
-          }`}>
-          <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+          <div className={cn(`p-2.5 sm:p-3 shadow-md`, bubbleClasses)}>
+              <p className={cn(textClasses, "allow-text-selection")}>
+                {renderMessageWithMentions(msg.text, currentUserDisplayName)}
+              </p>
           </div>
           <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
               {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
