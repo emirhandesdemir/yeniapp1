@@ -27,6 +27,7 @@ import {
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId } from "@/lib/utils"; // DM Chat ID üretme fonksiyonu
+import DirectMessageItem from "@/components/dm/DirectMessageItem";
 
 interface DirectMessage {
   id: string;
@@ -171,12 +172,13 @@ export default function DirectMessagePage() {
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails) return;
-    
+    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) return;
+
+    if (isSending) return; 
+
     setIsSending(true);
     const tempMessage = newMessage.trim();
-    setNewMessage(""); 
-
+    
     try {
       const dmChatDocRef = doc(db, "directMessages", chatId);
       const dmChatDocSnap = await getDoc(dmChatDocRef);
@@ -207,7 +209,6 @@ export default function DirectMessagePage() {
          await setDoc(dmChatDocRef, messageDataForParentDoc, { merge: true });
       }
 
-
       await addDoc(collection(db, `directMessages/${chatId}/messages`), {
         text: tempMessage,
         senderId: currentUser.uid,
@@ -215,11 +216,11 @@ export default function DirectMessagePage() {
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         timestamp: serverTimestamp(),
       });
-
+      setNewMessage(""); // Clear input field ON SUCCESS
     } catch (error) {
       console.error("Error sending DM:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      setNewMessage(tempMessage); 
+      // Do not clear newMessage here, user can retry or edit
     } finally {
       setIsSending(false);
     }
@@ -271,44 +272,20 @@ export default function DirectMessagePage() {
             )}
             
             {messages.map((msg) => (
-            <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
-                <>
-                {!msg.isOwn && (
-                    <Avatar className="h-7 w-7 self-end mb-1">
-                        <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-                        <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
-                    </Avatar>
-                )}
-                <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
-                    <div className={`p-2.5 sm:p-3 shadow-md ${
-                        msg.isOwn
-                        ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
-                        : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl"
-                    }`}>
-                    <div className="allow-text-selection">
-                      <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
-                    </div>
-                    </div>
-                    <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
-                        {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
-                    </p>
-                </div>
-
-                {msg.isOwn && (
-                <Avatar className="h-7 w-7 cursor-default self-end mb-1">
-                    <AvatarImage src={currentUser?.photoURL || userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-                    <AvatarFallback>{getAvatarFallbackText(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
-                </Avatar>
-                )}
-                </>
-            </div>
+              <DirectMessageItem
+                key={msg.id}
+                msg={msg}
+                currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
+                currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
+                getAvatarFallbackText={getAvatarFallbackText}
+              />
             ))}
         </ScrollArea>
     </div>
 
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
             <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
@@ -321,7 +298,7 @@ export default function DirectMessagePage() {
             disabled={isSending || isUserLoading}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
               <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
@@ -335,5 +312,3 @@ export default function DirectMessagePage() {
     </div>
   );
 }
-
-    

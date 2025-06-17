@@ -27,7 +27,7 @@ import {
   writeBatch,
   increment,
 } from "firebase/firestore";
-import { useAuth, type UserData } from "@/contexts/AuthContext";
+import { useAuth, type UserData, type FriendRequest } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/tooltip";
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import Image from 'next/image';
+import ChatMessageItem from '@/components/chat/ChatMessageItem';
 
 
 interface Message {
@@ -78,17 +79,7 @@ interface ActiveParticipant {
   isTyping?: boolean;
 }
 
-interface FriendRequest {
-  id: string;
-  fromUserId: string;
-  fromUsername: string;
-  fromAvatarUrl: string | null;
-  toUserId: string;
-  toUsername: string;
-  toAvatarUrl: string | null;
-  status: "pending" | "accepted" | "declined";
-  createdAt: Timestamp;
-}
+// FriendRequest tipi AuthContext'ten import edildi
 
 interface GameSettings {
   isGameEnabled: boolean;
@@ -530,7 +521,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         };
         setRoomDetails(fetchedRoomDetails);
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
-        console.log("[ChatRoomPage] Room details updated:", fetchedRoomDetails);
+        // console.log("[ChatRoomPage] Room details updated:", fetchedRoomDetails);
       } else {
         toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" });
         router.push("/chat");
@@ -618,7 +609,9 @@ const attemptToAskNewQuestion = useCallback(async () => {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (isCurrentUserParticipant) {
-         handleLeaveRoom();
+         // handleLeaveRoom(); // This can cause issues with navigation and state updates
+         // Instead, rely on Firestore presence or periodic cleanup for inactive participants if needed.
+         console.log("BeforeUnload: User is participant, consider server-side cleanup for presence.");
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -626,7 +619,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       if (isCurrentUserParticipant) {
-         handleLeaveRoom();
+         // handleLeaveRoom(); // Same as above, can be problematic
       }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -686,24 +679,28 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData) return;
+    if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData || isUserLoading) return;
 
+    // Guard against multiple submissions if button is somehow clicked while already sending
+    if (isSending) return; 
+
+    const tempMessage = newMessage.trim();
+    
+    // Optimistically update typing status (fire and forget)
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
-    await updateUserTypingStatus(false);
-
-    const tempMessage = newMessage.trim();
-    setNewMessage("");
+    updateUserTypingStatus(false);
 
     const roomDocRef = doc(db, "chatRooms", roomId);
 
-    if (tempMessage.toLowerCase() === "/hint" && activeGameQuestion && gameSettings?.isGameEnabled) {
+    // Handle game commands first
+    if (activeGameQuestion && gameSettings?.isGameEnabled) {
+      if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) {
             toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"});
-            setNewMessage(tempMessage);
-            return;
+            return; // Don't proceed with setIsSending if not enough diamonds
         }
         setIsSending(true);
         try {
@@ -729,59 +726,58 @@ const attemptToAskNewQuestion = useCallback(async () => {
             console.error("[GameSystem] Error processing hint:", error);
             toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"});
         } finally {
-            setIsSending(false);
+          setIsSending(false);
         }
-        return;
-    }
-
-
-    if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && gameSettings?.isGameEnabled) {
-      setIsSending(true);
-      const userAnswer = tempMessage.substring(8).trim();
-
-      const currentRoomSnap = await getDoc(roomDocRef);
-      const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
-
-      if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
-        toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" });
-        setIsSending(false);
-        return;
+        return; // Command processed
       }
 
-      if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
-        const reward = FIXED_GAME_REWARD;
-        await updateUserDiamonds((userData.diamonds || 0) + reward);
+      if (tempMessage.toLowerCase().startsWith("/answer ")) {
+        setIsSending(true);
+        const userAnswer = tempMessage.substring(8).trim();
+        const currentRoomSnap = await getDoc(roomDocRef); // Re-fetch to ensure current question ID is up-to-date
+        const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
 
-        const batch = writeBatch(db);
-        batch.update(roomDocRef, {
-            currentGameQuestionId: null,
-            nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds))
-        });
-        batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
-          text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`,
-          senderId: "system",
-          senderName: "Oyun Sistemi",
-          timestamp: serverTimestamp(),
-          isGameMessage: true,
-        });
-        await batch.commit();
+        if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
+          toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" });
+          setIsSending(false);
+          return;
+        }
 
-        toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` });
-        setAvailableGameQuestions(prev => prev.filter(q => q.id !== activeGameQuestion.id));
-      } else {
-        addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-          text: `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`,
-          senderId: "system",
-          senderName: "Oyun Sistemi",
-          timestamp: serverTimestamp(),
-          isGameMessage: true,
-        });
-        toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
+        if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
+          const reward = FIXED_GAME_REWARD;
+          await updateUserDiamonds((userData.diamonds || 0) + reward);
+
+          const batch = writeBatch(db);
+          batch.update(roomDocRef, {
+              currentGameQuestionId: null,
+              nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds))
+          });
+          batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
+            text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`,
+            senderId: "system",
+            senderName: "Oyun Sistemi",
+            timestamp: serverTimestamp(),
+            isGameMessage: true,
+          });
+          await batch.commit();
+          toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` });
+          setAvailableGameQuestions(prev => prev.filter(q => q.id !== activeGameQuestion.id));
+        } else {
+          addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+            text: `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`,
+            senderId: "system",
+            senderName: "Oyun Sistemi",
+            timestamp: serverTimestamp(),
+            isGameMessage: true,
+          });
+          toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
+        }
+        setIsSending(false); 
+        return; // Command processed
       }
-      setIsSending(false);
-      return;
     }
 
+    // If not a game command, proceed as regular message
     setIsSending(true);
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
@@ -792,14 +788,16 @@ const attemptToAskNewQuestion = useCallback(async () => {
         timestamp: serverTimestamp(),
         isGameMessage: false,
       });
+      setNewMessage(""); // Clear input field ON SUCCESS
     } catch (error) {
       console.error("Error sending message:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      setNewMessage(tempMessage);
+      // Do not clear newMessage here, user can retry or edit. The tempMessage is still in the input.
     } finally {
       setIsSending(false);
     }
   };
+
 
   const handleDeleteRoom = async () => {
     if (!roomDetails || !currentUser || roomDetails.creatorId !== currentUser.uid) {
@@ -1172,92 +1170,24 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 </div>
             )}
             {messages.map((msg) => (
-            <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""} ${msg.isGameMessage ? "justify-center" : ""}`}>
-                {msg.isGameMessage ? (
-                    <div className="w-full max-w-md mx-auto my-2">
-                        <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
-                           {msg.text.toLowerCase().includes("[oyun]") ? <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" /> : <MessageSquare className="inline h-4 w-4 mr-1.5 text-blue-500" /> }
-                           {msg.text}
-                        </div>
-                    </div>
-                ) : (
-                <>
-                {!msg.isOwn && (
-                    <Popover open={popoverOpenForUserId === msg.senderId} onOpenChange={(isOpen) => {
-                        if (!isOpen) setPopoverOpenForUserId(null);
-                    }}>
-                        <PopoverTrigger asChild onClick={() => handleOpenUserInfoPopover(msg.senderId)}>
-                            <Avatar className="h-7 w-7 cursor-pointer self-end mb-1">
-                                <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-                                <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
-                            </Avatar>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-64 p-3" side="top" align="start">
-                            {popoverLoading && <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
-                            {!popoverLoading && popoverTargetUser && popoverOpenForUserId === msg.senderId && (
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-3">
-                                        <Avatar className="h-12 w-12">
-                                            <AvatarImage src={popoverTargetUser.photoURL || `https://placehold.co/80x80.png`} data-ai-hint="user portrait" />
-                                            <AvatarFallback>{getAvatarFallbackText(popoverTargetUser.displayName)}</AvatarFallback>
-                                        </Avatar>
-                                        <div>
-                                            <p className="text-sm font-semibold truncate">{popoverTargetUser.displayName || "Kullanıcı"}</p>
-                                            <p className="text-xs text-muted-foreground truncate">{popoverTargetUser.email}</p>
-                                        </div>
-                                    </div>
-                                    <hr className="my-2"/>
-                                    {friendshipStatus === "friends" && <p className="text-xs text-green-600 text-center py-1 px-2 rounded bg-green-500/10">Arkadaşsınız.</p>}
-                                    {friendshipStatus === "request_sent" && <p className="text-xs text-blue-600 text-center py-1 px-2 rounded bg-blue-500/10">Arkadaşlık isteği gönderildi.</p>}
-                                    {friendshipStatus === "request_received" && relevantFriendRequest && (
-                                        <Button size="sm" className="w-full text-xs" onClick={handleAcceptFriendRequestPopover} disabled={popoverLoading}>
-                                            <UserCircle className="mr-1.5 h-3.5 w-3.5" /> İsteği Kabul Et
-                                        </Button>
-                                    )}
-                                    {friendshipStatus === "none" && (
-                                        <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleSendFriendRequestPopover} disabled={popoverLoading}>
-                                            <UserCircle className="mr-1.5 h-3.5 w-3.5" /> Arkadaş Ekle
-                                        </Button>
-                                    )}
-                                    <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => handleDmAction(popoverTargetUser?.uid)} >
-                                    <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> DM Gönder
-                                    </Button>
-                                </div>
-                            )}
-                        </PopoverContent>
-                    </Popover>
-                )}
-                <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
-                    {!msg.isOwn && (
-                        <Popover open={popoverOpenForUserId === msg.senderId && !msg.isOwn} onOpenChange={(isOpen) => {
-                            if (!isOpen) setPopoverOpenForUserId(null);
-                        }}>
-                            <PopoverTrigger asChild onClick={() => handleOpenUserInfoPopover(msg.senderId)}>
-                                <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline self-start">{msg.senderName}</span>
-                            </PopoverTrigger>
-                        </Popover>
-                    )}
-                    <div className={`p-2.5 sm:p-3 shadow-md ${
-                        msg.isOwn
-                        ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
-                        : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl"
-                    }`}>
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
-                    </div>
-                    <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
-                        {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
-                    </p>
-                </div>
-
-                {msg.isOwn && (
-                <Avatar className="h-7 w-7 cursor-default self-end mb-1">
-                    <AvatarImage src={currentUser?.photoURL || userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-                    <AvatarFallback>{getAvatarFallbackText(userData?.displayName || currentUser?.displayName)}</AvatarFallback>
-                </Avatar>
-                )}
-                </>
-                )}
-            </div>
+              <ChatMessageItem
+                key={msg.id}
+                msg={msg}
+                currentUserUid={currentUser?.uid}
+                popoverOpenForUserId={popoverOpenForUserId}
+                onOpenUserInfoPopover={handleOpenUserInfoPopover}
+                setPopoverOpenForUserId={setPopoverOpenForUserId}
+                popoverLoading={popoverLoading}
+                popoverTargetUser={popoverTargetUser}
+                friendshipStatus={friendshipStatus}
+                relevantFriendRequest={relevantFriendRequest}
+                onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
+                onSendFriendRequestPopover={handleSendFriendRequestPopover}
+                onDmAction={handleDmAction}
+                getAvatarFallbackText={getAvatarFallbackText}
+                currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
+                currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
+              />
             ))}
         </ScrollArea>
     </div>
