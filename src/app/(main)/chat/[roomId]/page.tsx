@@ -400,6 +400,51 @@ export default function ChatRoomPage() {
     return () => unsubscribeParticipants();
   }, [roomId, currentUser, userData, roomDetails, handleJoinRoom, isProcessingJoinLeave, isRoomFullError, toast]);
 
+
+  // WebRTC Helper Functions
+  const sendSignalMessage = useCallback(async (toUid: string, type: 'offer' | 'answer' | 'candidate', data: any) => { if (!currentUser || !roomId) return; const signalColRef = collection(db, `chatRooms/${roomId}/webrtcSignals`); await addDoc(signalColRef, { fromUid: currentUser.uid, toUid, type, data, createdAt: serverTimestamp() }); }, [currentUser, roomId]);
+
+  const cleanupPeerConnection = useCallback((peerId: string) => {
+    if (peerConnectionsRef.current[peerId]) {
+      peerConnectionsRef.current[peerId].getSenders().forEach(sender => {
+        if (sender.track) {
+          sender.track.stop();
+        }
+      });
+      peerConnectionsRef.current[peerId].close();
+      delete peerConnectionsRef.current[peerId];
+      console.log(`[WebRTC] Cleaned up peer connection for ${peerId}`);
+    }
+    setRemoteStreams(prev => {
+      const newStreams = { ...prev };
+      if (newStreams[peerId]) {
+        newStreams[peerId].getTracks().forEach(track => track.stop());
+      }
+      delete newStreams[peerId];
+      return newStreams;
+    });
+  }, []);
+
+  const resetWebRTCState = useCallback(() => {
+    console.log("[WebRTC] Resetting WebRTC state...");
+    Object.keys(peerConnectionsRef.current).forEach(peerId => { cleanupPeerConnection(peerId); });
+    peerConnectionsRef.current = {};
+    if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+        console.log("[WebRTC] Local stream stopped and cleared.");
+    }
+    setRemoteStreams({});
+    console.log("[WebRTC] WebRTC state reset complete.");
+  }, [cleanupPeerConnection]);
+
+  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => { if (!currentUser || !localStreamRef.current) return null; if (peerConnectionsRef.current[peerId]) { console.log(`[WebRTC] Peer connection for ${peerId} already exists or being created.`); return peerConnectionsRef.current[peerId]; } console.log(`[WebRTC] Creating new peer connection to ${peerId}. Initiator: ${isInitiator}`); const pc = new RTCPeerConnection(STUN_SERVERS); peerConnectionsRef.current[peerId] = pc; localStreamRef.current.getTracks().forEach(track => { try { pc.addTrack(track, localStreamRef.current!); } catch (e) { console.error(`[WebRTC] Error adding track to PC for ${peerId}:`, e); } }); pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } }; pc.ontrack = (event) => { console.log(`[WebRTC] Remote track received from ${peerId}`, event.streams[0]); setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] })); }; pc.oniceconnectionstatechange = () => { console.log(`[WebRTC] ICE connection state change for ${peerId}: ${pc.iceConnectionState}`); if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') { cleanupPeerConnection(peerId); } }; return pc; }, [currentUser, sendSignalMessage, cleanupPeerConnection]);
+
+  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => { if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) return; console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`); const pc = createPeerConnection(peerId, isInitiator); if (!pc) return; if (isInitiator) { try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSignalMessage(peerId, 'offer', offer); console.log(`[WebRTC] Offer sent to ${peerId}`); } catch (error) { console.error(`[WebRTC] Error creating offer for ${peerId}:`, error); } } }, [currentUser, createPeerConnection, sendSignalMessage]);
+
+  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => { if (!currentUser || !localStreamRef.current || !roomId) return; const { fromUid, type, data } = signal; console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`); let pc = peerConnectionsRef.current[fromUid]; if (!pc && (type === 'offer' || type === 'candidate')) { console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`); pc = createPeerConnection(fromUid, false)!; if (!pc) return; } else if (!pc) { console.warn(`[WebRTC] PC not found for ${fromUid} on ${type}, cannot process.`); return; } try { if (type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); sendSignalMessage(fromUid, 'answer', answer); console.log(`[WebRTC] Answer sent to ${fromUid}`); } else if (type === 'answer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`); } else if (type === 'candidate') { if (pc.remoteDescription) { await pc.addIceCandidate(new RTCIceCandidate(data)); console.log(`[WebRTC] ICE candidate added from ${fromUid}`); } else { console.warn(`[WebRTC] Remote description not set for ${fromUid}, delaying ICE candidate.`); /* TODO: Queue candidate if necessary */ } } } catch (error) { console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error); } }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
+
+
   useEffect(() => {
     if (!roomId) return;
     const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`), orderBy("joinedAt", "asc"));
@@ -559,48 +604,6 @@ export default function ChatRoomPage() {
   const handleViewProfileAction = (targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); };
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
 
-  const sendSignalMessage = useCallback(async (toUid: string, type: 'offer' | 'answer' | 'candidate', data: any) => { if (!currentUser || !roomId) return; const signalColRef = collection(db, `chatRooms/${roomId}/webrtcSignals`); await addDoc(signalColRef, { fromUid: currentUser.uid, toUid, type, data, createdAt: serverTimestamp() }); }, [currentUser, roomId]);
-
-  const cleanupPeerConnection = useCallback((peerId: string) => {
-    if (peerConnectionsRef.current[peerId]) {
-      peerConnectionsRef.current[peerId].getSenders().forEach(sender => {
-        if (sender.track) {
-          sender.track.stop();
-        }
-      });
-      peerConnectionsRef.current[peerId].close();
-      delete peerConnectionsRef.current[peerId];
-      console.log(`[WebRTC] Cleaned up peer connection for ${peerId}`);
-    }
-    setRemoteStreams(prev => {
-      const newStreams = { ...prev };
-      if (newStreams[peerId]) {
-        newStreams[peerId].getTracks().forEach(track => track.stop());
-      }
-      delete newStreams[peerId];
-      return newStreams;
-    });
-  }, []);
-
-  const resetWebRTCState = useCallback(() => {
-    console.log("[WebRTC] Resetting WebRTC state...");
-    Object.keys(peerConnectionsRef.current).forEach(peerId => { cleanupPeerConnection(peerId); });
-    peerConnectionsRef.current = {};
-    if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-        localStreamRef.current = null;
-        console.log("[WebRTC] Local stream stopped and cleared.");
-    }
-    setRemoteStreams({});
-    console.log("[WebRTC] WebRTC state reset complete.");
-  }, [cleanupPeerConnection]);
-
-  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => { if (!currentUser || !localStreamRef.current) return null; if (peerConnectionsRef.current[peerId]) { console.log(`[WebRTC] Peer connection for ${peerId} already exists or being created.`); return peerConnectionsRef.current[peerId]; } console.log(`[WebRTC] Creating new peer connection to ${peerId}. Initiator: ${isInitiator}`); const pc = new RTCPeerConnection(STUN_SERVERS); peerConnectionsRef.current[peerId] = pc; localStreamRef.current.getTracks().forEach(track => { try { pc.addTrack(track, localStreamRef.current!); } catch (e) { console.error(`[WebRTC] Error adding track to PC for ${peerId}:`, e); } }); pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } }; pc.ontrack = (event) => { console.log(`[WebRTC] Remote track received from ${peerId}`, event.streams[0]); setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] })); }; pc.oniceconnectionstatechange = () => { console.log(`[WebRTC] ICE connection state change for ${peerId}: ${pc.iceConnectionState}`); if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') { cleanupPeerConnection(peerId); } }; return pc; }, [currentUser, sendSignalMessage, cleanupPeerConnection]);
-
-  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => { if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) return; console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`); const pc = createPeerConnection(peerId, isInitiator); if (!pc) return; if (isInitiator) { try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSignalMessage(peerId, 'offer', offer); console.log(`[WebRTC] Offer sent to ${peerId}`); } catch (error) { console.error(`[WebRTC] Error creating offer for ${peerId}:`, error); } } }, [currentUser, createPeerConnection, sendSignalMessage]);
-
-  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => { if (!currentUser || !localStreamRef.current || !roomId) return; const { fromUid, type, data } = signal; console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`); let pc = peerConnectionsRef.current[fromUid]; if (!pc && (type === 'offer' || type === 'candidate')) { console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`); pc = createPeerConnection(fromUid, false)!; if (!pc) return; } else if (!pc) { console.warn(`[WebRTC] PC not found for ${fromUid} on ${type}, cannot process.`); return; } try { if (type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); sendSignalMessage(fromUid, 'answer', answer); console.log(`[WebRTC] Answer sent to ${fromUid}`); } else if (type === 'answer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`); } else if (type === 'candidate') { if (pc.remoteDescription) { await pc.addIceCandidate(new RTCIceCandidate(data)); console.log(`[WebRTC] ICE candidate added from ${fromUid}`); } else { console.warn(`[WebRTC] Remote description not set for ${fromUid}, delaying ICE candidate.`); /* TODO: Queue candidate if necessary */ } } } catch (error) { console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error); } }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
-
   useEffect(() => {
     if (!isCurrentUserInVoiceChat || !currentUser || !roomId) { if (signalsListenerUnsubscribeRef.current) { signalsListenerUnsubscribeRef.current(); signalsListenerUnsubscribeRef.current = null; } return; }
     const signalsQuery = query( collection(db, `chatRooms/${roomId}/webrtcSignals`), where("toUid", "==", currentUser.uid), orderBy("createdAt", "asc") ); let lastProcessedTimestamp: Timestamp | null = null;
@@ -613,7 +616,7 @@ export default function ChatRoomPage() {
     if (isCurrentUserInVoiceChat) { toast({ title: "Bilgi", description: "Zaten sesli sohbettesiniz." }); return; }
 
     const currentVoiceParticipants = roomDetails.voiceParticipantCount ?? 0;
-    const maxAllowedParticipants = roomDetails.maxParticipants; // Odadan gelen maxParticipants kullanılıyor
+    const maxAllowedParticipants = roomDetails.maxParticipants;
 
     if (currentVoiceParticipants >= maxAllowedParticipants) {
         toast({ title: "Sesli Sohbet Dolu", description: "Bu odadaki sesli sohbet maksimum katılımcı sayısına ulaşmış.", variant: "destructive" });
@@ -623,13 +626,9 @@ export default function ChatRoomPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       localStreamRef.current = stream;
-      console.log("[WebRTC] Local stream obtained. Updating UI to in-call state.");
-
-      // UI'yı hemen güncelle, Firestore ve WebRTC işlemleri arka planda devam etsin
       setIsCurrentUserInVoiceChat(true);
       setSelfMuted(false);
 
-      // Firestore ve WebRTC işlemleri
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
       await setDoc(voiceParticipantRef, { uid: currentUser.uid, displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", photoURL: userData.photoURL || currentUser.photoURL || null, joinedAt: serverTimestamp(), isMuted: false, isMutedByAdmin: false, isSpeaking: false, });
       const roomRef = doc(db, "chatRooms", roomId);
@@ -646,10 +645,9 @@ export default function ChatRoomPage() {
     } catch (error: any) {
       console.error("Error joining voice chat / getting media:", error);
       toast({ title: "Hata", description: `Sesli sohbete katılırken bir sorun oluştu: ${error.message || 'Medya erişimi reddedildi.'}`, variant: "destructive" });
-      resetWebRTCState(); // Hata durumunda WebRTC'yi temizle
-      setIsCurrentUserInVoiceChat(false); // UI'yı geri al
+      resetWebRTCState(); 
+      setIsCurrentUserInVoiceChat(false);
       setSelfMuted(false);
-      // Firestore'dan da kaydı silmeye çalış (eğer oluştuysa)
       try {
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
         const voiceParticipantSnap = await getDoc(voiceParticipantRef);
@@ -817,3 +815,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
