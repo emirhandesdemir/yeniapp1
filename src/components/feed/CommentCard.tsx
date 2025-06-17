@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import Link from "next/link";
 
 export interface CommentData {
   id: string;
@@ -24,7 +25,7 @@ export interface CommentData {
 interface CommentCardProps {
   comment: CommentData;
   postId: string;
-  onCommentDeleted: () => void; // Callback to notify parent about deletion
+  onCommentDeleted: () => void; 
 }
 
 export default function CommentCard({ comment, postId, onCommentDeleted }: CommentCardProps) {
@@ -49,17 +50,15 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
 
     setIsDeleting(true);
     try {
-      // Delete comment document
       const commentRef = doc(db, `posts/${postId}/comments`, comment.id);
       await deleteDoc(commentRef);
 
-      // Decrement commentCount on the post document
       const postRef = doc(db, "posts", postId);
       await updateDoc(postRef, {
         commentCount: increment(-1),
       });
       
-      onCommentDeleted(); // Notify parent
+      onCommentDeleted(); 
       toast({ title: "Başarılı", description: "Yorum silindi." });
     } catch (error) {
       console.error("Error deleting comment:", error);
@@ -71,14 +70,18 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
 
   return (
     <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-muted/30 dark:bg-muted/20 border border-border/50">
-      <Avatar className="h-8 w-8 flex-shrink-0 mt-0.5">
-        <AvatarImage src={comment.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="user avatar comment" />
-        <AvatarFallback>{getAvatarFallbackText(comment.username)}</AvatarFallback>
-      </Avatar>
+      <Link href={`/profile/${comment.userId}`} className="flex-shrink-0 mt-0.5">
+        <Avatar className="h-8 w-8">
+          <AvatarImage src={comment.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="user avatar comment" />
+          <AvatarFallback>{getAvatarFallbackText(comment.username)}</AvatarFallback>
+        </Avatar>
+      </Link>
       <div className="flex-1">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-2">
-            <p className="font-semibold text-xs text-foreground">{comment.username || "Bilinmeyen Kullanıcı"}</p>
+            <Link href={`/profile/${comment.userId}`}>
+                <p className="font-semibold text-xs text-foreground hover:underline">{comment.username || "Bilinmeyen Kullanıcı"}</p>
+            </Link>
             <p className="text-[10px] text-muted-foreground/80">{formattedDate}</p>
           </div>
           {isOwnComment && (

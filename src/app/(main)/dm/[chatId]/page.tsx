@@ -26,7 +26,7 @@ import {
 } from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { generateDmChatId } from "@/lib/utils"; // DM Chat ID üretme fonksiyonu
+import { generateDmChatId } from "@/lib/utils"; 
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
 
 interface DirectMessage {
@@ -185,7 +185,7 @@ export default function DirectMessagePage() {
       
       const messageDataForParentDoc = {
         lastMessageTimestamp: serverTimestamp(),
-        lastMessageText: tempMessage.substring(0, 50), // Snippet
+        lastMessageText: tempMessage.substring(0, 50), 
         lastMessageSenderId: currentUser.uid,
       };
 
@@ -216,11 +216,10 @@ export default function DirectMessagePage() {
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         timestamp: serverTimestamp(),
       });
-      setNewMessage(""); // Clear input field ON SUCCESS
+      setNewMessage(""); 
     } catch (error) {
       console.error("Error sending DM:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      // Do not clear newMessage here, user can retry or edit
     } finally {
       setIsSending(false);
     }
@@ -245,12 +244,16 @@ export default function DirectMessagePage() {
                 <span className="sr-only">Geri</span>
             </Link>
             </Button>
-            <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
-                <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
-                <AvatarFallback>{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
-            </Avatar>
+            <Link href={`/profile/${dmPartnerDetails.uid}`}>
+                <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+                    <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
+                    <AvatarFallback>{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                </Avatar>
+            </Link>
             <div className="flex-1 min-w-0">
-                <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                <Link href={`/profile/${dmPartnerDetails.uid}`}>
+                    <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                </Link>
             </div>
         </div>
       </header>

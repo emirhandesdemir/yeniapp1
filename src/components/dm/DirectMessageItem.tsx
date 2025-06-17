@@ -3,6 +3,7 @@
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Timestamp } from 'firebase/firestore';
+import Link from "next/link";
 
 interface DirectMessage {
   id: string;
@@ -31,10 +32,12 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   return (
     <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
       {!msg.isOwn && (
-          <Avatar className="h-7 w-7 self-end mb-1">
-              <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-              <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
-          </Avatar>
+          <Link href={`/profile/${msg.senderId}`} className="self-end mb-1">
+            <Avatar className="h-7 w-7">
+                <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
+                <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
+            </Avatar>
+          </Link>
       )}
       <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
           <div className={`p-2.5 sm:p-3 shadow-md ${

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
@@ -26,7 +27,7 @@ import {
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
-import { generateDmChatId } from "@/lib/utils"; // DM Chat ID üretme fonksiyonu
+import { generateDmChatId } from "@/lib/utils"; 
 
 
 interface Friend extends UserData {
@@ -214,7 +215,7 @@ export default function FriendsPage() {
     const requestId = targetUser.outgoingRequestId;
     setActionLoading(requestId, true); 
     try {
-      await deleteDoc(doc(db, "friendRequests", requestId));
+      await deleteFirestoreDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
        setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u 
@@ -237,7 +238,6 @@ export default function FriendsPage() {
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
       
-      // Delete accepted friend request documents related to this friendship
       const requestQuery1 = query(collection(db, "friendRequests"), 
         where("status", "==", "accepted"),
         where("fromUserId", "==", currentUser.uid), 
@@ -321,16 +321,16 @@ export default function FriendsPage() {
                 <ul className="space-y-3 sm:space-y-4">
                   {myFriends.map(friend => (
                     <li key={friend.uid} className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
-                      <div className="flex items-center gap-3">
+                      <Link href={`/profile/${friend.uid}`} className="flex items-center gap-3 flex-grow min-w-0">
                         <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                           <AvatarImage src={friend.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar" />
                           <AvatarFallback>{getAvatarFallback(friend.displayName)}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium text-sm sm:text-base">{friend.displayName || "İsimsiz"}</p>
+                          <p className="font-medium text-sm sm:text-base hover:underline">{friend.displayName || "İsimsiz"}</p>
                         </div>
-                      </div>
-                      <div className="flex gap-1 sm:gap-2">
+                      </Link>
+                      <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                         <Button asChild variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-primary hover:text-primary/80">
                           <Link href={`/dm/${generateDmChatId(currentUser.uid, friend.uid)}`} aria-label="Mesaj Gönder">
                              <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -341,7 +341,7 @@ export default function FriendsPage() {
                           size="icon" 
                           className="h-8 w-8 sm:h-9 sm:w-9 hover:text-destructive" 
                           aria-label="Arkadaşlıktan Çıkar"
-                          onClick={() => handleRemoveFriend(friend.uid, friend.displayName || 'bu arkadaşı')}
+                          onClick={(e) => { e.stopPropagation(); handleRemoveFriend(friend.uid, friend.displayName || 'bu arkadaşı')}}
                           disabled={performingAction[friend.uid]}
                         >
                           {performingAction[friend.uid] ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Trash2 className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground hover:text-destructive" />}
@@ -379,54 +379,56 @@ export default function FriendsPage() {
                   <ul className="space-y-3 pt-2">
                     {searchResults.map(user => (
                       <li key={user.uid} className="flex items-center justify-between p-3 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border">
-                        <div className="flex items-center gap-3">
+                        <Link href={`/profile/${user.uid}`} className="flex items-center gap-3 flex-grow min-w-0">
                            <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                              <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar search" />
                              <AvatarFallback>{getAvatarFallback(user.displayName)}</AvatarFallback>
                            </Avatar>
-                           <p className="font-medium text-sm sm:text-base">{user.displayName || "İsimsiz"}</p>
-                        </div>
-                        {user.isFriend ? (
-                            <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
-                                <UserCheck className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-500" /> Arkadaş
-                            </Button>
-                        ) : user.isRequestSent ? (
-                            <div className="flex items-center gap-1">
+                           <p className="font-medium text-sm sm:text-base hover:underline">{user.displayName || "İsimsiz"}</p>
+                        </Link>
+                        <div className="flex-shrink-0">
+                            {user.isFriend ? (
                                 <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
-                                    <Send className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Gönderildi
+                                    <UserCheck className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-500" /> Arkadaş
                                 </Button>
-                                {user.outgoingRequestId && 
-                                  <Button 
-                                      variant="ghost" 
-                                      size="xs" 
-                                      className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
-                                      onClick={() => handleCancelOutgoingRequest(user)}
-                                      disabled={performingAction[user.outgoingRequestId]}
-                                  >
-                                      {performingAction[user.outgoingRequestId] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
-                                  </Button>
-                                }
-                            </div>
-                        ) : user.isRequestReceived ? (
-                           <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                              disabled 
-                            >
-                              <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi (Bildirimlerde)
-                            </Button>
-                        ) : (
+                            ) : user.isRequestSent ? (
+                                <div className="flex items-center gap-1">
+                                    <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
+                                        <Send className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Gönderildi
+                                    </Button>
+                                    {user.outgoingRequestId && 
+                                    <Button 
+                                        variant="ghost" 
+                                        size="xs" 
+                                        className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
+                                        onClick={(e) => { e.stopPropagation(); handleCancelOutgoingRequest(user)}}
+                                        disabled={performingAction[user.outgoingRequestId]}
+                                    >
+                                        {performingAction[user.outgoingRequestId] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Trash2 className="mr-1 h-3 w-3" />} İptal
+                                    </Button>
+                                    }
+                                </div>
+                            ) : user.isRequestReceived ? (
                             <Button 
                                 variant="outline" 
                                 size="sm" 
                                 className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                                onClick={() => handleSendFriendRequest(user)}
-                                disabled={performingAction[user.uid]}
-                            >
-                                {performingAction[user.uid] ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />} Arkadaş Ekle
-                            </Button>
-                        )}
+                                disabled 
+                                >
+                                <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi (Bildirimlerde)
+                                </Button>
+                            ) : (
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
+                                    onClick={(e) => { e.stopPropagation(); handleSendFriendRequest(user)}}
+                                    disabled={performingAction[user.uid]}
+                                >
+                                    {performingAction[user.uid] ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />} Arkadaş Ekle
+                                </Button>
+                            )}
+                        </div>
                       </li>
                     ))}
                   </ul>

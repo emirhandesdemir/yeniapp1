@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -33,7 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import GameQuestionCard from "@/components/game/GameQuestionCard";
 import { generateDmChatId } from "@/lib/utils";
 import {
@@ -138,7 +138,7 @@ export default function ChatRoomPage() {
   const [isCurrentUserParticipant, setIsCurrentUserParticipant] = useState(false);
   const isCurrentUserParticipantRef = useRef(isCurrentUserParticipant);
 
-  const [currentTime, setCurrentTime] = useState(new Date()); // For live countdown
+  const [currentTime, setCurrentTime] = useState(new Date()); 
 
   useEffect(() => {
     isCurrentUserParticipantRef.current = isCurrentUserParticipant;
@@ -157,7 +157,7 @@ export default function ChatRoomPage() {
   useEffect(() => {
     const timerId = setInterval(() => {
       setCurrentTime(new Date());
-    }, 1000); // Update current time every second for live countdown
+    }, 1000); 
     return () => clearInterval(timerId);
   }, []);
 
@@ -265,7 +265,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId) {
                 attemptToAskNewQuestion();
             }
-        }, 5000); // Check every 5 seconds if it's time for a new question
+        }, 5000); 
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
   }, [gameSettings, roomDetails, attemptToAskNewQuestion]); 
@@ -619,7 +619,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
   const getPreciseExpiryInfo = (): string => {
     if (!roomDetails?.expiresAt) return "Süre bilgisi yok";
     const expiryDate = roomDetails.expiresAt.toDate();
-    const now = currentTime; // Use state that updates every second
+    const now = currentTime; 
 
     if (isPast(expiryDate)) return "Süresi Doldu";
 
@@ -633,7 +633,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
     const seconds = diffSeconds % 60;
 
     if (days > 0) {
-        return `${days} gün ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} sonra`; // Not live for days
+        return `${days} gün ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} sonra`; 
     }
     if (hours > 0) {
         return `Kalan: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
@@ -699,6 +699,12 @@ const attemptToAskNewQuestion = useCallback(async () => {
   const handleDmAction = (targetUserId: string | undefined | null) => {
     if (!currentUser?.uid || !targetUserId) return; const dmId = generateDmChatId(currentUser.uid, targetUserId);
     router.push(`/dm/${dmId}`); setPopoverOpenForUserId(null);
+  };
+
+  const handleViewProfileAction = (targetUserId: string | undefined | null) => {
+    if(!targetUserId) return;
+    router.push(`/profile/${targetUserId}`);
+    setPopoverOpenForUserId(null);
   };
 
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
@@ -770,15 +776,19 @@ const attemptToAskNewQuestion = useCallback(async () => {
                         <ul className="divide-y divide-border">
                             {activeParticipants.map(participant => (
                             <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
-                                <Avatar className="h-7 w-7">
-                                    <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar"/>
-                                    <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
-                                </Avatar>
+                                <Link href={`/profile/${participant.id}`} className="flex-shrink-0">
+                                    <Avatar className="h-7 w-7">
+                                        <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar"/>
+                                        <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
+                                    </Avatar>
+                                </Link>
                                 <div className="flex-1 min-w-0">
-                                    <span className="text-xs font-medium truncate text-muted-foreground block">
-                                      {participant.displayName || "Bilinmeyen"}
-                                      {participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}
-                                    </span>
+                                    <Link href={`/profile/${participant.id}`}>
+                                        <span className="text-xs font-medium truncate text-muted-foreground block hover:underline">
+                                        {participant.displayName || "Bilinmeyen"}
+                                        {participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}
+                                        </span>
+                                    </Link>
                                     <span className="text-[10px] text-muted-foreground/70 block">
                                       {participant.joinedAt ? formatDistanceToNow(participant.joinedAt.toDate(), { addSuffix: true, locale: tr, includeSeconds: false }) : 'Yeni katıldı'}
                                     </span>
@@ -792,10 +802,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
             {currentUser && roomDetails.creatorId === currentUser.uid && (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                         <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                        <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
                             <>
-                                <MoreVertical className="h-5 w-5" />
-                                <span className="sr-only">Oda Seçenekleri</span>
+                            <MoreVertical className="h-5 w-5" />
+                            <span className="sr-only">Oda Seçenekleri</span>
                             </>
                         </Button>
                     </DropdownMenuTrigger>
@@ -831,6 +841,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus}
                 relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={onAcceptFriendRequestPopover}
                 onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction}
+                onViewProfileAction={handleViewProfileAction}
                 getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
                 currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
               />
@@ -859,6 +870,3 @@ const attemptToAskNewQuestion = useCallback(async () => {
     </div>
   );
 }
-
-
-    

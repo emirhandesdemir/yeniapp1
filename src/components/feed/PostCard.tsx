@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon } from "lucide-react"; // LinkIcon eklendi
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -115,8 +115,6 @@ export default function PostCard({ post }: PostCardProps) {
     if (!confirm("Bu gönderiyi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.")) return;
 
     try {
-      // TODO: If this is an original post that has been reposted, consider how to handle those reposts.
-      // For now, deleting a post does not delete its reposts (they will show "original content unavailable").
       await deleteDoc(doc(db, "posts", post.id));
       toast({ title: "Başarılı", description: "Gönderi silindi." });
     } catch (error) {
@@ -164,7 +162,7 @@ export default function PostCard({ post }: PostCardProps) {
 
     setIsReposting(true);
 
-    const postToRepost = post.isRepost ? { // If current post is a repost, use its original data
+    const postToRepost = post.isRepost ? { 
       id: post.originalPostId,
       userId: post.originalPostUserId,
       username: post.originalPostUsername,
@@ -173,7 +171,7 @@ export default function PostCard({ post }: PostCardProps) {
       createdAt: post.originalPostCreatedAt,
       sharedRoomId: post.originalPostSharedRoomId,
       sharedRoomName: post.originalPostSharedRoomName,
-    } : post; // Otherwise, use the current post data
+    } : post; 
 
     if (!postToRepost.id || !postToRepost.userId || !postToRepost.content) {
         toast({ title: "Hata", description: "Yeniden paylaşılacak orijinal gönderi bilgileri eksik.", variant: "destructive" });
@@ -199,7 +197,6 @@ export default function PostCard({ post }: PostCardProps) {
         likeCount: 0,
         commentCount: 0,
         likedBy: [],
-        // Reposts don't have their own content or shared room beyond the original.
       });
       toast({ title: "Başarılı!", description: "Gönderi yeniden paylaşıldı." });
     } catch (error) {
@@ -222,12 +219,16 @@ export default function PostCard({ post }: PostCardProps) {
   const renderOriginalPostContent = (originalPost: Partial<Post>) => (
     <Card className="mt-2 mb-1 p-3 border-border/70 bg-muted/30 dark:bg-muted/20 shadow-inner">
       <CardHeader className="flex flex-row items-start gap-2.5 p-0 pb-2">
-        <Avatar className="h-8 w-8">
-          <AvatarImage src={originalPost.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
-          <AvatarFallback>{getAvatarFallbackText(originalPost.username)}</AvatarFallback>
-        </Avatar>
+        <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0">
+            <Avatar className="h-8 w-8">
+            <AvatarImage src={originalPost.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
+            <AvatarFallback>{getAvatarFallbackText(originalPost.username)}</AvatarFallback>
+            </Avatar>
+        </Link>
         <div className="flex-1">
-          <p className="font-semibold text-xs text-foreground/80">{originalPost.username || "Bilinmeyen Kullanıcı"}</p>
+            <Link href={`/profile/${originalPost.userId}`}>
+                <p className="font-semibold text-xs text-foreground/80 hover:underline">{originalPost.username || "Bilinmeyen Kullanıcı"}</p>
+            </Link>
           <p className="text-[10px] text-muted-foreground/70">{formattedDate(originalPost.createdAt)}</p>
         </div>
       </CardHeader>
@@ -253,14 +254,18 @@ export default function PostCard({ post }: PostCardProps) {
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-200 rounded-xl">
       <CardHeader className="flex flex-row items-start gap-3 p-4 pb-2">
-        <Avatar className="h-10 w-10">
-          <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
-          <AvatarFallback>{getAvatarFallbackText(post.username)}</AvatarFallback>
-        </Avatar>
+        <Link href={`/profile/${post.userId}`} className="flex-shrink-0">
+            <Avatar className="h-10 w-10">
+            <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
+            <AvatarFallback>{getAvatarFallbackText(post.username)}</AvatarFallback>
+            </Avatar>
+        </Link>
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-semibold text-sm text-foreground">{post.username || "Bilinmeyen Kullanıcı"}</p>
+                <Link href={`/profile/${post.userId}`}>
+                    <p className="font-semibold text-sm text-foreground hover:underline">{post.username || "Bilinmeyen Kullanıcı"}</p>
+                </Link>
               <p className="text-xs text-muted-foreground">{formattedDate(post.createdAt)}</p>
             </div>
             {isOwnPost && (
@@ -284,9 +289,14 @@ export default function PostCard({ post }: PostCardProps) {
         {post.isRepost ? (
           <>
             <p className="text-xs text-muted-foreground mb-1.5">
-              {post.username} yeniden paylaştı:
+              {/* Repost yapan kullanıcı kendi profiline yönlendirilmeli, orijinal değil */}
+              <Link href={`/profile/${post.userId}`} className="font-medium hover:underline">
+                {post.username}
+              </Link>
+              {' '} yeniden paylaştı:
             </p>
             {renderOriginalPostContent({
+              userId: post.originalPostUserId, // Original user ID for link
               username: post.originalPostUsername,
               userAvatar: post.originalPostUserAvatar,
               content: post.originalPostContent,
@@ -334,7 +344,6 @@ export default function PostCard({ post }: PostCardProps) {
             disabled={isReposting || !currentUser}
         >
           {isReposting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Repeat className="h-4 w-4 mr-1.5" />}
-           {/* Repost sayısını göstermiyoruz şimdilik. */}
         </Button>
         <Button variant="ghost" size="sm" className={`px-2 ${hasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'}`} onClick={handleLikePost} disabled={isLiking || !currentUser}>
           <Heart className={`h-4 w-4 mr-1.5 ${hasLiked ? 'fill-current' : ''}`} />
@@ -374,4 +383,3 @@ export default function PostCard({ post }: PostCardProps) {
     </Card>
   );
 }
-
