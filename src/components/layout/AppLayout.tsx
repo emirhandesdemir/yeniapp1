@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-// import OneSignal from 'react-onesignal'; // Kaldırıldı
+// OneSignal, global script aracılığıyla yüklenecek
 import {
   MessageSquare,
   Bell,
@@ -40,8 +40,9 @@ import {
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
-import { useInAppNotification } from '@/contexts/InAppNotificationContext';
+import { useInAppNotification, type InAppNotificationData } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { subscribeUserToPush } from '@/lib/notificationUtils';
 
 
 interface FriendRequestForPopover {
@@ -117,41 +118,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
-  // const [oneSignalInitialized, setOneSignalInitialized] = useState(false); // Kaldırıldı
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // OneSignal SDK'sının başlatılması artık /src/app/layout.tsx içindeki script tarafından yapılıyor.
-  // Bu useEffect bloğu kaldırıldı.
-  /*
-  useEffect(() => {
-    if (isClient && !oneSignalInitialized && process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID && process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID !== 'YOUR_ONESIGNAL_APP_ID') {
-      OneSignal.init({ appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID })
-        .then(() => {
-          console.log("OneSignal SDK Initialized");
-          setOneSignalInitialized(true);
-          // OneSignal.Slidedown.promptPush(); // Kullanıcıya bildirim izni sormak için
-        })
-        .catch((e) => console.error("Error initializing OneSignal:", e));
-    } else if (isClient && !process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID === 'YOUR_ONESIGNAL_APP_ID') {
-        console.warn("OneSignal App ID is not configured in environment variables (NEXT_PUBLIC_ONESIGNAL_APP_ID). OneSignal will not be initialized.");
-        setOneSignalInitialized(true); // Mark as initialized to prevent re-attempts
-    }
-  }, [isClient, oneSignalInitialized]);
-  */
-
-
   useEffect(() => {
     if (isClient) {
       try {
-        // Onboarding state
         const onboardingCompleted = localStorage.getItem(ONBOARDING_STORAGE_KEY);
         if (currentUser && userData && !isUserDataLoading && !onboardingCompleted) {
           setShowOnboarding(true);
         }
-        // DM timestamps state
         const storedDmTimestamps = localStorage.getItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY);
         if (storedDmTimestamps) {
           setLastShownDmTimestamps(JSON.parse(storedDmTimestamps));
@@ -266,7 +244,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
 
   useEffect(() => {
-    if (!currentUser?.uid || !isClient) return; // isClient kontrolü eklendi
+    if (!currentUser?.uid || !isClient) return; 
 
     const dmsQuery = query(
       collection(db, "directMessages"),
@@ -303,14 +281,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
                         }
 
-                        showInAppNotification({
-                            title: `Yeni Mesaj: ${senderName}`,
-                            message: dmData.lastMessageText || "Sana bir mesaj gönderdi.",
-                            type: 'new_dm',
-                            avatarUrl: senderAvatar,
-                            senderName: senderName,
-                            link: `/dm/${dmId}`,
-                        });
+                        // Bu in-app notification SADECE uygulama AÇIKKEN gösterilecek.
+                        // Uygulama kapalıysa, OneSignal service worker'ı push'u ele almalı.
+                        // OneSignal'ın foregroundWillDisplay listener'ı bunu zaten ele alacak.
+                        // Bu yüzden buradaki showInAppNotification çağrısını kaldırabiliriz veya
+                        // OneSignal'ın foreground listener'ı ile çakışmaması için koşullu hale getirebiliriz.
+                        // Şimdilik, OneSignal'ın foreground listener'ının bunu ele alacağını varsayarak bırakıyoruz.
+                        // showInAppNotification({
+                        //     title: `Yeni Mesaj: ${senderName}`,
+                        //     message: dmData.lastMessageText || "Sana bir mesaj gönderdi.",
+                        //     type: 'new_dm',
+                        //     avatarUrl: senderAvatar,
+                        //     senderName: senderName,
+                        //     link: `/dm/${dmId}`,
+                        // });
                         
                         const newTimestamps = { ...lastShownDmTimestamps, [dmId]: lastMessageTimeMillis };
                         setLastShownDmTimestamps(newTimestamps);
@@ -328,7 +312,77 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribeDms();
-  }, [currentUser?.uid, pathname, showInAppNotification, lastShownDmTimestamps, isClient]);
+  }, [currentUser?.uid, pathname, /*showInAppNotification,*/ lastShownDmTimestamps, isClient]);
+
+
+  useEffect(() => {
+    if (!isClient || typeof window.OneSignal === 'undefined') return;
+
+    // OneSignal SDK'sının tamamen yüklenip başlatılmasını beklemek için OneSignalDeferred.push kullan
+    window.OneSignalDeferred.push(function(OneSignal) {
+      console.log("[AppLayout] OneSignal SDK is ready or has been initialized via script.");
+
+      // Ön plan bildirim dinleyicisi
+      OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+        console.log("[AppLayout] OneSignal foregroundWillDisplay event:", event);
+        event.preventDefault(); // OneSignal'ın varsayılan bildirimini engelle
+
+        const notification = event.notification;
+        const inAppNotifData: Omit<InAppNotificationData, 'id'> = {
+            title: notification.title || "Yeni Bildirim",
+            message: notification.body || "",
+            type: (notification.additionalData?.type as InAppNotificationData['type']) || 'info',
+            avatarUrl: notification.additionalData?.avatarUrl as string || notification.smallIcon || notification.largeIcon, // OneSignal'dan avatar alınabilirse
+            senderName: notification.additionalData?.senderName as string,
+            link: notification.launchURL || (notification.additionalData?.link as string),
+        };
+        showInAppNotification(inAppNotifData);
+      });
+
+      // Otomatik abonelik kontrolü
+      async function checkAndSubscribe() {
+        if (currentUser && userData) { // Kullanıcı giriş yapmışsa
+          const permission = OneSignal.Notifications.permission; // true (granted), false (denied), null (default/prompt not shown)
+          const isOptedIn = await OneSignal.User.PushSubscription.getOptedIn();
+
+          if (permission === true && !isOptedIn) {
+            console.log("[AppLayout] OneSignal: Permission granted but not opted-in. Attempting to subscribe...");
+            try {
+              await subscribeUserToPush(); // Bu fonksiyon içinde OneSignal.User.PushSubscription.optIn() çağrılır
+              console.log("[AppLayout] OneSignal: Successfully subscribed after permission check.");
+            } catch (error) {
+              console.error("[AppLayout] OneSignal: Error during auto-subscription attempt:", error);
+            }
+          } else if (permission === null) {
+            console.log("[AppLayout] OneSignal: Notification permission not yet requested by user.");
+            // OneSignal'ın `notifyButton` ayarı (layout.tsx'te true) bu durumda zil ikonunu gösterir.
+            // İstenirse burada ek bir UI ile de izin istenebilir.
+          } else if (permission === true && isOptedIn) {
+            console.log("[AppLayout] OneSignal: User has permission and is opted-in.");
+          } else if (permission === false) {
+            console.log("[AppLayout] OneSignal: User has denied notification permission.");
+          }
+        }
+      }
+      checkAndSubscribe();
+    });
+
+    // Cleanup function for the event listener if the component unmounts or dependencies change
+    return () => {
+      if (typeof window.OneSignal !== 'undefined' && window.OneSignal.Notifications) {
+        // It's good practice to remove listeners, though for 'foregroundWillDisplay' it might
+        // not be strictly necessary if the SDK handles it well upon re-init or page changes.
+        // However, OneSignal's typings might not directly expose a removeEventListener for Notifications.
+        // Check OneSignal documentation for the best way to clean up this specific listener if needed.
+        // For now, we assume OneSignal manages its listeners on re-initialization if this component remounts.
+        console.log("[AppLayout] OneSignal foregroundWillDisplay listener cleanup would go here if API provided.");
+      }
+    };
+  // subscribeUserToPush'ı useCallback ile sarmalamak yerine doğrudan import edip kullanmak daha basit olabilir.
+  // Ancak, eğer AppLayout sık re-render oluyorsa ve subscribeUserToPush ağır bir işlemse (ki değil), useCallback düşünülebilir.
+  // Mevcut haliyle, showInAppNotification zaten useCallback ile sarmalanmış olmalı (InAppNotificationContext içinde).
+  }, [isClient, currentUser, userData, showInAppNotification]);
+
 
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -414,7 +468,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             <Popover>
               <PopoverTrigger asChild>
-                 {/* PopoverTrigger'ın doğrudan çocuğu artık bu div */}
                 <div
                   role="button" 
                   tabIndex={0}  
@@ -519,3 +572,5 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+    

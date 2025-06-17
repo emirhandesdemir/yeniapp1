@@ -1,12 +1,12 @@
 
 "use client";
 
-import OneSignal from 'react-onesignal';
+// OneSignal is now loaded globally via script tag in layout.tsx
 
 export async function requestNotificationPermission(): Promise<NotificationPermission | 'default'> {
-  if (typeof window !== 'undefined' && ('OneSignal' in window) && OneSignal.Notifications) {
+  if (typeof window !== 'undefined' && window.OneSignal && window.OneSignal.Notifications) {
     try {
-      const permission = await OneSignal.Notifications.requestPermission();
+      const permission = await window.OneSignal.Notifications.requestPermission();
       console.log('OneSignal Notification permission:', permission);
       return permission ? 'granted' : 'denied'; // OneSignal returns boolean
     } catch (error) {
@@ -103,11 +103,11 @@ export async function isPushSubscribed(): Promise<boolean> {
 }
 
 export function getNotificationPermissionStatus(): NotificationPermission | 'default' {
-    if (typeof window !== 'undefined' && ('OneSignal' in window) && OneSignal.Notifications) {
-        const permission = OneSignal.Notifications.permission;
+    if (typeof window !== 'undefined' && window.OneSignal && window.OneSignal.Notifications) {
+        const permission = window.OneSignal.Notifications.permission;
         // OneSignal's permission is a boolean, map to NotificationPermission string
         if (permission === true) return 'granted';
-        if (permission === false) return 'denied'; // This might not be directly exposed, check documentation
+        if (permission === false) return 'denied'; 
     }
     // Fallback or if OneSignal's direct permission string isn't easily available
     if (typeof window !== 'undefined' && 'Notification' in window) {
