@@ -43,20 +43,34 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı)
-  - `participants`: Odadaki aktif katılımcıları saklar.
+  - `participants`: Odadaki aktif katılımcıları (metin sohbeti) saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
+  - `voiceParticipants`: Odadaki sesli sohbete katılmış kullanıcıları saklar.
+    - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
+    - **Alanlar:** `uid` (String), `displayName` (String, nullable), `photoURL` (String, nullable), `joinedAt` (Timestamp)
+  - `voiceSignaling`: WebRTC sinyalleşme mesajlarını (offer, answer, ICE candidate) saklar.
+    - **Yol:** `/chatRooms/{roomId}/voiceSignaling/{signalId}`
+    - **Alanlar:**
+      - `type`: (String) 'offer', 'answer', veya 'candidate'
+      - `fromUid`: (String) Sinyali gönderen kullanıcının UID'si
+      - `toUid`: (String) Sinyalin hedeflendiği kullanıcının UID'si
+      - `data`: (Object) SDP (offer/answer) veya ICE adayı verisi
+      - `createdAt`: (Timestamp) Sinyalin oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları (`expiresAt` > şimdi) listelemek ve katılımcı sayısına, ardından oluşturulma tarihine göre sıralamak için:
+  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için:
     - Koleksiyon: `chatRooms`
     - Alanlar: `participantCount` (Azalan), `createdAt` (Azalan), `expiresAt` (Artan)
     - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresini de içerir._
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan veya Azalan, Firestore'un önerisine göre)
+    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
   - Admin panelinde süresi dolmuş odaları toplu silmek için (`src/components/admin/sections/AdminChatRoomsContent.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan)
+  - WebRTC sinyalleşme mesajlarını almak için (`src/app/(main)/chat/[roomId]/page.tsx`):
+    - Koleksiyon: `voiceSignaling` (belirli bir `chatRooms/{roomId}` altında)
+    - Alanlar: `toUid` (Artan), `createdAt` (Artan)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
