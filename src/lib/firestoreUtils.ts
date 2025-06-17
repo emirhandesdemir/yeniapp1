@@ -11,15 +11,20 @@ export const deleteChatRoomAndSubcollections = async (roomId: string): Promise<v
   const batch = writeBatch(db);
 
   try {
-    // Mesajları sil
+    // Mesajları sil (text chat)
     const messagesRef = collection(db, `chatRooms/${roomId}/messages`);
     const messagesSnap = await getDocs(messagesRef);
     messagesSnap.forEach(msgDoc => batch.delete(msgDoc.ref));
 
-    // Katılımcıları sil
+    // Katılımcıları sil (text chat)
     const participantsRef = collection(db, `chatRooms/${roomId}/participants`);
     const participantsSnap = await getDocs(participantsRef);
     participantsSnap.forEach(partDoc => batch.delete(partDoc.ref));
+
+    // Sesli sohbet katılımcılarını sil
+    const voiceParticipantsRef = collection(db, `chatRooms/${roomId}/voiceParticipants`);
+    const voiceParticipantsSnap = await getDocs(voiceParticipantsRef);
+    voiceParticipantsSnap.forEach(voicePartDoc => batch.delete(voicePartDoc.ref));
     
     // Ana odayı sil
     const roomDocRef = doc(db, "chatRooms", roomId);

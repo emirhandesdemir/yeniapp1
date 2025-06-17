@@ -37,8 +37,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman (Varsayılan: Oluşturulma + 20 dakika)
   - `image`: (String) Odanın resminin URL'si (Placeholder olarak kullanılır)
   - `imageAiHint`: (String) Odanın resmi için yapay zeka ipucu (Placeholder ile kullanılır)
-  - `participantCount`: (Number) Mevcut katılımcı sayısı (Başlangıç: 0)
-  - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı (Varsayılan: 7)
+  - `participantCount`: (Number) Metin sohbetindeki mevcut katılımcı sayısı (Başlangıç: 0)
+  - `voiceParticipantCount`: (Number) Sesli sohbetteki mevcut katılımcı sayısı (Başlangıç: 0)
+  - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı (Varsayılan: 7, hem metin hem sesli sohbet için geçerli)
   - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir.
   - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
   - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
@@ -47,9 +48,19 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı)
-  - `participants`: Odadaki aktif katılımcıları (metin sohbeti) saklar.
+  - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
+  - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar.
+    - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
+    - **Alanlar:**
+      - `uid`: (String) Kullanıcının UID'si
+      - `displayName`: (String) Kullanıcının görünen adı
+      - `photoURL`: (String, nullable) Kullanıcının avatar URL'si
+      - `joinedAt`: (Timestamp) Sesli sohbete katıldığı zaman
+      - `isMuted`: (Boolean) Kullanıcının kendi mikrofonunu kapatıp kapatmadığı (Varsayılan: `false`)
+      - `isMutedByAdmin`: (Boolean) Oda yöneticisi tarafından susturulup susturulmadığı (Varsayılan: `false`)
+      - `isSpeaking`: (Boolean) Kullanıcının o anda konuşup konuşmadığı (Prototipte simüle edilebilir, Varsayılan: `false`)
 - **Gerekli İndeksler:**
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
@@ -63,6 +74,13 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Tüm Odaları Oluşturulma Tarihine Göre Listeleme (Admin Paneli):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `createdAt` (Azalan)
+  - **Sohbet Odası İçindeki Metin Sohbeti Katılımcılarını Sıralama:**
+    - Koleksiyon Grubu: `participants`
+    - Alanlar: `joinedAt` (Artan)
+  - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını Sıralama:**
+    - Koleksiyon Grubu: `voiceParticipants`
+    - Alanlar: `joinedAt` (Artan)
+
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.

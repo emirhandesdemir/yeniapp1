@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX } from "lucide-react"; // Mic, MicOff, UserCog, VolumeX eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -45,7 +45,7 @@ import {
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import Image from 'next/image';
 import ChatMessageItem from '@/components/chat/ChatMessageItem';
-
+import VoiceParticipantGrid from '@/components/chat/VoiceParticipantGrid'; // Yeni import
 
 interface Message {
   id: string;
@@ -64,20 +64,31 @@ interface ChatRoomDetails {
   name: string;
   description?: string;
   creatorId: string;
-  participantCount?: number;
-  maxParticipants: number;
+  participantCount?: number; // text chat participant count
+  maxParticipants: number; // General room limit, also used for voice
   expiresAt?: Timestamp;
   currentGameQuestionId?: string | null;
   nextGameQuestionTimestamp?: Timestamp | null;
   gameInitialized?: boolean;
+  voiceParticipantCount?: number; // voice chat participant count
 }
 
-export interface ActiveParticipant {
+export interface ActiveTextParticipant { // Renamed from ActiveParticipant
   id: string;
   displayName: string | null;
   photoURL: string | null;
   joinedAt?: Timestamp;
   isTyping?: boolean;
+}
+
+export interface ActiveVoiceParticipantData { // New interface for voice
+  id: string; // uid
+  displayName: string | null;
+  photoURL: string | null;
+  joinedAt?: Timestamp;
+  isMuted?: boolean; // Self-muted
+  isMutedByAdmin?: boolean; // Admin-muted
+  isSpeaking?: boolean; // Speaking indicator (simulated)
 }
 
 interface GameSettings {
@@ -110,6 +121,8 @@ const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
 
+const MAX_VOICE_PARTICIPANTS = 7; // Matches room's maxParticipants
+
 export default function ChatRoomPage() {
   const params = useParams();
   const router = useRouter();
@@ -131,7 +144,12 @@ export default function ChatRoomPage() {
   const [friendshipStatus, setFriendshipStatus] = useState<"friends" | "request_sent" | "request_received" | "none">("none");
   const [relevantFriendRequest, setRelevantFriendRequest] = useState<FriendRequest | null>(null);
 
-  const [activeParticipants, setActiveParticipants] = useState<ActiveParticipant[]>([]);
+  const [activeTextParticipants, setActiveTextParticipants] = useState<ActiveTextParticipant[]>([]); // Renamed
+  const [activeVoiceParticipants, setActiveVoiceParticipants] = useState<ActiveVoiceParticipantData[]>([]); // New state for voice
+  const [isCurrentUserInVoiceChat, setIsCurrentUserInVoiceChat] = useState(false); // New state
+  const [isProcessingVoiceJoinLeave, setIsProcessingVoiceJoinLeave] = useState(false); // New state
+  const [selfMuted, setSelfMuted] = useState(false); // New state for self mute in voice
+
   const [isRoomFullError, setIsRoomFullError] = useState(false);
   const [isProcessingJoinLeave, setIsProcessingJoinLeave] = useState(false);
   
@@ -405,8 +423,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
         const data = docSnap.data();
         const fetchedRoomDetails: ChatRoomDetails = {
           id: docSnap.id, name: data.name, description: data.description, creatorId: data.creatorId,
-          participantCount: data.participantCount || 0, maxParticipants: data.maxParticipants || 7, expiresAt: data.expiresAt,
+          participantCount: data.participantCount || 0, maxParticipants: data.maxParticipants || MAX_VOICE_PARTICIPANTS, // Use constant
+          expiresAt: data.expiresAt,
           currentGameQuestionId: data.currentGameQuestionId, nextGameQuestionTimestamp: data.nextGameQuestionTimestamp, gameInitialized: data.gameInitialized,
+          voiceParticipantCount: data.voiceParticipantCount || 0,
         };
         setRoomDetails(fetchedRoomDetails);
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
@@ -429,19 +449,19 @@ const attemptToAskNewQuestion = useCallback(async () => {
       handleJoinRoom();
     }
 
-    const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`), orderBy("joinedAt", "asc"));
+    const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`), orderBy("joinedAt", "asc")); // Text chat participants
     const unsubscribeParticipants = onSnapshot(participantsQuery, (snapshot) => {
-      const fetchedParticipants: ActiveParticipant[] = []; 
+      const fetchedParticipants: ActiveTextParticipant[] = []; 
       let currentUserIsFoundInSnapshot = false;
       snapshot.forEach((doc) => {
         const participantData = doc.data();
         fetchedParticipants.push({
             id: doc.id, displayName: participantData.displayName, photoURL: participantData.photoURL,
             joinedAt: participantData.joinedAt, isTyping: participantData.isTyping,
-        } as ActiveParticipant);
+        } as ActiveTextParticipant);
         if (doc.id === currentUser.uid) currentUserIsFoundInSnapshot = true;
       });
-      setActiveParticipants(fetchedParticipants);
+      setActiveTextParticipants(fetchedParticipants);
 
       if (isCurrentUserParticipantRef.current !== currentUserIsFoundInSnapshot) { 
         if (isCurrentUserParticipantRef.current && !currentUserIsFoundInSnapshot && !isProcessingJoinLeave) {
@@ -452,6 +472,30 @@ const attemptToAskNewQuestion = useCallback(async () => {
     });
     return () => unsubscribeParticipants();
   }, [roomId, currentUser, userData, roomDetails, handleJoinRoom, isProcessingJoinLeave, isRoomFullError, toast]);
+
+
+  // Fetch Voice Participants
+  useEffect(() => {
+    if (!roomId) return;
+    const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`), orderBy("joinedAt", "asc"));
+    const unsubscribeVoice = onSnapshot(voiceParticipantsQuery, (snapshot) => {
+      const fetchedVoiceParticipants: ActiveVoiceParticipantData[] = [];
+      let currentUserInVoice = false;
+      snapshot.forEach((doc) => {
+        fetchedVoiceParticipants.push({ id: doc.id, ...doc.data() } as ActiveVoiceParticipantData);
+        if (doc.id === currentUser?.uid) {
+          currentUserInVoice = true;
+          setSelfMuted(doc.data().isMuted || false);
+        }
+      });
+      setActiveVoiceParticipants(fetchedVoiceParticipants);
+      setIsCurrentUserInVoiceChat(currentUserInVoice);
+    }, (error) => {
+      console.error("Error fetching voice participants:", error);
+      toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" });
+    });
+    return () => unsubscribeVoice();
+  }, [roomId, currentUser?.uid, toast]);
 
 
   useEffect(() => {
@@ -480,6 +524,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
   useEffect(() => {
     const handleBeforeUnloadInternal = () => {
         handleLeaveRoom(true); 
+        if (isCurrentUserInVoiceChat) handleLeaveVoiceChat(true); // Leave voice on unload
     };
     window.addEventListener('beforeunload', handleBeforeUnloadInternal);
 
@@ -490,12 +535,13 @@ const attemptToAskNewQuestion = useCallback(async () => {
     return () => {
         window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
         handleLeaveRoom(true); 
+        if (isCurrentUserInVoiceChat) handleLeaveVoiceChat(true); // Leave voice on unload
         
         if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
         if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
         if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
     };
-  }, [handleLeaveRoom]); 
+  }, [handleLeaveRoom, isCurrentUserInVoiceChat]); // handleLeaveVoiceChat dependency eklendi
 
 
   const scrollToBottom = () => {
@@ -710,6 +756,108 @@ const attemptToAskNewQuestion = useCallback(async () => {
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
 
 
+  // Voice Chat Functions
+  const handleJoinVoiceChat = async () => {
+    if (!currentUser || !userData || !roomId || !roomDetails || isCurrentUserInVoiceChat) return;
+    if ((roomDetails.voiceParticipantCount ?? 0) >= (roomDetails.maxParticipants ?? MAX_VOICE_PARTICIPANTS)) {
+        toast({ title: "Sesli Sohbet Dolu", description: "Bu odadaki sesli sohbet maksimum katılımcı sayısına ulaşmış.", variant: "destructive" });
+        return;
+    }
+    setIsProcessingVoiceJoinLeave(true);
+    try {
+        const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+        await setDoc(voiceParticipantRef, {
+            uid: currentUser.uid,
+            displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
+            photoURL: userData.photoURL || currentUser.photoURL || null,
+            joinedAt: serverTimestamp(),
+            isMuted: false,
+            isMutedByAdmin: false,
+            isSpeaking: false,
+        });
+        const roomRef = doc(db, "chatRooms", roomId);
+        await updateDoc(roomRef, { voiceParticipantCount: increment(1) });
+        setIsCurrentUserInVoiceChat(true);
+        setSelfMuted(false);
+        toast({ title: "Sesli Sohbete Katıldın!" });
+    } catch (error) {
+        console.error("Error joining voice chat:", error);
+        toast({ title: "Hata", description: "Sesli sohbete katılırken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+        setIsProcessingVoiceJoinLeave(false);
+    }
+  };
+
+  const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
+    if (!currentUser || !roomId || !isCurrentUserInVoiceChat) return Promise.resolve();
+    setIsProcessingVoiceJoinLeave(true);
+    try {
+        const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+        const roomRef = doc(db, "chatRooms", roomId);
+        const batch = writeBatch(db);
+        batch.delete(voiceParticipantRef);
+        batch.update(roomRef, { voiceParticipantCount: increment(-1) });
+        await batch.commit();
+        setIsCurrentUserInVoiceChat(false);
+        if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" });
+    } catch (error) {
+        console.error("Error leaving voice chat:", error);
+        if (!isPageUnload) toast({ title: "Hata", description: "Sesli sohbetten ayrılırken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+        if (!isPageUnload) setIsProcessingVoiceJoinLeave(false);
+    }
+    return Promise.resolve();
+  }, [currentUser, roomId, isCurrentUserInVoiceChat, toast]);
+
+  const toggleSelfMute = async () => {
+    if (!currentUser || !roomId || !isCurrentUserInVoiceChat) return;
+    const newMuteState = !selfMuted;
+    try {
+        const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+        await updateDoc(voiceParticipantRef, { isMuted: newMuteState });
+        setSelfMuted(newMuteState);
+    } catch (error) {
+        console.error("Error toggling self mute:", error);
+        toast({ title: "Hata", description: "Mikrofon durumu güncellenirken bir sorun oluştu.", variant: "destructive" });
+    }
+  };
+
+  const handleAdminKickFromVoice = async (targetUserId: string) => {
+    if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
+    try {
+        const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
+        const roomRef = doc(db, "chatRooms", roomId);
+        const batch = writeBatch(db);
+        batch.delete(voiceParticipantRef);
+        batch.update(roomRef, { voiceParticipantCount: increment(-1) });
+        await batch.commit();
+        toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." });
+    } catch (error) {
+        console.error("Error kicking user from voice:", error);
+        toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" });
+    }
+  };
+  
+  const handleAdminToggleMuteUserVoice = async (targetUserId: string, currentMuteState?: boolean) => {
+    if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
+    try {
+        const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
+        await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState });
+        toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` });
+    } catch (error) {
+        console.error("Error toggling user mute by admin:", error);
+        toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" });
+    }
+  };
+
+  const handleVoiceParticipantSlotClick = (participantId: string | null) => {
+    if (participantId && participantId !== currentUser?.uid) {
+      onOpenUserInfoPopover(participantId);
+    }
+    // Empty slot click can be handled here in future for inviting
+  };
+
+
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current)) { 
     return (
       <div className="flex flex-1 items-center justify-center h-screen">
@@ -766,15 +914,15 @@ const attemptToAskNewQuestion = useCallback(async () => {
         <div className="flex items-center gap-1 sm:gap-2">
             <Popover>
                 <PopoverTrigger asChild>
-                    <Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5"> <UsersRound className="h-4 w-4" /> <span className="text-xs">{activeParticipants.length}/{roomDetails.maxParticipants}</span> </Button>
+                    <Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5"> <UsersRound className="h-4 w-4" /> <span className="text-xs">{activeTextParticipants.length}/{roomDetails.maxParticipants}</span> </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-64 p-0">
-                    <div className="p-2 border-b"><h3 className="text-xs font-medium text-center text-muted-foreground"> Aktif Katılımcılar ({activeParticipants.length}/{roomDetails.maxParticipants}) </h3></div>
+                    <div className="p-2 border-b"><h3 className="text-xs font-medium text-center text-muted-foreground"> Metin Sohbeti Katılımcıları ({activeTextParticipants.length}/{roomDetails.maxParticipants}) </h3></div>
                     <ScrollArea className="max-h-60">
-                        {activeParticipants.length === 0 && !isProcessingJoinLeave && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" /> Odada kimse yok. </div>)}
-                        {isProcessingJoinLeave && activeParticipants.length === 0 && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" /> Yükleniyor... </div>)}
+                        {activeTextParticipants.length === 0 && !isProcessingJoinLeave && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" /> Odada kimse yok. </div>)}
+                        {isProcessingJoinLeave && activeTextParticipants.length === 0 && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" /> Yükleniyor... </div>)}
                         <ul className="divide-y divide-border">
-                            {activeParticipants.map(participant => (
+                            {activeTextParticipants.map(participant => (
                             <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
                                 <Link href={`/profile/${participant.id}`} className="flex-shrink-0">
                                     <Avatar className="h-7 w-7">
@@ -802,12 +950,12 @@ const attemptToAskNewQuestion = useCallback(async () => {
             {currentUser && roomDetails.creatorId === currentUser.uid && (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
-                            <>
-                            <MoreVertical className="h-5 w-5" />
-                            <span className="sr-only">Oda Seçenekleri</span>
-                            </>
-                        </Button>
+                      <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                        <>
+                          <MoreVertical className="h-5 w-5" />
+                          <span className="sr-only">Oda Seçenekleri</span>
+                        </>
+                      </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                         {!isRoomExpired && roomDetails.expiresAt && (
@@ -822,6 +970,46 @@ const attemptToAskNewQuestion = useCallback(async () => {
             )}
         </div>
       </header>
+
+      {/* Voice Chat Section */}
+      <div className="p-3 border-b bg-background/70 backdrop-blur-sm">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3>
+          {isCurrentUserInVoiceChat ? (
+            <div className="flex items-center gap-2">
+                <Button
+                    variant={selfMuted ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={toggleSelfMute}
+                    className="h-8 px-2.5"
+                    disabled={isProcessingVoiceJoinLeave}
+                    title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}
+                >
+                    {selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">
+                    {isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl
+                </Button>
+            </div>
+          ) : (
+            <Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">
+               {isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+               <Mic className="mr-1.5 h-4 w-4"/> Katıl
+            </Button>
+          )}
+        </div>
+        <VoiceParticipantGrid
+          participants={activeVoiceParticipants}
+          currentUserUid={currentUser?.uid}
+          isCurrentUserRoomCreator={isCurrentUserRoomCreator}
+          maxSlots={roomDetails.maxParticipants}
+          onAdminKickUser={handleAdminKickFromVoice}
+          onAdminToggleMuteUser={handleAdminToggleMuteUserVoice}
+          getAvatarFallbackText={getAvatarFallbackText}
+          onSlotClick={handleVoiceParticipantSlotClick}
+        />
+      </div>
+
 
     <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
