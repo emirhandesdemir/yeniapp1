@@ -16,7 +16,7 @@ import {
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { useRouter } from 'next/navigation';
-import { Loader2, Globe } from 'lucide-react';
+import { Flame } from 'lucide-react'; // Globe yerine Flame import edildi
 import { useToast } from '@/hooks/use-toast';
 
 const INITIAL_DIAMONDS = 10;
@@ -501,14 +501,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   if (loading || (currentUser && isUserDataLoading)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
-        <div className="mb-6">
-          <Globe className="h-16 w-16 text-primary animate-pulse mx-auto" />
+        <div className="mb-4">
+          <Flame className="h-20 w-20 text-primary animate-pulse mx-auto" />
         </div>
-        <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
-          Sohbet Küresi'ne Hoş Geldiniz!
+        <h1 className="text-4xl font-headline font-bold text-primary mb-2">
+          Sohbet Küresi
         </h1>
-        <p className="text-lg text-muted-foreground max-w-md">
-          Harika bir sohbet deneyimi için her şeyi hazırlıyoruz. Lütfen biraz bekleyin...
+        <p className="text-xl text-muted-foreground">
+          Hazırlanıyor...
         </p>
       </div>
     );
@@ -544,7 +544,3 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
-
-    
-
-    
