@@ -26,7 +26,7 @@ const steps: OnboardingStep[] = [
   {
     icon: <MessageSquare className="h-12 w-12 sm:h-16 sm:w-16" />,
     title: "Sohbet Odalarını Keşfet",
-    description: "Ana sayfadan veya 'Sohbet' sekmesinden aktif sohbet odalarına göz atabilir, ilgi alanlarına uygun odalara katılabilir veya kendi odanı oluşturabilirsin.",
+    description: "Ana sayfadan veya 'Odalar' sekmesinden aktif sohbet odalarına göz atabilir, ilgi alanlarına uygun odalara katılabilir veya kendi odanı oluşturabilirsin.",
     bgColorClass: "bg-gradient-to-br from-blue-500 to-cyan-400",
     textColorClass: "text-white",
   },

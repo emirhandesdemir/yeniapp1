@@ -59,7 +59,7 @@ interface BottomNavItemType {
 
 const bottomNavItems: BottomNavItemType[] = [
   { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Rss },
-  { href: '/chat', label: 'Odalar', icon: MessageSquare, activeIcon: MessageSquare }, // Etiket "Odalar" olarak güncellendi
+  { href: '/chat', label: 'Odalar', icon: MessageSquare, activeIcon: MessageSquare },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
 
