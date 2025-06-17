@@ -3,11 +3,11 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass } from "lucide-react";
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, Mic } from "lucide-react"; // Mic eklendi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore"; // limit ve getDocs eklendi
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -27,6 +27,13 @@ import { addMinutes, isPast, addSeconds } from 'date-fns';
 import { Badge } from "@/components/ui/badge";
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Avatar importları eklendi
+
+interface ChatRoomVoiceParticipantPreview {
+  uid: string;
+  photoURL: string | null;
+  displayName: string | null;
+}
 
 interface ChatRoom {
   id: string;
@@ -38,11 +45,13 @@ interface ChatRoom {
   expiresAt: Timestamp;
   participantCount?: number;
   maxParticipants: number;
+  voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[]; // Yeni alan
 }
 
 const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
+const MAX_VOICE_PREVIEWS_ON_CARD = 4; // Kartta gösterilecek maksimum avatar sayısı
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
 const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1';
@@ -53,7 +62,7 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     height: 'auto',
-    marginBottom: '1.5rem', // Corresponds to space-y-6
+    marginBottom: '1.5rem', 
     transition: {
       type: "spring",
       stiffness: 100,
@@ -80,7 +89,7 @@ export default function ChatRoomsPage() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
-  const [now, setNow] = useState(new Date()); // For client-side expiry display updates
+  const [now, setNow] = useState(new Date()); 
 
   const [isRoomsInfoCardVisible, setIsRoomsInfoCardVisible] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -91,7 +100,7 @@ export default function ChatRoomsPage() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date()); // Update 'now' state every minute for card expiry re-render
+      setNow(new Date()); 
     }, 60000);
     return () => clearInterval(timer);
   }, []);
@@ -118,24 +127,43 @@ export default function ChatRoomsPage() {
     const currentTime = Timestamp.now();
     const q = query(
       collection(db, "chatRooms"),
-      where("expiresAt", ">", currentTime),      // Fetch only active rooms
-      orderBy("expiresAt", "asc"),             // Rooms ending sooner first (can be changed)
-      orderBy("participantCount", "desc"),   // Then by most participants
-      orderBy("createdAt", "desc")           // Then by newest
+      where("expiresAt", ">", currentTime),      
+      orderBy("expiresAt", "asc"),             
+      orderBy("participantCount", "desc"),   
+      orderBy("createdAt", "desc")           
     );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const rooms: ChatRoom[] = [];
-      querySnapshot.forEach((doc) => {
-        const roomData = doc.data() as Omit<ChatRoom, 'id'>;
-        // Double check expiry client-side, though query should handle it
+    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+      const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
+        const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
-            rooms.push({ id: doc.id, ...roomData });
+          
+          // Fetch voice participant previews
+          let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
+          try {
+            const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
+            const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
+            const voiceSnapshot = await getDocs(voiceQuery);
+            voiceSnapshot.forEach(vpDoc => {
+              const vpData = vpDoc.data();
+              voicePreviews.push({
+                uid: vpDoc.id,
+                photoURL: vpData.photoURL || null,
+                displayName: vpData.displayName || null,
+              });
+            });
+          } catch (error) {
+            console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
+          }
+
+          return { id: docSnapshot.id, ...roomData, voiceParticipantPreviews: voicePreviews } as ChatRoom;
         }
+        return null;
       });
-      // Re-sort client side to ensure participantCount and createdAt take precedence
-      // after filtering by expiresAt (Firestore's multi-field ordering has limitations)
-      const sortedRooms = rooms.sort((a,b) => {
+
+      const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
+      
+      const sortedRooms = resolvedRooms.sort((a,b) => {
         const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
         if (participantDiff !== 0) return participantDiff;
         return b.createdAt.toMillis() - a.createdAt.toMillis();
@@ -213,6 +241,7 @@ export default function ChatRoomsPage() {
       image: imageUrl,
       imageAiHint: imageHint,
       participantCount: 0,
+      voiceParticipantCount: 0, // Sesli sohbet için başlangıç
       maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
     };
 
@@ -220,10 +249,12 @@ export default function ChatRoomsPage() {
       roomDataToCreate.gameInitialized = true;
       roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameConfigData.questionIntervalSeconds));
       roomDataToCreate.currentGameQuestionId = null;
+      roomDataToCreate.currentGameAnswerDeadline = null;
     } else {
       roomDataToCreate.gameInitialized = false;
       roomDataToCreate.nextGameQuestionTimestamp = null;
       roomDataToCreate.currentGameQuestionId = null;
+      roomDataToCreate.currentGameAnswerDeadline = null;
     }
 
     try {
@@ -284,14 +315,13 @@ export default function ChatRoomsPage() {
   const getPreciseCardExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
     if (!expiresAt) return "Süre bilgisi yok";
     const expiryDate = expiresAt.toDate();
-    // 'now' state is updated every minute, so this will re-render accordingly
     if (isPast(expiryDate)) {
       return "Süresi Doldu";
     }
 
     const diffSecondsTotal = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
 
-    if (diffSecondsTotal < 0) return "Süresi Doldu"; // Should be caught by isPast
+    if (diffSecondsTotal < 0) return "Süresi Doldu"; 
 
     const days = Math.floor(diffSecondsTotal / 86400);
     const hours = Math.floor((diffSecondsTotal % 86400) / 3600);
@@ -307,6 +337,11 @@ export default function ChatRoomsPage() {
       return `Kalan: ${minutes} dk`;
     }
     return `Kalan: <1 dk`;
+  };
+
+  const getAvatarFallbackText = (name?: string | null) => {
+    if (name) return name.substring(0, 2).toUpperCase();
+    return "PN";
   };
 
 
@@ -537,7 +572,24 @@ export default function ChatRoomsPage() {
                     <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground/70 truncate">
+                 {/* Sesli sohbet katılımcı önizlemeleri */}
+                {room.voiceParticipantPreviews && room.voiceParticipantPreviews.length > 0 && (
+                  <div className="mt-2.5 pt-2.5 border-t border-border/50">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                        <Mic className="h-3.5 w-3.5 text-green-500"/>
+                        <span className="text-xs font-medium text-muted-foreground">Sesli Sohbette:</span>
+                    </div>
+                    <div className="flex -space-x-2 overflow-hidden">
+                      {room.voiceParticipantPreviews.map(vp => (
+                        <Avatar key={vp.uid} className="inline-block h-6 w-6 rounded-full ring-2 ring-background" title={vp.displayName || 'Katılımcı'}>
+                          <AvatarImage src={vp.photoURL || `https://placehold.co/24x24.png`} data-ai-hint="voice participant preview" />
+                          <AvatarFallback>{getAvatarFallbackText(vp.displayName)}</AvatarFallback>
+                        </Avatar>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground/70 truncate mt-2.5">
                   Oluşturan: <span className="font-medium text-muted-foreground/90">{room.creatorName}</span>
                 </p>
               </CardContent>
@@ -560,4 +612,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-

@@ -86,7 +86,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Sohbet Odası İçindeki Metin Sohbeti Katılımcılarını Sıralama:**
     - Koleksiyon Grubu: `participants`
     - Alanlar: `joinedAt` (Artan)
-  - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını Sıralama:**
+  - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını ve Karttaki Önizlemeleri Sıralama:**
     - Koleksiyon Grubu: `voiceParticipants`
     - Alanlar: `joinedAt` (Artan)
   - **WebRTC Sinyallerini Dinleme (`src/app/(main)/chat/[roomId]/page.tsx`):**
@@ -207,5 +207,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-    
