@@ -16,7 +16,8 @@ import {
   Flame,
   ShoppingBag,
   UserCircle,
-  Palette, // Palette ikonu burada kalabilir, profil sayfasından yönetilecek
+  Palette, 
+  Rss, // Rss ikonu eklendi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,7 +44,7 @@ import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification } from '@/contexts/InAppNotificationContext';
 import { generateDmChatId } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion'; // Eklendi
+import { motion, AnimatePresence } from 'framer-motion'; 
 
 interface FriendRequestForPopover {
   id: string;
@@ -63,8 +64,8 @@ interface BottomNavItemType {
 
 const bottomNavItems: BottomNavItemType[] = [
   { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
+  { href: '/feed', label: 'Akış', icon: Rss, activeIcon: Rss }, // Akış eklendi
   { href: '/chat', label: 'Sohbet', icon: MessageSquare, activeIcon: MessageSquare },
-  { href: '/store', label: 'Mağaza', icon: ShoppingBag, activeIcon: ShoppingBag },
   { href: '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: Users },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
@@ -85,11 +86,10 @@ interface LastShownNotification {
     [chatId: string]: Timestamp;
 }
 
-// Sayfa geçiş animasyonları için variant'lar
 const pageVariants = {
   initial: {
     opacity: 0,
-    y: 8, // Hafifçe aşağıdan başla
+    y: 8, 
   },
   in: {
     opacity: 1,
@@ -97,14 +97,14 @@ const pageVariants = {
   },
   out: {
     opacity: 0,
-    y: -8, // Hafifçe yukarıya doğru çık
+    y: -8, 
   },
 };
 
 const pageTransition = {
-  type: "tween", // Daha yumuşak bir geçiş için 'tween'
-  ease: "anticipate", // Başlangıç ve bitişte hafif bir yaylanma
-  duration: 0.35, // Süreyi biraz artırdık
+  type: "tween", 
+  ease: "anticipate", 
+  duration: 0.35, 
 };
 
 
@@ -444,7 +444,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <AnimatePresence mode="wait">
           <motion.main
             key={pathname}
-            className={cn(mainContentClasses, "flex flex-col")} // flex-col eklendi
+            className={cn(mainContentClasses, "flex flex-col")} 
             variants={pageVariants}
             initial="initial"
             animate="in"
@@ -465,14 +465,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
 
-      {!isChatPage && isClient && ( // isClient kontrolü eklendi
+      {!isChatPage && isClient && ( 
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
           {bottomNavItems.map((item) => (
-            <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/" && pathname === "/")} />
+            <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/feed" && pathname === "/feed") || (item.href === "/" && pathname === "/")} />
           ))}
         </nav>
       )}
     </div>
   );
 }
-

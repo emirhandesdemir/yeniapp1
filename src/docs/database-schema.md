@@ -91,6 +91,23 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
     - İndeks 1: `status` (Artan), `fromUserId` (Artan), `toUserId` (Artan)
     - İndeks 2: `status` (Artan), `toUserId` (Artan), `fromUserId` (Artan)
 
+## `posts`
+Kullanıcıların paylaştığı gönderileri saklar.
+- **Yol:** `/posts/{postId}`
+- **Alanlar:**
+  - `userId`: (String) Gönderiyi oluşturan kullanıcının UID'si
+  - `username`: (String) Gönderiyi oluşturan kullanıcının görünen adı
+  - `userAvatar`: (String, nullable) Gönderiyi oluşturan kullanıcının avatar URL'si
+  - `content`: (String) Gönderinin metin içeriği (Max 280 karakter)
+  - `createdAt`: (Timestamp) Gönderinin oluşturulduğu zaman
+  - `likeCount`: (Number) Beğeni sayısı (Varsayılan: 0)
+  - `commentCount`: (Number) Yorum sayısı (Varsayılan: 0) - Gelecek özellik
+  - `likedBy`: (Array<String>) Gönderiyi beğenen kullanıcıların UID listesi
+- **Gerekli İndeksler:**
+  - Akış sayfasında gönderileri sıralamak için (`src/app/(main)/feed/page.tsx` veya `src/components/feed/FeedList.tsx`):
+    - Koleksiyon: `posts`
+    - Alanlar: `createdAt` (Azalan)
+
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
 - **Yol:** `/appSettings/gameConfig`
@@ -99,4 +116,3 @@ Genel uygulama ayarlarını saklar.
   - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-```
