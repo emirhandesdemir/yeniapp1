@@ -14,6 +14,7 @@ import {
   UserRound,
   Flame,
   Rss,
+  // Additional icons for bottom nav or other features
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -40,6 +41,7 @@ import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
 
 interface FriendRequestForPopover {
   id: string;
@@ -378,6 +380,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             <Popover>
               <PopoverTrigger asChild>
+                 {/* Bu buton, "React.Children.only" hatasının kaynağı olabilecek orijinal basit yapıya geri döndürüldü. */}
                 <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
                   <Bell className="h-5 w-5" />
                   {incomingRequests.length > 0 && (
@@ -474,3 +477,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+
+    

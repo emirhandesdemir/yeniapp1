@@ -165,3 +165,6 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+
+    
