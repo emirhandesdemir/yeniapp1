@@ -49,10 +49,10 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Gerekli İndeksler:**
   - Ana sayfadaki akışta aktif odaları listelemek için (`src/app/page.tsx`):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan), `__name__` (Artan) - *(Firebase konsol linki bazen `__name__` içerir)*
+    - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan), `__name__` (Artan)
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan) - *(Firebase konsol linki bazen `__name__` içerir)*
+    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -112,6 +112,15 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - `likedBy`: (Array<String>) Gönderiyi beğenen kullanıcıların UID listesi
   - `sharedRoomId`: (String, nullable) Paylaşılan sohbet odasının ID'si.
   - `sharedRoomName`: (String, nullable) Paylaşılan sohbet odasının adı.
+  - `isRepost`: (Boolean, isteğe bağlı) Bu gönderinin bir yeniden paylaşım olup olmadığını belirtir.
+  - `originalPostId`: (String, isteğe bağlı) Yeniden paylaşılan orijinal gönderinin ID'si.
+  - `originalPostUserId`: (String, isteğe bağlı) Orijinal gönderiyi oluşturan kullanıcının ID'si.
+  - `originalPostUsername`: (String, isteğe bağlı, nullable) Orijinal gönderiyi oluşturan kullanıcının adı.
+  - `originalPostUserAvatar`: (String, isteğe bağlı, nullable) Orijinal gönderiyi oluşturan kullanıcının avatarı.
+  - `originalPostContent`: (String, isteğe bağlı) Orijinal gönderinin içeriği.
+  - `originalPostCreatedAt`: (Timestamp, isteğe bağlı) Orijinal gönderinin oluşturulma zamanı.
+  - `originalPostSharedRoomId`: (String, isteğe bağlı, nullable) Orijinal gönderi bir oda paylaştıysa.
+  - `originalPostSharedRoomName`: (String, isteğe bağlı, nullable) Orijinal gönderinin paylaştığı odanın adı.
 - **Alt Koleksiyonlar:**
   - `comments`: Gönderiye yapılan yorumları saklar.
     - **Yol:** `/posts/{postId}/comments/{commentId}`

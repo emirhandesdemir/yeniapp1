@@ -3,10 +3,10 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
-import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment } from "firebase/firestore";
+import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn } from "lucide-react";
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon } from "lucide-react"; // LinkIcon eklendi
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -34,6 +34,17 @@ export interface Post {
   likedBy: string[];
   sharedRoomId?: string;
   sharedRoomName?: string;
+
+  // Repost specific fields
+  isRepost?: boolean;
+  originalPostId?: string;
+  originalPostUserId?: string;
+  originalPostUsername?: string | null;
+  originalPostUserAvatar?: string | null;
+  originalPostContent?: string;
+  originalPostCreatedAt?: Timestamp;
+  originalPostSharedRoomId?: string;
+  originalPostSharedRoomName?: string;
 }
 
 interface PostCardProps {
@@ -44,6 +55,7 @@ export default function PostCard({ post }: PostCardProps) {
   const { currentUser, userData } = useAuth();
   const { toast } = useToast();
   const [isLiking, setIsLiking] = useState(false);
+  const [isReposting, setIsReposting] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<CommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
@@ -88,9 +100,12 @@ export default function PostCard({ post }: PostCardProps) {
     return "SK";
   };
 
-  const formattedDate = post.createdAt
-    ? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true, locale: tr })
+  const formattedDate = (timestamp?: Timestamp) => {
+    return timestamp
+    ? formatDistanceToNow(timestamp.toDate(), { addSuffix: true, locale: tr })
     : "Yakın zamanda";
+  }
+
 
   const isOwnPost = currentUser?.uid === post.userId;
   const hasLiked = currentUser ? post.likedBy.includes(currentUser.uid) : false;
@@ -100,6 +115,8 @@ export default function PostCard({ post }: PostCardProps) {
     if (!confirm("Bu gönderiyi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.")) return;
 
     try {
+      // TODO: If this is an original post that has been reposted, consider how to handle those reposts.
+      // For now, deleting a post does not delete its reposts (they will show "original content unavailable").
       await deleteDoc(doc(db, "posts", post.id));
       toast({ title: "Başarılı", description: "Gönderi silindi." });
     } catch (error) {
@@ -138,6 +155,62 @@ export default function PostCard({ post }: PostCardProps) {
     }
   };
 
+  const handleRepost = async () => {
+    if (!currentUser || !userData) {
+      toast({ title: "Giriş Gerekli", description: "Yeniden paylaşmak için giriş yapmalısınız.", variant: "destructive" });
+      return;
+    }
+    if (isReposting) return;
+
+    setIsReposting(true);
+
+    const postToRepost = post.isRepost ? { // If current post is a repost, use its original data
+      id: post.originalPostId,
+      userId: post.originalPostUserId,
+      username: post.originalPostUsername,
+      userAvatar: post.originalPostUserAvatar,
+      content: post.originalPostContent,
+      createdAt: post.originalPostCreatedAt,
+      sharedRoomId: post.originalPostSharedRoomId,
+      sharedRoomName: post.originalPostSharedRoomName,
+    } : post; // Otherwise, use the current post data
+
+    if (!postToRepost.id || !postToRepost.userId || !postToRepost.content) {
+        toast({ title: "Hata", description: "Yeniden paylaşılacak orijinal gönderi bilgileri eksik.", variant: "destructive" });
+        setIsReposting(false);
+        return;
+    }
+
+    try {
+      await addDoc(collection(db, "posts"), {
+        userId: currentUser.uid,
+        username: userData.displayName,
+        userAvatar: userData.photoURL,
+        createdAt: serverTimestamp(),
+        isRepost: true,
+        originalPostId: postToRepost.id,
+        originalPostUserId: postToRepost.userId,
+        originalPostUsername: postToRepost.username,
+        originalPostUserAvatar: postToRepost.userAvatar,
+        originalPostContent: postToRepost.content,
+        originalPostCreatedAt: postToRepost.createdAt,
+        originalPostSharedRoomId: postToRepost.sharedRoomId,
+        originalPostSharedRoomName: postToRepost.sharedRoomName,
+        likeCount: 0,
+        commentCount: 0,
+        likedBy: [],
+        // Reposts don't have their own content or shared room beyond the original.
+      });
+      toast({ title: "Başarılı!", description: "Gönderi yeniden paylaşıldı." });
+    } catch (error) {
+      console.error("Error reposting:", error);
+      toast({ title: "Hata", description: "Gönderi yeniden paylaşılamadı.", variant: "destructive" });
+    } finally {
+      setIsReposting(false);
+    }
+  };
+
+
   const handleCommentAdded = () => {
     setLocalCommentCount(prev => prev + 1);
   };
@@ -145,6 +218,37 @@ export default function PostCard({ post }: PostCardProps) {
   const handleCommentDeleted = () => {
     setLocalCommentCount(prev => Math.max(0, prev - 1));
   };
+
+  const renderOriginalPostContent = (originalPost: Partial<Post>) => (
+    <Card className="mt-2 mb-1 p-3 border-border/70 bg-muted/30 dark:bg-muted/20 shadow-inner">
+      <CardHeader className="flex flex-row items-start gap-2.5 p-0 pb-2">
+        <Avatar className="h-8 w-8">
+          <AvatarImage src={originalPost.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
+          <AvatarFallback>{getAvatarFallbackText(originalPost.username)}</AvatarFallback>
+        </Avatar>
+        <div className="flex-1">
+          <p className="font-semibold text-xs text-foreground/80">{originalPost.username || "Bilinmeyen Kullanıcı"}</p>
+          <p className="text-[10px] text-muted-foreground/70">{formattedDate(originalPost.createdAt)}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <p className="text-xs text-foreground/80 whitespace-pre-wrap break-words">
+          {originalPost.content}
+        </p>
+        {originalPost.sharedRoomId && originalPost.sharedRoomName && (
+          <div className="mt-2 pt-2 border-t border-border/50">
+            <Button asChild variant="outline" size="xs" className="w-full border-primary/30 text-primary/80 hover:bg-primary/10 hover:text-primary/90">
+              <Link href={`/chat/${originalPost.sharedRoomId}`}>
+                <LogIn className="mr-1.5 h-3.5 w-3.5" />
+                Katıl: {originalPost.sharedRoomName}
+              </Link>
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
 
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-200 rounded-xl">
@@ -157,7 +261,7 @@ export default function PostCard({ post }: PostCardProps) {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-semibold text-sm text-foreground">{post.username || "Bilinmeyen Kullanıcı"}</p>
-              <p className="text-xs text-muted-foreground">{formattedDate}</p>
+              <p className="text-xs text-muted-foreground">{formattedDate(post.createdAt)}</p>
             </div>
             {isOwnPost && (
               <DropdownMenu>
@@ -177,10 +281,27 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </CardHeader>
       <CardContent className="p-4 pt-1 pb-3">
-        <p className="text-sm text-foreground/90 whitespace-pre-wrap break-words">
-          {post.content}
-        </p>
-        {post.sharedRoomId && post.sharedRoomName && (
+        {post.isRepost ? (
+          <>
+            <p className="text-xs text-muted-foreground mb-1.5">
+              {post.username} yeniden paylaştı:
+            </p>
+            {renderOriginalPostContent({
+              username: post.originalPostUsername,
+              userAvatar: post.originalPostUserAvatar,
+              content: post.originalPostContent,
+              createdAt: post.originalPostCreatedAt,
+              sharedRoomId: post.originalPostSharedRoomId,
+              sharedRoomName: post.originalPostSharedRoomName,
+            })}
+          </>
+        ) : (
+          <p className="text-sm text-foreground/90 whitespace-pre-wrap break-words">
+            {post.content}
+          </p>
+        )}
+
+        {!post.isRepost && post.sharedRoomId && post.sharedRoomName && (
           <div className="mt-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
             <p className="text-xs text-primary/80 mb-1.5">
               Bu gönderide bir sohbet odası paylaşıldı:
@@ -205,8 +326,15 @@ export default function PostCard({ post }: PostCardProps) {
           <span className="text-xs">{localCommentCount}</span>
           {showComments ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
         </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-green-500 px-2" onClick={() => toast({title: "Yakında!", description:"Yeniden paylaşma özelliği yakında eklenecek."})}>
-          <Repeat className="h-4 w-4 mr-1.5" />
+        <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-muted-foreground hover:text-green-500 px-2" 
+            onClick={handleRepost} 
+            disabled={isReposting || !currentUser}
+        >
+          {isReposting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Repeat className="h-4 w-4 mr-1.5" />}
+           {/* Repost sayısını göstermiyoruz şimdilik. */}
         </Button>
         <Button variant="ghost" size="sm" className={`px-2 ${hasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'}`} onClick={handleLikePost} disabled={isLiking || !currentUser}>
           <Heart className={`h-4 w-4 mr-1.5 ${hasLiked ? 'fill-current' : ''}`} />
@@ -246,3 +374,4 @@ export default function PostCard({ post }: PostCardProps) {
     </Card>
   );
 }
+
