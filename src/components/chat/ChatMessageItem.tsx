@@ -4,7 +4,7 @@ import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2 } from "lucide-react"; // Mic ikonu kaldırıldı
+import { Loader2, UserCircle, MessageSquare, Gamepad2 } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 
@@ -18,7 +18,6 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
-  // isVoiceStatusMessage kaldırıldı
 }
 
 interface ChatMessageItemProps {
@@ -56,7 +55,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   currentUserPhotoURL,
   currentUserDisplayName,
 }) => {
-  if (msg.isGameMessage) { // Sadece isGameMessage kontrol ediliyor
+  if (msg.isGameMessage) {
     let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
 
     return (

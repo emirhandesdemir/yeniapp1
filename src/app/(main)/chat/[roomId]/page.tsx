@@ -256,7 +256,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId) {
                 attemptToAskNewQuestion();
             }
-        }, 5000);
+        }, 5000); // Check every 5 seconds if it's time for a new question
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
   }, [gameSettings, roomDetails, attemptToAskNewQuestion]); 
@@ -299,7 +299,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return Promise.resolve(); 
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     await updateUserTypingStatus(false);
-    // Sesli sohbetten ayrılma mantığı buraya eklenebilir (eğer varsa)
 
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
@@ -704,7 +703,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                     <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
-                    {isCurrentUserRoomCreator && <UsersRound className="h-4 w-4 text-yellow-500 flex-shrink-0" />} {/* Crown yerine UsersRound kullanıldı */}
+                    {isCurrentUserRoomCreator && <UsersRound className="h-4 w-4 text-yellow-500 flex-shrink-0" />}
                     {roomDetails.description && (
                         <TooltipProvider delayDuration={100}>
                         <Tooltip>
@@ -731,7 +730,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
             </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
-            {/* Sesli sohbet butonları kaldırıldı */}
             <Popover>
                 <PopoverTrigger asChild>
                     <Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5"> <UsersRound className="h-4 w-4" /> <span className="text-xs">{activeParticipants.length}/{roomDetails.maxParticipants}</span> </Button>
@@ -780,8 +778,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
         </div>
       </header>
 
-    {/* Voice Participant Grid Area kaldırıldı */}
-
     <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
             {loadingMessages && ( <div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div> )}
@@ -804,7 +800,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
               />
             ))}
-            {/* Remote audio elementleri kaldırıldı */}
         </ScrollArea>
     </div>
 
