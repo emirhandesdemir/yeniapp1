@@ -516,8 +516,9 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData || isUserLoading) return;
-    if (isSending) return; 
+    if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData || isUserLoading || isSending) return;
+    
+    setIsSending(true);
     const tempMessage = newMessage.trim();
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     updateUserTypingStatus(false);
@@ -526,22 +527,25 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (activeGameQuestion && gameSettings?.isGameEnabled) {
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) {
-            toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"}); return;
+            toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"}); 
+            setIsSending(false); 
+            return;
         }
-        setIsSending(true);
         try {
             await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST);
             toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 });
             await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true });
         } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"});
-        } finally { setIsSending(false); } return;
+        } finally { setIsSending(false); setNewMessage(""); } return;
       }
       if (tempMessage.toLowerCase().startsWith("/answer ")) {
-        setIsSending(true);
         const userAnswer = tempMessage.substring(8).trim();
         const currentRoomSnap = await getDoc(roomDocRef); const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
         if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
-          toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" }); setIsSending(false); return;
+          toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" }); 
+          setIsSending(false); 
+          setNewMessage("");
+          return;
         }
         if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
           const reward = FIXED_GAME_REWARD; await updateUserDiamonds((userData.diamonds || 0) + reward);
@@ -554,10 +558,12 @@ const attemptToAskNewQuestion = useCallback(async () => {
           addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true });
           toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
         }
-        setIsSending(false); return;
+        setIsSending(false); 
+        setNewMessage("");
+        return;
       }
     }
-    setIsSending(true);
+    
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
         text: tempMessage, senderId: currentUser.uid, senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
@@ -1054,7 +1060,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             {messages.map((msg) => (
               <ChatMessageItem
                 key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId}
-                onOpenUserInfoPopover={onOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId}
+                onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId}
                 popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus}
                 relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
                 onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction}
@@ -1071,7 +1077,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button>
+          <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button>
           <Input
             placeholder={ activeGameQuestion && gameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın..." }
             value={newMessage} onChange={handleNewMessageInputChange}
@@ -1079,7 +1085,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
             autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button>
+            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button>
             <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>
               {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span>
             </Button>
@@ -1091,3 +1097,4 @@ const attemptToAskNewQuestion = useCallback(async () => {
   );
 }
 
+    
