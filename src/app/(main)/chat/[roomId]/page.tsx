@@ -763,7 +763,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
             </Popover>
             {currentUser && roomDetails.creatorId === currentUser.uid && (
                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild> <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9"> <MoreVertical className="h-5 w-5" /> <span className="sr-only">Oda Seçenekleri</span> </Button> </DropdownMenuTrigger>
+                    <DropdownMenuTrigger asChild>
+                         <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                            <>
+                                <MoreVertical className="h-5 w-5" />
+                                <span className="sr-only">Oda Seçenekleri</span>
+                            </>
+                        </Button>
+                    </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                         {!isRoomExpired && roomDetails.expiresAt && (
                             <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>
