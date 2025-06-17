@@ -57,7 +57,7 @@ export default function RootLayout({
               appId: "fe0dd10e-cc05-4061-9f3c-2fa686d2ca20",
               safari_web_id: "web.onesignal.auto.2fe112ef-4554-4496-8fef-42f5ec2b9118",
               notifyButton: {
-                enable: true,
+                enable: false, // Changed from true to false
               },
               allowLocalhostAsSecureOrigin: true, // Geliştirme için eklendi
             });
