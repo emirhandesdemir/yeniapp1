@@ -36,10 +36,10 @@ export async function subscribeUserToPush(): Promise<string | null> {
   }
 
   try {
-    const isOptedIn = await window.OneSignal.User.PushSubscription.getOptedIn();
+    const isOptedIn = window.OneSignal.User.PushSubscription.optedIn;
     if (isOptedIn) {
       console.log('User is already subscribed to OneSignal push notifications.');
-      const playerId = window.OneSignal.User.onesignalId;
+      const playerId = window.OneSignal.User.PushSubscription.id || window.OneSignal.User.onesignalId;
       if (playerId) {
         localStorage.setItem('oneSignalPlayerId', playerId);
       }
@@ -47,16 +47,13 @@ export async function subscribeUserToPush(): Promise<string | null> {
     }
 
     // If not opted in, prompt the user.
-    // OneSignal.Slidedown.promptPush() can be used for a less intrusive prompt.
-    // For direct permission request:
     const permission = await window.OneSignal.Notifications.requestPermission();
     if (permission) { // OneSignal's requestPermission resolves to true if granted
       await window.OneSignal.User.PushSubscription.optIn();
       console.log('User subscribed to OneSignal push notifications.');
-      const playerId = window.OneSignal.User.onesignalId;
+      const playerId = window.OneSignal.User.PushSubscription.id || window.OneSignal.User.onesignalId;
       if (playerId) {
         localStorage.setItem('oneSignalPlayerId', playerId);
-        // TODO: Send playerId to your backend to associate with the user.
         console.log("OneSignal Player ID:", playerId, " (Send this to your backend)");
       }
       return playerId;
@@ -94,7 +91,7 @@ export async function isPushSubscribed(): Promise<boolean> {
     return false;
   }
   try {
-    const optedIn = await window.OneSignal.User.PushSubscription.getOptedIn();
+    const optedIn = window.OneSignal.User.PushSubscription.optedIn;
     return optedIn;
   } catch (error) {
     console.error("Error checking OneSignal subscription status:", error);
@@ -115,3 +112,4 @@ export function getNotificationPermissionStatus(): NotificationPermission | 'def
     }
     return 'default';
 }
+
