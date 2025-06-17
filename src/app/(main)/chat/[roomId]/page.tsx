@@ -377,6 +377,32 @@ const attemptToAskNewQuestion = useCallback(async () => {
     }
   }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings]);
 
+  // WebRTC Functions - handleLeaveVoiceChat needs to be defined before handleLeaveRoom
+  const handleLeaveVoiceChat = useCallback(async (isLeavingRoom = false) => {
+    setIsVoiceConnecting(true); // Use same loading state for leaving
+    Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+    peerConnectionsRef.current = {};
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    remoteStreamsRef.current = {};
+    remoteAudioRefs.current = {}; // Clear audio element refs
+
+    if (currentUser?.uid && roomId) {
+      try {
+        await deleteDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid));
+        // Optionally, delete all signaling messages sent by this user or to this user.
+        // This can be complex, consider TTL policies on Firestore for signaling messages if needed.
+      } catch (error) {
+        console.error("[WebRTC] Error removing user from voice participants:", error);
+      }
+    }
+    setIsVoiceChatActive(false);
+    setIsVoiceConnecting(false);
+    if (!isLeavingRoom) toast({ title: "Sesli Sohbetten Ayrıldınız" });
+  }, [currentUser?.uid, roomId, toast]);
+
   const handleLeaveRoom = useCallback(async (isPageUnload = false) => {
     if (!currentUser || !roomId || !isCurrentUserParticipant) return Promise.resolve();
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
@@ -530,14 +556,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
         if ((userData.diamonds ?? 0) < HINT_COST) {
             toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"}); 
             setIsSending(false); 
-            // setNewMessage(tempMessage); // Restore message if failed
+            setNewMessage(tempMessage); // Restore message if failed
             return;
         }
         try {
             await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST);
             toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 });
             await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true });
-        } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"}); // setNewMessage(tempMessage);
+        } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"}); setNewMessage(tempMessage);
         } finally { setIsSending(false); } return;
       }
       if (tempMessage.toLowerCase().startsWith("/answer ")) {
@@ -546,7 +572,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
           toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" }); 
           setIsSending(false); 
-          // setNewMessage(tempMessage);
+          setNewMessage(tempMessage);
           return;
         }
         if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
@@ -575,7 +601,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
     } catch (error) {
       console.error("Error sending message:", error); 
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      // setNewMessage(tempMessage); // Restore message on error
+      setNewMessage(tempMessage); // Restore message on error
     } finally { 
         setIsSending(false); 
     }
@@ -746,30 +772,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
     }
   }, [currentUser, roomId, userData, toast, isMuted]);
 
-  const handleLeaveVoiceChat = useCallback(async (isLeavingRoom = false) => {
-    setIsVoiceConnecting(true); // Use same loading state for leaving
-    Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
-    peerConnectionsRef.current = {};
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-    remoteStreamsRef.current = {};
-    remoteAudioRefs.current = {}; // Clear audio element refs
-
-    if (currentUser?.uid && roomId) {
-      try {
-        await deleteDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid));
-        // Optionally, delete all signaling messages sent by this user or to this user.
-        // This can be complex, consider TTL policies on Firestore for signaling messages if needed.
-      } catch (error) {
-        console.error("[WebRTC] Error removing user from voice participants:", error);
-      }
-    }
-    setIsVoiceChatActive(false);
-    setIsVoiceConnecting(false);
-    if (!isLeavingRoom) toast({ title: "Sesli Sohbetten Ayrıldınız" });
-  }, [currentUser?.uid, roomId, toast]);
 
   const handleToggleMute = () => {
     if (localStreamRef.current) {
@@ -1102,5 +1104,3 @@ const attemptToAskNewQuestion = useCallback(async () => {
     </div>
   );
 }
-
-    
