@@ -11,7 +11,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const GenerateEchoInputSchema = z.object({
+const GenerateEchoInputSchema = z.object({
   recentMessages: z
     .array(z.string())
     .min(1, {message: 'At least one message is required for context.'})
@@ -22,7 +22,7 @@ export const GenerateEchoInputSchema = z.object({
 });
 export type GenerateEchoInput = z.infer<typeof GenerateEchoInputSchema>;
 
-export const GenerateEchoOutputSchema = z.object({
+const GenerateEchoOutputSchema = z.object({
   outputContent: z
     .string()
     .describe(
@@ -126,3 +126,4 @@ const generateEchoFlow = ai.defineFlow(
     }
   }
 );
+
