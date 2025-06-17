@@ -76,10 +76,8 @@ function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: 
 }
 
 const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
+const LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY = 'lastShownDmTimestamps_v1';
 
-interface LastShownNotification {
-    [chatId: string]: Timestamp;
-}
 
 const pageVariants = {
   initial: {
@@ -117,21 +115,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
-  const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<LastShownNotification>({});
+  const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
   useEffect(() => {
-    if (isClient && currentUser && userData && !isUserDataLoading) {
+    if (isClient) {
       try {
+        // Onboarding state
         const onboardingCompleted = localStorage.getItem(ONBOARDING_STORAGE_KEY);
-        if (!onboardingCompleted) {
+        if (currentUser && userData && !isUserDataLoading && !onboardingCompleted) {
           setShowOnboarding(true);
         }
+        // DM timestamps state
+        const storedDmTimestamps = localStorage.getItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY);
+        if (storedDmTimestamps) {
+          setLastShownDmTimestamps(JSON.parse(storedDmTimestamps));
+        }
       } catch (error) {
-        console.warn("Error accessing localStorage for onboarding:", error);
+        console.warn("Error accessing localStorage:", error);
       }
     }
   }, [isClient, currentUser, userData, isUserDataLoading]);
@@ -240,7 +244,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || !isClient) return; // isClient kontrolü eklendi
 
     const dmsQuery = query(
       collection(db, "directMessages"),
@@ -254,10 +258,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 const dmId = change.doc.id;
 
                 if (dmData.lastMessageSenderId && dmData.lastMessageSenderId !== currentUser.uid && dmData.lastMessageTimestamp) {
-                    const lastMessageTime = (dmData.lastMessageTimestamp as Timestamp);
-                    const lastShownTime = lastShownDmTimestamps[dmId];
+                    const lastMessageTimeMillis = (dmData.lastMessageTimestamp as Timestamp).toMillis();
+                    const lastShownTimeMillis = lastShownDmTimestamps[dmId];
 
-                    if ((!lastShownTime || lastMessageTime.toMillis() > lastShownTime.toMillis()) && pathname !== `/dm/${dmId}`) {
+
+                    if ((!lastShownTimeMillis || lastMessageTimeMillis > lastShownTimeMillis) && pathname !== `/dm/${dmId}`) {
                         const senderUid = dmData.lastMessageSenderId;
                         let senderName = "Bir kullanıcı";
                         let senderAvatar: string | null = null;
@@ -284,7 +289,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             senderName: senderName,
                             link: `/dm/${dmId}`,
                         });
-                        setLastShownDmTimestamps(prev => ({ ...prev, [dmId]: lastMessageTime }));
+                        
+                        const newTimestamps = { ...lastShownDmTimestamps, [dmId]: lastMessageTimeMillis };
+                        setLastShownDmTimestamps(newTimestamps);
+                        try {
+                          localStorage.setItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY, JSON.stringify(newTimestamps));
+                        } catch (error) {
+                          console.warn("Error writing DM timestamps to localStorage:", error);
+                        }
                     }
                 }
             }
@@ -294,7 +306,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribeDms();
-  }, [currentUser?.uid, pathname, showInAppNotification, lastShownDmTimestamps]);
+  }, [currentUser?.uid, pathname, showInAppNotification, lastShownDmTimestamps, isClient]);
 
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -380,11 +392,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             <Popover>
               <PopoverTrigger asChild>
+                 {/* PopoverTrigger'ın doğrudan çocuğu artık bu div */}
                 <div
-                  role="button"
-                  tabIndex={0}
+                  role="button" 
+                  tabIndex={0}  
                   className={cn(
-                    buttonVariants({ variant: "ghost", size: "icon" }),
+                    buttonVariants({ variant: "ghost", size: "icon" }), 
                     "rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10 cursor-pointer flex items-center justify-center"
                   )}
                   aria-label="Arkadaşlık İstekleri"
