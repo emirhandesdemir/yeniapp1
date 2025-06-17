@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, Sparkles, Wand2, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -19,7 +19,7 @@ import {
   serverTimestamp,
   doc,
   getDoc,
-  deleteDoc, // Bu import kalabilir, doğrudan oda silme burada yok ama referans olarak durabilir
+  deleteDoc, 
   Timestamp,
   updateDoc,
   getDocs,
@@ -41,7 +41,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; // Yeni import
+import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; 
+import Image from 'next/image'; // For Next.js optimized images, though <img> might be simpler for data URIs
+
+// Import the new Genkit flow
+import { generateEcho, type GenerateEchoInput, type GenerateEchoOutput } from '@/ai/flows/generate-echo-flow';
 
 interface Message {
   id: string;
@@ -53,6 +57,9 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  isEchoMessage?: boolean; // New field for echo messages
+  echoContentType?: 'image' | 'text'; // Type of echo content
+  echoContent?: string; // Content of the echo (data URI for image, or text)
 }
 
 interface ChatRoomDetails {
@@ -66,6 +73,7 @@ interface ChatRoomDetails {
   currentGameQuestionId?: string | null;
   nextGameQuestionTimestamp?: Timestamp | null;
   gameInitialized?: boolean;
+  lastEchoTimestamp?: Timestamp | null; // For echo cooldown
 }
 
 interface ActiveParticipant {
@@ -117,6 +125,8 @@ const HARDCODED_QUESTIONS: GameQuestion[] = [
 const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
+const ECHO_COOLDOWN_SECONDS = 60; // 1 minute cooldown for echo
+const MAX_MESSAGES_FOR_ECHO_CONTEXT = 7;
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -153,6 +163,10 @@ export default function ChatRoomPage() {
   const [availableGameQuestions, setAvailableGameQuestions] = useState<GameQuestion[]>([...HARDCODED_QUESTIONS]);
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [isEchoLoading, setIsEchoLoading] = useState(false);
+  const [lastEchoTimestampState, setLastEchoTimestampState] = useState<Timestamp | null>(null);
+
 
   useEffect(() => {
     const fetchGameSettings = async () => {
@@ -236,14 +250,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
     try {
       console.log("[GameSystem] Attempting to ask a new question for room:", roomId);
       const roomDocRef = doc(db, "chatRooms", roomId);
-      const currentRoomSnap = await getDoc(roomDocRef); // Fetch fresh data
+      const currentRoomSnap = await getDoc(roomDocRef); 
       if (!currentRoomSnap.exists()) {
         console.warn("[GameSystem] Room document disappeared while trying to ask question:", roomId);
         return;
       }
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
 
-      if (currentRoomData.currentGameQuestionId) { // Re-check with fresh data
+      if (currentRoomData.currentGameQuestionId) { 
         console.log("[GameSystem] Another question became active before this attempt for room:", roomId);
         return;
       }
@@ -256,7 +270,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       const batch = writeBatch(db);
       batch.update(roomDocRef, {
         currentGameQuestionId: nextQuestion.id,
-        nextGameQuestionTimestamp: newNextGameQuestionTimestamp, // For the *next* cycle
+        nextGameQuestionTimestamp: newNextGameQuestionTimestamp, 
       });
       
       batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
@@ -277,7 +291,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
   }, [isCurrentUserParticipant, gameSettings, roomId, roomDetails, availableGameQuestions, toast]);
 
 
-  // Effect for the main game interval (checks every 5s if time for next question)
   useEffect(() => {
     if (gameQuestionIntervalTimerRef.current) {
       clearInterval(gameQuestionIntervalTimerRef.current);
@@ -289,7 +302,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         gameQuestionIntervalTimerRef.current = setInterval(() => {
             if (roomDetails.nextGameQuestionTimestamp && 
                 isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && 
-                !roomDetails.currentGameQuestionId) { // No question active, and time is past
+                !roomDetails.currentGameQuestionId) { 
                 console.log("[GameSystem] Interval: Time for next question. Current nextGameQuestionTimestamp:", roomDetails.nextGameQuestionTimestamp?.toDate());
                 attemptToAskNewQuestion();
             }
@@ -308,7 +321,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
   }, [gameSettings, isCurrentUserParticipant, roomDetails, attemptToAskNewQuestion, roomId]);
 
 
-  // Proactive check for initial question if conditions are met on load/change
   useEffect(() => {
     if (
       isCurrentUserParticipant &&
@@ -365,7 +377,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         await updateDoc(participantRef, { isTyping });
       }
     } catch (error) {
-        // console.warn("Error updating typing status (minor):", error); // Düşük öncelikli hata, loglama isteğe bağlı
+        // console.warn("Error updating typing status (minor):", error); 
     }
   }, [currentUser, roomId, isCurrentUserParticipant]);
 
@@ -410,7 +422,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
       });
       batch.update(roomRef, { participantCount: increment(1) });
 
-      // Fallback: If room wasn't initialized with game settings (e.g. admin settings not available at room creation)
       if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId) {
           console.log("[GameSystem] Initializing game settings on join for room:", roomId);
           batch.update(roomRef, {
@@ -448,7 +459,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
             const diffSeconds = Math.max(0, Math.floor((nextTime.getTime() - now.getTime()) / 1000));
             gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(diffSeconds)} sonra gelecek.`;
         } else if (typeof gameSettings.questionIntervalSeconds === 'number') {
-            // This case might be hit if room was created before gameConfig was available, and handleJoinRoom is setting it now.
             gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`;
         }
 
@@ -495,7 +505,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 isGameMessage: true,
             });
         } catch (msgError) {
-            // console.warn("Error sending leave message (minor):", msgError); // Düşük öncelikli hata
+            // console.warn("Error sending leave message (minor):", msgError); 
         }
     }
 
@@ -507,7 +517,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
       setIsCurrentUserParticipant(false);
     } catch (error) {
       console.error("Error leaving room:", error);
-      // Kullanıcıya hata göstermek isteğe bağlı, genellikle arka planda halledilir.
     }
   }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus, userData?.displayName]);
 
@@ -529,8 +538,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
           currentGameQuestionId: data.currentGameQuestionId,
           nextGameQuestionTimestamp: data.nextGameQuestionTimestamp,
           gameInitialized: data.gameInitialized,
+          lastEchoTimestamp: data.lastEchoTimestamp, // Fetch last echo timestamp
         };
         setRoomDetails(fetchedRoomDetails);
+        setLastEchoTimestampState(data.lastEchoTimestamp); // Set state for cooldown
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
         console.log("[ChatRoomPage] Room details updated:", fetchedRoomDetails);
       } else {
@@ -574,9 +585,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       if (isCurrentUserParticipant !== currentUserIsStillParticipant) {
         setIsCurrentUserParticipant(currentUserIsStillParticipant);
         if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
-          // Kullanıcı bir şekilde katılımcı listesinden çıkarıldı (örn: admin tarafından atıldı)
           toast({title: "Bilgi", description: "Odadan çıkarıldınız veya bağlantınız kesildi.", variant: "default"});
-          // Burada bir toast mesajı gösterilebilir veya /chat'e yönlendirilebilir.
         }
       }
 
@@ -601,6 +610,9 @@ const attemptToAskNewQuestion = useCallback(async () => {
           senderAvatar: data.senderAvatar,
           timestamp: data.timestamp,
           isGameMessage: data.isGameMessage || false, 
+          isEchoMessage: data.isEchoMessage || false,
+          echoContentType: data.echoContentType,
+          echoContent: data.echoContent,
         });
       });
       setMessages(fetchedMessages.map(msg => ({
@@ -759,8 +771,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
         const batch = writeBatch(db);
         batch.update(roomDocRef, { 
             currentGameQuestionId: null,
-            // Trigger next question cycle by setting nextGameQuestionTimestamp based on current time + interval
-            // This ensures the countdown for the *next* question starts immediately after a correct answer
             nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds))
         }); 
         batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
@@ -816,7 +826,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       return;
     }
     try {
-      await deleteChatRoomAndSubcollections(roomId); // Merkezi fonksiyonu kullan
+      await deleteChatRoomAndSubcollections(roomId); 
       toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` });
       router.push("/chat");
     } catch (error) {
@@ -995,8 +1005,63 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (!currentUser?.uid || !targetUserId) return;
     const dmId = generateDmChatId(currentUser.uid, targetUserId);
     router.push(`/dm/${dmId}`);
-    setPopoverOpenForUserId(null); // Close popover on navigation
+    setPopoverOpenForUserId(null); 
   };
+
+  const handleGenerateEcho = async () => {
+    if (!currentUser || !userData || !roomId || !canSendMessage) return;
+    if (isEchoLoading || (lastEchoTimestampState && Date.now() - lastEchoTimestampState.toMillis() < ECHO_COOLDOWN_SECONDS * 1000)) {
+        toast({title: "Lütfen Bekleyin", description: "Yeni bir yankı oluşturmak için biraz beklemeniz gerekiyor.", variant: "default"});
+        return;
+    }
+
+    setIsEchoLoading(true);
+    try {
+      const recentMessagesText = messages
+        .filter(msg => !msg.isGameMessage && !msg.isEchoMessage && msg.text) // Filter out system/game/echo messages
+        .slice(-MAX_MESSAGES_FOR_ECHO_CONTEXT) // Get last N messages
+        .map(msg => `${msg.senderName}: ${msg.text}`);
+
+      if (recentMessagesText.length < 1) {
+        toast({title: "Yetersiz İçerik", description: "Yankı oluşturmak için odada daha fazla konuşma olması gerekiyor.", variant: "default"});
+        setIsEchoLoading(false);
+        return;
+      }
+      
+      const desiredOutputType = Math.random() < 0.4 ? 'image' : 'text'; // 40% chance for image
+
+      const input: GenerateEchoInput = {
+        recentMessages: recentMessagesText,
+        desiredOutputType: desiredOutputType,
+      };
+
+      const result: GenerateEchoOutput = await generateEcho(input);
+      
+      const newEchoTimestamp = Timestamp.now();
+      await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+        senderId: "echo_system",
+        senderName: "Küre Yankısı",
+        senderAvatar: null, // No avatar for echo
+        timestamp: newEchoTimestamp,
+        isEchoMessage: true,
+        echoContentType: result.actualOutputType,
+        echoContent: result.outputContent,
+      });
+      
+      // Update lastEchoTimestamp in room details
+      const roomDocRef = doc(db, "chatRooms", roomId);
+      await updateDoc(roomDocRef, { lastEchoTimestamp: newEchoTimestamp });
+      setLastEchoTimestampState(newEchoTimestamp); // Update local state for cooldown
+
+    } catch (error) {
+      console.error("Error generating echo:", error);
+      toast({ title: "Yankı Hatası", description: "Küre Yankısı oluşturulurken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsEchoLoading(false);
+    }
+  };
+
+  const isEchoOnCooldown = lastEchoTimestampState && (Date.now() - lastEchoTimestampState.toMillis() < ECHO_COOLDOWN_SECONDS * 1000);
 
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
@@ -1178,12 +1243,29 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 </div>
             )}
             {messages.map((msg) => (
-            <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""} ${msg.isGameMessage ? "justify-center" : ""}`}>
+            <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""} ${(msg.isGameMessage || msg.isEchoMessage) ? "justify-center" : ""}`}>
                 {msg.isGameMessage ? (
                     <div className="w-full max-w-md mx-auto my-2">
                         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
                            {msg.text.toLowerCase().includes("[oyun]") ? <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" /> : <MessageSquare className="inline h-4 w-4 mr-1.5 text-blue-500" /> }
                            {msg.text}
+                        </div>
+                    </div>
+                ) : msg.isEchoMessage ? (
+                    <div className="w-full max-w-md mx-auto my-3">
+                        <div className="text-xs text-center p-3 rounded-lg bg-gradient-to-br from-accent/15 via-card to-primary/10 border border-dashed border-accent/30 shadow-lg">
+                           <div className="flex items-center justify-center gap-1.5 mb-2 text-accent">
+                             <Wand2 className="h-4 w-4" />
+                             <span className="font-semibold">{msg.senderName}</span>
+                           </div>
+                           {msg.echoContentType === 'image' && msg.echoContent ? (
+                             <Image src={msg.echoContent} alt="Küre Yankısı Resmi" width={300} height={200} className="rounded-md mx-auto shadow-inner object-contain max-h-48" data-ai-hint="ai generated art" />
+                           ) : (
+                             <p className="italic text-muted-foreground">{msg.echoContent || "Bir yankı fısıldandı..."}</p>
+                           )}
+                           <p className="text-[10px] text-muted-foreground/70 mt-2">
+                            {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
+                           </p>
                         </div>
                     </div>
                 ) : (
@@ -1271,6 +1353,26 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
         <div className="relative flex items-center gap-2">
+           <TooltipProvider delayDuration={150}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        type="button" 
+                        onClick={handleGenerateEcho}
+                        disabled={!canSendMessage || isUserLoading || isEchoLoading || !!isEchoOnCooldown} 
+                        className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-muted-foreground hover:text-accent"
+                    >
+                        {isEchoLoading ? <Loader2 className="h-5 w-5 animate-spin"/> : <Sparkles className="h-5 w-5"/>}
+                        <span className="sr-only">Küre Yankısı Oluştur</span>
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                <p>{isEchoOnCooldown ? `Sonraki yankı için bekle...` : `Küre Yankısı Oluştur`}</p>
+                </TooltipContent>
+            </Tooltip>
+           </TooltipProvider>
           <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
             <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
@@ -1311,3 +1413,4 @@ const attemptToAskNewQuestion = useCallback(async () => {
     </div>
   );
 }
+
