@@ -23,8 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns';
-import { tr } from 'date-fns/locale';
+import { addMinutes, isPast, addSeconds } from 'date-fns';
 import { Badge } from "@/components/ui/badge";
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -92,7 +91,7 @@ export default function ChatRoomsPage() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date());
+      setNow(new Date()); // Update 'now' state every minute for card expiry re-render
     }, 60000);
     return () => clearInterval(timer);
   }, []);
@@ -282,13 +281,32 @@ export default function ChatRoomsPage() {
     }
   };
 
-  const getExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
+  const getPreciseCardExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
     if (!expiresAt) return "Süre bilgisi yok";
     const expiryDate = expiresAt.toDate();
+    // 'now' state is updated every minute, so this will re-render accordingly
     if (isPast(expiryDate)) {
       return "Süresi Doldu";
     }
-    return `Kalan süre: ${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
+
+    const diffSecondsTotal = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
+
+    if (diffSecondsTotal < 0) return "Süresi Doldu"; // Should be caught by isPast
+
+    const days = Math.floor(diffSecondsTotal / 86400);
+    const hours = Math.floor((diffSecondsTotal % 86400) / 3600);
+    const minutes = Math.floor((diffSecondsTotal % 3600) / 60);
+
+    if (days > 0) {
+      return `Kalan: ${days} gün ${hours} sa`;
+    }
+    if (hours > 0) {
+      return `Kalan: ${hours} sa ${minutes} dk`;
+    }
+    if (minutes > 0) {
+      return `Kalan: ${minutes} dk`;
+    }
+    return `Kalan: <1 dk`;
   };
 
 
@@ -516,7 +534,7 @@ export default function ChatRoomsPage() {
                     className="flex items-center gap-1.5 shadow-sm px-2.5 py-1"
                   >
                     <Clock className="h-3.5 w-3.5" />
-                    <span className="font-medium">{getExpiryInfo(room.expiresAt)}</span>
+                    <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground/70 truncate">
@@ -542,3 +560,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+

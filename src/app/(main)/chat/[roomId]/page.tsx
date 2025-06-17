@@ -138,6 +138,8 @@ export default function ChatRoomPage() {
   const [isCurrentUserParticipant, setIsCurrentUserParticipant] = useState(false);
   const isCurrentUserParticipantRef = useRef(isCurrentUserParticipant);
 
+  const [currentTime, setCurrentTime] = useState(new Date()); // For live countdown
+
   useEffect(() => {
     isCurrentUserParticipantRef.current = isCurrentUserParticipant;
   }, [isCurrentUserParticipant]);
@@ -151,6 +153,13 @@ export default function ChatRoomPage() {
   const [availableGameQuestions, setAvailableGameQuestions] = useState<GameQuestion[]>([...HARDCODED_QUESTIONS]);
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000); // Update current time every second for live countdown
+    return () => clearInterval(timerId);
+  }, []);
 
 
   useEffect(() => {
@@ -607,11 +616,30 @@ const attemptToAskNewQuestion = useCallback(async () => {
     } finally { setIsExtending(false); }
   };
 
-  const getExpiryInfo = (): string => {
-    if (!roomDetails?.expiresAt) return "Süre bilgisi yok"; const expiryDate = roomDetails.expiresAt.toDate();
+  const getPreciseExpiryInfo = (): string => {
+    if (!roomDetails?.expiresAt) return "Süre bilgisi yok";
+    const expiryDate = roomDetails.expiresAt.toDate();
+    const now = currentTime; // Use state that updates every second
+
     if (isPast(expiryDate)) return "Süresi Doldu";
-    return `${formatDistanceToNow(expiryDate, { addSuffix: true, locale: tr })}`;
-  };
+
+    const diffSeconds = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
+
+    if (diffSeconds < 0) return "Süresi Doldu"; 
+
+    const days = Math.floor(diffSeconds / 86400);
+    const hours = Math.floor((diffSeconds % 86400) / 3600);
+    const minutes = Math.floor((diffSeconds % 3600) / 60);
+    const seconds = diffSeconds % 60;
+
+    if (days > 0) {
+        return `${days} gün ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} sonra`; // Not live for days
+    }
+    if (hours > 0) {
+        return `Kalan: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `Kalan: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
 
   const handleOpenUserInfoPopover = async (senderId: string) => {
     if (!currentUser || senderId === currentUser.uid) return;
@@ -719,7 +747,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 </div>
                 <div className="flex items-center text-xs text-muted-foreground gap-x-2">
                     {roomDetails.expiresAt && (
-                        <div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getExpiryInfo()}>{getExpiryInfo()}</span> </div>
+                        <div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getPreciseExpiryInfo()}>{getPreciseExpiryInfo()}</span> </div>
                     )}
                     {gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && ( 
                       <div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}>
@@ -801,7 +829,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId}
                 onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId}
                 popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus}
-                relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
+                relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={onAcceptFriendRequestPopover}
                 onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction}
                 getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
                 currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
