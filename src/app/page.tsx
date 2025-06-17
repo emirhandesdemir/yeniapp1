@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare as PageIcon, Users as RoomIcon } from "lucide-react"; 
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users as RoomIcon } from "lucide-react"; 
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
-import RoomInFeedCard, { type ChatRoomFeedDisplayData } from "@/components/feed/RoomInFeedCard"; // Yeni import
+import RoomInFeedCard, { type ChatRoomFeedDisplayData } from "@/components/feed/RoomInFeedCard";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, Timestamp, where, limit } from "firebase/firestore";
 import { isPast } from 'date-fns';
@@ -71,7 +71,7 @@ export default function HomePage() {
   const router = useRouter();
   const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
   
-  const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true); // Başlangıçta görünür
+  const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true);
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeRooms, setActiveRooms] = useState<ChatRoomFeedDisplayData[]>([]);
@@ -96,7 +96,9 @@ export default function HomePage() {
     const handleScroll = () => {
       if (window.scrollY > SCROLL_HIDE_THRESHOLD) {
         setIsWelcomeCardVisible(false);
-        sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
+        }
       }
     };
 
@@ -138,16 +140,14 @@ export default function HomePage() {
     const qRooms = query(
       collection(db, "chatRooms"), 
       where("expiresAt", ">", now), 
-      orderBy("expiresAt", "asc"), // En yakın zamanda süresi dolacak olanlar yerine, en yeni oluşturulanlar daha mantıklı olabilir.
-                                  // Ya da en aktif olanlar. Şimdilik createdAt ile yapalım.
+      orderBy("expiresAt", "asc"),
       orderBy("createdAt", "desc"),
-      limit(3) // Akışta gösterilecek oda sayısı
+      limit(3) 
     );
     const unsubscribeRooms = onSnapshot(qRooms, (snapshot) => {
       const fetchedRooms: ChatRoomFeedDisplayData[] = [];
       snapshot.forEach((doc) => {
         const roomData = doc.data();
-        // expiresAt kontrolünü tekrar yapalım, çünkü Firestore where filtresi anlık olmayabilir
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
           fetchedRooms.push({
             id: doc.id,
@@ -155,8 +155,7 @@ export default function HomePage() {
             description: roomData.description,
             participantCount: roomData.participantCount,
             maxParticipants: roomData.maxParticipants,
-            createdAt: roomData.createdAt as Timestamp, // createdAt her odada olmalı
-            // imageAiHint ve image isteğe bağlı eklenebilir, şimdilik basit tutuyoruz
+            createdAt: roomData.createdAt as Timestamp, 
           } as ChatRoomFeedDisplayData);
         }
       });
@@ -177,7 +176,6 @@ export default function HomePage() {
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
     
     const combined = [...postItems, ...roomItems].sort((a, b) => {
-        // Hem post hem de room için createdAt var, null kontrolü ekleyelim
         const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
         const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
         return timeB - timeA;
@@ -191,7 +189,7 @@ export default function HomePage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-6">
-          <PageIcon className="h-16 w-16 text-primary animate-pulse mx-auto" />
+          <MessageSquare className="h-16 w-16 text-primary animate-pulse mx-auto" />
         </div>
         <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
           Anasayfanız Hazırlanıyor
@@ -222,44 +220,44 @@ export default function HomePage() {
                 <Card className="shadow-lg bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl">
                   <CardHeader className="p-3 sm:p-4">
                     <motion.div 
-                      className="flex justify-between items-start mb-2"
+                      className="flex justify-between items-start mb-1 sm:mb-2"
                       variants={itemVariants}
                     >
                       <div>
-                        <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground/90">
+                        <CardTitle className="text-md sm:text-lg font-semibold text-primary-foreground/90">
                           Hoş Geldin, {greetingName}!
                         </CardTitle>
                         <CardDescription className="text-xs text-muted-foreground mt-0.5">
                           Yeni bağlantılar kur veya sohbetlere katıl.
                         </CardDescription>
                       </div>
-                      <Sparkles className="h-5 w-5 text-accent opacity-70" />
+                      <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-accent opacity-70" />
                     </motion.div>
                   </CardHeader>
                   <CardContent className="p-3 sm:p-4 pt-0">
                     <motion.div 
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2.5"
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 sm:mb-2.5"
                       variants={itemVariants}
                     >
                       <Gem className="h-3.5 w-3.5 text-yellow-400" />
                       <span className="font-medium">Elmasların: {userData?.diamonds ?? 0}</span>
                     </motion.div>
                     <motion.div 
-                      className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2"
                       variants={buttonsContainerVariants}
                     >
                       <motion.div variants={buttonItemVariants}>
-                        <Button asChild size="sm" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-md py-2 text-xs">
+                        <Button asChild size="sm" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-md py-1.5 sm:py-2 text-xs">
                           <Link href="/chat">
-                            <Compass className="mr-1.5 h-4 w-4" />
+                            <Compass className="mr-1.5 h-3.5 sm:h-4 sm:w-4" />
                             Odalara Göz At
                           </Link>
                         </Button>
                       </motion.div>
                       <motion.div variants={buttonItemVariants}>
-                        <Button asChild size="sm" variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-2 text-xs">
+                        <Button asChild size="sm" variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-1.5 sm:py-2 text-xs">
                           <Link href="/chat"> 
-                            <PlusCircle className="mr-1.5 h-4 w-4" />
+                            <PlusCircle className="mr-1.5 h-3.5 sm:h-4 sm:w-4" />
                             Yeni Oda Oluştur
                           </Link>
                         </Button>
