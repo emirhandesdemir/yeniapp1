@@ -49,7 +49,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `voiceParticipants`: Odadaki sesli sohbete katılmış kullanıcıları saklar.
     - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
     - **Alanlar:** `uid` (String), `displayName` (String, nullable), `photoURL` (String, nullable), `joinedAt` (Timestamp)
-  - `voiceSignaling`: WebRTC sinyalleşme mesajlarını (offer, answer, ICE candidate) saklar.
+  - `voiceSignaling`: WebRTC sinyalleşme mesajlarını (offer, answer, ICE candidate) saklar. Bu bir **Koleksiyon Grubu** sorgusu için indekslenir.
     - **Yol:** `/chatRooms/{roomId}/voiceSignaling/{signalId}`
     - **Alanlar:**
       - `type`: (String) 'offer', 'answer', veya 'candidate'
@@ -58,23 +58,23 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `data`: (Object) SDP (offer/answer) veya ICE adayı verisi
       - `createdAt`: (Timestamp) Sinyalin oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için (`where("expiresAt", ">", now).orderBy("participantCount", "desc").orderBy("createdAt", "desc")` sorgusu için):
+  - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):** (`where("expiresAt", ">", now).orderBy("participantCount", "desc").orderBy("createdAt", "desc")`)
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan), `participantCount` (Azalan), `createdAt` (Azalan)
     - _Not: Bu, Firestore'un hata mesajında önerdiği ve uygulamanın düzgün çalışması için **zorunlu** olan indekstir._
-  - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
+  - **Kullanıcının Aktif Odalarını Listeleme (Gönderi Oluşturma Formu):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
-  - Admin panelinde süresi dolmuş odaları toplu silmek için (`src/components/admin/sections/AdminChatRoomsContent.tsx`):
+  - **Süresi Dolmuş Odaları Toplu Silme (Admin Paneli):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan)
-  - Admin panelinde tüm odaları oluşturulma tarihine göre listelemek için (`src/components/admin/sections/AdminChatRoomsContent.tsx`):
+  - **Tüm Odaları Oluşturulma Tarihine Göre Listeleme (Admin Paneli):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `createdAt` (Azalan)
-  - WebRTC sinyalleşme mesajlarını almak için (`src/app/(main)/chat/[roomId]/page.tsx`):
-    - Koleksiyon Grubu: `voiceSignaling` (belirli bir `chatRooms/{roomId}` altındaki `voiceSignaling` koleksiyonunu hedefler)
+  - **WebRTC Sinyalleşme Mesajlarını Alma (`src/app/(main)/chat/[roomId]/page.tsx`):**
+    - Koleksiyon Grubu: `voiceSignaling`
     - Alanlar: `toUid` (Artan), `createdAt` (Artan)
-
+    - _Not: Bu, Firestore'un hata mesajında (`FirebaseError: The query requires an index. ... voiceSignaling ...`) önerdiği ve sesli sohbetin çalışması için **zorunlu** olan indekstir._
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -181,3 +181,4 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
