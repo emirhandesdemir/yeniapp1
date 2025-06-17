@@ -88,8 +88,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını Sıralama:**
     - Koleksiyon Grubu: `voiceParticipants`
     - Alanlar: `joinedAt` (Artan)
-  - **WebRTC Sinyallerini Dinleme:**
-    - Alt Koleksiyon: `webrtcSignals` (her bir `chatRooms` dokümanı altında)
+  - **WebRTC Sinyallerini Dinleme (`src/app/(main)/chat/[roomId]/page.tsx`):**
+    - Koleksiyon Grubu: `webrtcSignals`
     - Alanlar: `toUid` (Artan), `createdAt` (Artan)
 
 
@@ -207,4 +207,4 @@ Sohbet odası quiz oyunu için soruları saklar.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
 
-```
+    
