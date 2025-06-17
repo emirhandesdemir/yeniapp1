@@ -159,46 +159,43 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       collection(db, "friendRequests"),
       where("toUserId", "==", currentUser.uid),
       where("status", "==", "pending"),
-      orderBy("createdAt", "desc") 
+      orderBy("createdAt", "desc")
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
-      const newNotifiedIds = new Set(notifiedRequestIds);
+      const processedInThisSnapshot = new Set<string>();
+
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
         const requestId = reqDoc.id;
         let userProfileData: UserData | undefined = undefined;
 
-        if (data.status === "pending" && !notifiedRequestIds.has(requestId)) {
-          try {
-            const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
-            if (senderProfileDoc.exists()) {
-              userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
-              showInAppNotification({
-                title: "Yeni Arkadaşlık İsteği",
-                message: `${userProfileData.displayName || 'Bir kullanıcı'} sana arkadaşlık isteği gönderdi.`,
-                type: 'friend_request',
-                avatarUrl: userProfileData.photoURL,
-                senderName: userProfileData.displayName,
-                link: '/friends', 
-              });
-              newNotifiedIds.add(requestId);
-            }
-          } catch (profileError) {
-            console.error(`Error fetching profile for sender ${data.fromUserId} for notification:`, profileError);
-          }
-        } else if (data.status === "pending") { 
+        try {
             const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
             if (senderProfileDoc.exists()) {
                 userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
             }
+        } catch (profileError) {
+            console.error(`Error fetching profile for sender ${data.fromUserId} for notification:`, profileError);
+        }
+
+        if (data.status === "pending" && userProfileData && !notifiedRequestIds.has(requestId)) {
+          showInAppNotification({
+            title: "Yeni Arkadaşlık İsteği",
+            message: `${userProfileData.displayName || 'Bir kullanıcı'} sana arkadaşlık isteği gönderdi.`,
+            type: 'friend_request',
+            avatarUrl: userProfileData.photoURL,
+            senderName: userProfileData.displayName,
+            link: '/friends',
+          });
+          processedInThisSnapshot.add(requestId);
         }
 
         return {
           id: requestId,
           fromUserId: data.fromUserId,
-          fromUsername: data.fromUsername,
-          fromAvatarUrl: data.fromAvatarUrl,
+          fromUsername: userProfileData?.displayName || data.fromUsername,
+          fromAvatarUrl: userProfileData?.photoURL || data.fromAvatarUrl,
           createdAt: data.createdAt as Timestamp,
           userProfile: userProfileData,
         } as FriendRequestForPopover;
@@ -207,7 +204,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       try {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
-        setNotifiedRequestIds(newNotifiedIds);
+
+        if (processedInThisSnapshot.size > 0) {
+          setNotifiedRequestIds(prevIds => {
+            const newSet = new Set(prevIds);
+            processedInThisSnapshot.forEach(id => newSet.add(id));
+            return newSet;
+          });
+        }
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
         if(incomingInitialized) {
