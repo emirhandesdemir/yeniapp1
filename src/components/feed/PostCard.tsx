@@ -253,7 +253,7 @@ export default function PostCard({ post }: PostCardProps) {
 
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-200 rounded-xl">
-      <CardHeader className="flex flex-row items-start gap-3 p-4 pb-2">
+      <CardHeader className="flex flex-row items-start gap-3 p-3 pb-2"> {/* p-4 to p-3 */}
         <Link href={`/profile/${post.userId}`} className="flex-shrink-0">
             <Avatar className="h-10 w-10">
             <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
@@ -285,18 +285,17 @@ export default function PostCard({ post }: PostCardProps) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-4 pt-1 pb-3">
+      <CardContent className="p-3 pt-1 pb-3"> {/* p-4 to p-3 */}
         {post.isRepost ? (
           <>
             <p className="text-sm text-muted-foreground mb-1.5">
-              {/* Repost yapan kullanıcı kendi profiline yönlendirilmeli, orijinal değil */}
               <Link href={`/profile/${post.userId}`} className="font-medium hover:underline">
                 {post.username}
               </Link>
               {' '} yeniden paylaştı:
             </p>
             {renderOriginalPostContent({
-              userId: post.originalPostUserId, // Original user ID for link
+              userId: post.originalPostUserId,
               username: post.originalPostUsername,
               userAvatar: post.originalPostUserAvatar,
               content: post.originalPostContent,
@@ -325,7 +324,7 @@ export default function PostCard({ post }: PostCardProps) {
           </div>
         )}
       </CardContent>
-      <CardFooter className="p-4 pt-2 flex justify-start gap-2 sm:gap-4 border-t">
+      <CardFooter className="p-3 pt-2 flex justify-start gap-2 sm:gap-4 border-t"> {/* p-4 to p-3 */}
         <Button
           variant="ghost"
           size="sm"
@@ -355,7 +354,7 @@ export default function PostCard({ post }: PostCardProps) {
       </CardFooter>
 
       {showComments && (
-        <div className="p-4 border-t bg-card/50 dark:bg-background/30 rounded-b-xl">
+        <div className="p-3 border-t bg-card/50 dark:bg-background/30 rounded-b-xl"> {/* p-4 to p-3 */}
           <CommentForm postId={post.id} onCommentAdded={handleCommentAdded} />
           {loadingComments && (
             <div className="flex items-center justify-center py-4">
@@ -383,4 +382,3 @@ export default function PostCard({ post }: PostCardProps) {
     </Card>
   );
 }
-
