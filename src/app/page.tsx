@@ -3,54 +3,88 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, MessagesSquare, UserCog, Users as UsersIcon, PlusCircle, Compass, Globe, Sparkles } from "lucide-react"; 
+import { Loader2, Gem, MessagesSquare, Compass, PlusCircle, Sparkles, Globe } from "lucide-react"; 
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import CreatePostForm from "@/components/feed/CreatePostForm";
 import FeedList from "@/components/feed/FeedList";
 
 const cardVariants = {
-  hidden: { opacity: 0, y: 30 },
+  hidden: { opacity: 0, y: -20, height: 0 },
   visible: { 
     opacity: 1, 
     y: 0, 
+    height: 'auto',
     transition: { 
       type: "spring",
       stiffness: 100,
-      damping: 15,
-      duration: 0.6 
+      damping: 20,
+      duration: 0.5
     } 
   },
+  exit: { 
+    opacity: 0, 
+    y: -20, 
+    height: 0,
+    transition: { duration: 0.3, ease: "easeInOut" }
+  }
 };
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+const itemVariants = { // Bunları daha küçük kart için basitleştirebiliriz veya olduğu gibi bırakabiliriz.
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
 };
 
 const buttonsContainerVariants = {
   hidden: {},
   visible: {
     transition: {
-      staggerChildren: 0.15,
-      delayChildren: 0.3,
+      staggerChildren: 0.1,
+      delayChildren: 0.2,
     },
   },
 };
 
 const buttonItemVariants = {
-  hidden: { opacity: 0, scale: 0.9 },
-  visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 260, damping: 12 } },
+  hidden: { opacity: 0, scale: 0.95 },
+  visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 200, damping: 10 } },
 };
+
+const SCROLL_HIDE_THRESHOLD = 100; // Piksel cinsinden kaydırma eşiği
+const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1';
 
 
 export default function HomePage() {
   const router = useRouter();
   const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
+  
+  const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem(WELCOME_CARD_SESSION_KEY) !== 'true';
+    }
+    return true; // SSR veya pencere yoksa varsayılan
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isWelcomeCardVisible) return;
+
+    const handleScroll = () => {
+      if (window.scrollY > SCROLL_HIDE_THRESHOLD) {
+        setIsWelcomeCardVisible(false);
+        sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [isWelcomeCardVisible]);
+
 
   useEffect(() => {
     if (!authLoading && !currentUser) {
@@ -79,71 +113,67 @@ export default function HomePage() {
     return (
       <AppLayout>
         <div className="space-y-6">
-          <motion.div
-            variants={cardVariants}
-            initial="hidden"
-            animate="visible"
-            whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-          >
-            <Card className="shadow-xl bg-gradient-to-br from-primary/20 via-accent/10 to-primary/20 border-primary/30 overflow-hidden rounded-2xl">
-              <CardHeader className="p-6 sm:p-8">
-                <motion.div 
-                  className="flex justify-between items-start mb-4"
-                  variants={itemVariants}
-                  initial="hidden"
-                  animate="visible"
-                  transition={{ delay: 0.1 }}
-                >
-                  <div>
-                    <CardTitle className="text-3xl sm:text-4xl font-headline text-primary-foreground/95">
-                      Tekrar Hoş Geldin, {greetingName}!
-                    </CardTitle>
-                    <CardDescription className="text-base sm:text-lg text-muted-foreground mt-1.5">
-                      Bugün yeni bağlantılar kurmaya veya keyifli sohbetlere katılmaya ne dersin?
-                    </CardDescription>
-                  </div>
-                  <Sparkles className="h-10 w-10 sm:h-12 sm:w-12 text-accent opacity-80" />
-                </motion.div>
-              </CardHeader>
-              <CardContent className="p-6 sm:p-8 pt-0">
-                <motion.div 
-                  className="flex items-center gap-2 text-sm text-muted-foreground mb-6"
-                  variants={itemVariants}
-                  initial="hidden"
-                  animate="visible"
-                  transition={{ delay: 0.2 }}
-                >
-                  <Gem className="h-5 w-5 text-yellow-400" />
-                  <span className="font-medium">Mevcut Elmasların: {userData?.diamonds ?? 0}</span>
-                </motion.div>
-                <motion.div 
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-                  variants={buttonsContainerVariants}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  <motion.div variants={buttonItemVariants}>
-                    <Button asChild size="lg" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground animate-subtle-pulse rounded-lg py-6 text-base">
-                      <Link href="/chat">
-                        <Compass className="mr-2.5 h-5 w-5" />
-                        Odalara Göz At
-                      </Link>
-                    </Button>
-                  </motion.div>
-                  <motion.div variants={buttonItemVariants}>
-                    <Button asChild size="lg" variant="outline" className="w-full border-primary/70 text-primary hover:bg-primary/10 hover:text-primary rounded-lg py-6 text-base">
-                      <Link href="/chat"> 
-                        <PlusCircle className="mr-2.5 h-5 w-5" />
-                        Yeni Oda Oluştur
-                      </Link>
-                    </Button>
-                  </motion.div>
-                </motion.div>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Feed Components Added Here */}
+          <AnimatePresence>
+            {isWelcomeCardVisible && (
+              <motion.div
+                key="welcome-card"
+                variants={cardVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <Card className="shadow-lg bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl">
+                  <CardHeader className="p-4">
+                    <motion.div 
+                      className="flex justify-between items-start mb-3"
+                      variants={itemVariants}
+                    >
+                      <div>
+                        <CardTitle className="text-xl font-semibold text-primary-foreground/90">
+                          Hoş Geldin, {greetingName}!
+                        </CardTitle>
+                        <CardDescription className="text-xs text-muted-foreground mt-1">
+                          Yeni bağlantılar kurmaya veya sohbetlere katılmaya ne dersin?
+                        </CardDescription>
+                      </div>
+                      <Sparkles className="h-6 w-6 text-accent opacity-70" />
+                    </motion.div>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <motion.div 
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3"
+                      variants={itemVariants}
+                    >
+                      <Gem className="h-3.5 w-3.5 text-yellow-400" />
+                      <span className="font-medium">Elmasların: {userData?.diamonds ?? 0}</span>
+                    </motion.div>
+                    <motion.div 
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                      variants={buttonsContainerVariants}
+                    >
+                      <motion.div variants={buttonItemVariants}>
+                        <Button asChild size="sm" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-md py-2 text-xs">
+                          <Link href="/chat">
+                            <Compass className="mr-1.5 h-4 w-4" />
+                            Odalara Göz At
+                          </Link>
+                        </Button>
+                      </motion.div>
+                      <motion.div variants={buttonItemVariants}>
+                        <Button asChild size="sm" variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-2 text-xs">
+                          <Link href="/chat"> 
+                            <PlusCircle className="mr-1.5 h-4 w-4" />
+                            Yeni Oda Oluştur
+                          </Link>
+                        </Button>
+                      </motion.div>
+                    </motion.div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
           <CreatePostForm />
           <FeedList />
           
@@ -152,7 +182,6 @@ export default function HomePage() {
     );
   }
 
-  // Fallback if !currentUser after loading or if userData is not available
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
       <div className="mb-6">
