@@ -3,11 +3,11 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube } from "lucide-react";
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc } from "firebase/firestore"; // writeBatch ve getDocs kaldırıldı
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -26,7 +26,8 @@ import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Badge } from "@/components/ui/badge";
-import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; // Yeni import
+import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ChatRoom {
   id: string;
@@ -44,6 +45,32 @@ const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
 
+const SCROLL_HIDE_THRESHOLD_CHAT = 80;
+const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1';
+
+const cardVariants = {
+  hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    height: 'auto',
+    marginBottom: '1.5rem', // Corresponds to space-y-6
+    transition: {
+      type: "spring",
+      stiffness: 100,
+      damping: 20,
+      duration: 0.5
+    }
+  },
+  exit: {
+    opacity: 0,
+    y: -20,
+    height: 0,
+    marginBottom: 0,
+    transition: { duration: 0.3, ease: "easeInOut" }
+  }
+};
+
 
 export default function ChatRoomsPage() {
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
@@ -56,12 +83,35 @@ export default function ChatRoomsPage() {
   const { toast } = useToast();
   const [now, setNow] = useState(new Date());
 
+  const [isRoomsInfoCardVisible, setIsRoomsInfoCardVisible] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem(ROOMS_INFO_CARD_SESSION_KEY) !== 'true';
+    }
+    return true;
+  });
+
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
     }, 60000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isRoomsInfoCardVisible) return;
+
+    const handleScroll = () => {
+      if (window.scrollY > SCROLL_HIDE_THRESHOLD_CHAT) {
+        setIsRoomsInfoCardVisible(false);
+        sessionStorage.setItem(ROOMS_INFO_CARD_SESSION_KEY, 'true');
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [isRoomsInfoCardVisible]);
 
 
   useEffect(() => {
@@ -96,8 +146,8 @@ export default function ChatRoomsPage() {
       return;
     }
     if ((userData.diamonds ?? 0) < ROOM_CREATION_COST) {
-      toast({ 
-        title: "Yetersiz Elmas!", 
+      toast({
+        title: "Yetersiz Elmas!",
         description: (
           <div>
             <p>Oda oluşturmak için {ROOM_CREATION_COST} elmasa ihtiyacın var. Mevcut elmas: {userData.diamonds ?? 0}.</p>
@@ -105,7 +155,7 @@ export default function ChatRoomsPage() {
           </div>
         ),
         variant: "destructive",
-        duration: 7000, 
+        duration: 7000,
       });
       return;
     }
@@ -130,8 +180,8 @@ export default function ChatRoomsPage() {
       console.warn("[ChatPage] Error fetching game config during room creation:", configError);
     }
 
-    const imageUrl = "https://placehold.co/600x400.png"; 
-    const imageHint = "community discussion"; 
+    const imageUrl = "https://placehold.co/600x400.png";
+    const imageHint = "community discussion";
 
     const currentTime = new Date();
     const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
@@ -143,8 +193,8 @@ export default function ChatRoomsPage() {
       creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
       createdAt: serverTimestamp(),
       expiresAt: Timestamp.fromDate(expiresAtDate),
-      image: imageUrl, 
-      imageAiHint: imageHint, 
+      image: imageUrl,
+      imageAiHint: imageHint,
       participantCount: 0,
       maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
     };
@@ -173,15 +223,15 @@ export default function ChatRoomsPage() {
       setIsCreatingRoom(false);
     }
   };
-  
+
   const handleOpenCreateRoomDialog = () => {
     if (!currentUser || isUserLoading || isUserDataLoading) {
         toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için lütfen giriş yapın.", variant: "destructive" });
         return;
     }
     if ((userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
-        toast({ 
-          title: "Yetersiz Elmas!", 
+        toast({
+          title: "Yetersiz Elmas!",
           description: (
             <div>
               <p>Oda oluşturmak için {ROOM_CREATION_COST} elmasa ihtiyacın var. Mevcut elmas: {userData?.diamonds ?? 0}.</p>
@@ -205,8 +255,7 @@ export default function ChatRoomsPage() {
       return;
     }
     try {
-      await deleteChatRoomAndSubcollections(roomId); // Merkezi fonksiyonu kullan
-      // Arayüzden odayı kaldırma (onSnapshot zaten yapmalı ama emin olmak için)
+      await deleteChatRoomAndSubcollections(roomId);
       setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId));
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
     } catch (error) {
@@ -239,6 +288,40 @@ export default function ChatRoomsPage() {
 
   return (
     <div className="space-y-6">
+      <AnimatePresence>
+        {isRoomsInfoCardVisible && (
+          <motion.div
+            key="rooms-info-card"
+            variants={cardVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            <Card className="shadow-md bg-gradient-to-br from-primary/10 via-card to-accent/5 dark:from-primary/15 dark:via-card dark:to-accent/10 border-primary/15 overflow-hidden rounded-xl">
+              <CardHeader className="p-4 pt-3 pb-2">
+                <motion.div
+                  className="flex justify-between items-start mb-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Compass className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-md font-semibold text-primary-foreground/90">
+                      Sohbet Odalarını Keşfet!
+                    </CardTitle>
+                  </div>
+                </motion.div>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <motion.p
+                  className="text-xs text-muted-foreground"
+                >
+                  Farklı konularda sohbetlere katıl, yeni insanlarla tanış veya kendi odanı oluşturup arkadaşlarını davet et. Her oda yeni bir macera!
+                </motion.p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-headline font-semibold">Sohbet Odaları</h1>
@@ -250,11 +333,15 @@ export default function ChatRoomsPage() {
         }}>
           <DialogTrigger asChild>
             <Button
-              onClick={handleOpenCreateRoomDialog} 
+              onClick={handleOpenCreateRoomDialog}
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
               disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
-              Yeni Oda Oluştur ({ROOM_CREATION_COST} <Gem className="inline h-4 w-4 ml-1 mr-0.5 text-yellow-300 dark:text-yellow-400" />)
+              Yeni Oda Oluştur
+              <span className="ml-1.5 flex items-center text-xs text-yellow-300 dark:text-yellow-400 font-semibold">
+                {ROOM_CREATION_COST}
+                <Gem className="ml-1 h-3.5 w-3.5" />
+              </span>
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[480px]">
@@ -291,7 +378,7 @@ export default function ChatRoomsPage() {
                     maxLength={150}
                   />
                 </div>
-                
+
                 {!hasEnoughDiamonds && currentUser && (
                   <Card className="mt-4 border-orange-500/50 bg-orange-500/10 p-4">
                     <CardHeader className="p-0 mb-2">
@@ -307,9 +394,9 @@ export default function ChatRoomsPage() {
                             <ShoppingBag className="mr-1.5 h-4 w-4" /> Elmas Mağazası
                           </Link>
                         </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
+                        <Button
+                          variant="outline"
+                          size="sm"
                           className="flex-1"
                           onClick={() => toast({ title: "Yakında!", description: "Video izleyerek elmas kazanma özelliği yakında eklenecektir."})}
                         >
@@ -351,7 +438,7 @@ export default function ChatRoomsPage() {
             </CardHeader>
             <CardContent>
                 <p className="text-muted-foreground text-base sm:text-lg max-w-md mx-auto">
-                Görünüşe göre şu anda aktif bir sohbet odası yok. İlk adımı atıp kendi sohbet dünyanızı yaratmaya ne dersiniz? 
+                Görünüşe göre şu anda aktif bir sohbet odası yok. İlk adımı atıp kendi sohbet dünyanızı yaratmaya ne dersiniz?
                 </p>
                 <div className="mt-6">
                   <Button
@@ -359,7 +446,11 @@ export default function ChatRoomsPage() {
                     className="bg-accent hover:bg-accent/90 text-accent-foreground text-base px-6 py-3"
                     disabled={!currentUser || isUserLoading || isUserDataLoading }
                   >
-                    Hemen Yeni Oda Oluştur! ({ROOM_CREATION_COST} <Gem className="inline h-4 w-4 ml-1 mr-0.5" />)
+                    Hemen Yeni Oda Oluştur!
+                    <span className="ml-1.5 flex items-center text-sm text-yellow-300 dark:text-yellow-200 font-semibold">
+                      {ROOM_CREATION_COST}
+                      <Gem className="ml-1 h-4 w-4" />
+                    </span>
                   </Button>
                 </div>
             </CardContent>
@@ -367,13 +458,13 @@ export default function ChatRoomsPage() {
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {activeChatRooms.map((room) => (
-            <Card 
-              key={room.id} 
+            <Card
+              key={room.id}
               className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl bg-card border border-border/20 hover:border-primary/40 dark:border-border/10 dark:hover:border-primary/50 group"
             >
               <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
-                <CardTitle 
-                  className="text-lg sm:text-xl font-bold text-primary-foreground/90 group-hover:text-primary transition-colors truncate pr-10" 
+                <CardTitle
+                  className="text-lg sm:text-xl font-bold text-primary-foreground/90 group-hover:text-primary transition-colors truncate pr-10"
                   title={room.name}
                 >
                   {room.name}
@@ -403,11 +494,11 @@ export default function ChatRoomsPage() {
                     <UsersRound className="h-3.5 w-3.5 text-primary/80" />
                     <span className="font-medium">{room.participantCount ?? 0} / {room.maxParticipants}</span>
                   </Badge>
-                  <Badge 
-                    variant={room.expiresAt && isPast(room.expiresAt.toDate()) ? 'destructive' : 'outline'} 
+                  <Badge
+                    variant={room.expiresAt && isPast(room.expiresAt.toDate()) ? 'destructive' : 'outline'}
                     className="flex items-center gap-1.5 shadow-sm px-2.5 py-1"
                   >
-                    <Clock className="h-3.5 w-3.5" /> 
+                    <Clock className="h-3.5 w-3.5" />
                     <span className="font-medium">{getExpiryInfo(room.expiresAt)}</span>
                   </Badge>
                 </div>
@@ -416,9 +507,9 @@ export default function ChatRoomsPage() {
                 </p>
               </CardContent>
               <CardFooter className="p-3 sm:p-4 border-t bg-secondary/20 dark:bg-card/40 mt-auto">
-                <Button 
-                  asChild 
-                  className="w-full bg-primary hover:bg-primary/80 text-primary-foreground text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105" 
+                <Button
+                  asChild
+                  className="w-full bg-primary hover:bg-primary/80 text-primary-foreground text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105"
                   disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
                 >
                   <Link href={`/chat/${room.id}`}>
@@ -434,4 +525,6 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+    
+
     
