@@ -50,7 +50,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları (`expiresAt` > şimdi) listelemek ve katılımcı sayısına, ardından oluşturulma tarihine göre sıralamak için:
     - Koleksiyon: `chatRooms`
     - Alanlar: `participantCount` (Azalan), `createdAt` (Azalan), `expiresAt` (Artan)
-    - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresi içerir. Firestore, sorgu gereksinimlerine göre tam indeks yapısını önerecektir._
+    - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresini de içerir. Firestore bu sorgu için yukarıdaki alanları ve belirtilen sıralamayı kullanan bir indeks talep edecektir._
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan veya Azalan, Firestore'un önerisine göre)
