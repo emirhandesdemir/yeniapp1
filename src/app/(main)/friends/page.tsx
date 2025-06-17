@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
@@ -238,19 +237,25 @@ export default function FriendsPage() {
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
       
-      const q = query(collection(db, "friendRequests"), 
+      // Delete accepted friend request documents related to this friendship
+      const requestQuery1 = query(collection(db, "friendRequests"), 
         where("status", "==", "accepted"),
-        where("fromUserId", "in", [currentUser.uid, friendId]), 
-        where("toUserId", "in", [currentUser.uid, friendId])
+        where("fromUserId", "==", currentUser.uid), 
+        where("toUserId", "==", friendId)
       );
-      const oldRequestsSnap = await getDocs(q);
-      oldRequestsSnap.forEach(reqDoc => {
-        const data = reqDoc.data();
-        if((data.fromUserId === currentUser.uid && data.toUserId === friendId) ||
-           (data.fromUserId === friendId && data.toUserId === currentUser.uid)) {
-          batch.delete(reqDoc.ref);
-        }
-      });
+      const requestQuery2 = query(collection(db, "friendRequests"), 
+        where("status", "==", "accepted"),
+        where("fromUserId", "==", friendId), 
+        where("toUserId", "==", currentUser.uid)
+      );
+
+      const [requestSnap1, requestSnap2] = await Promise.all([
+        getDocs(requestQuery1),
+        getDocs(requestQuery2)
+      ]);
+
+      requestSnap1.forEach(doc => batch.delete(doc.ref));
+      requestSnap2.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });

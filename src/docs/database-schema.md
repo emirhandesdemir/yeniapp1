@@ -64,6 +64,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp)
 - **Gerekli İndeksler:**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
+    - *Sorgu:* `src/app/(main)/direct-messages/page.tsx`
 
 ## `friendRequests`
 Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
@@ -78,9 +79,17 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
   - `status`: (String) "pending", "accepted", veya "declined"
   - `createdAt`: (Timestamp) İsteğin oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Bildirim popover'ında ve arkadaşlık isteği listelemelerinde kullanılan sorgu için:
+  - Bildirim popover'ında ve arkadaşlık isteği listelemelerinde kullanılan sorgu için (`src/components/layout/AppLayout.tsx`):
     - Koleksiyon: `friendRequests`
     - Alanlar: `toUserId` (Artan), `status` (Artan), `createdAt` (Azalan)
+  - Sohbet odası kullanıcı popover'ında arkadaşlık durumu kontrolü için (`src/app/(main)/chat/[roomId]/page.tsx`):
+    - Koleksiyon: `friendRequests`
+    - İndeks 1: `fromUserId` (Artan), `toUserId` (Artan), `status` (Artan)
+    - İndeks 2: `toUserId` (Artan), `fromUserId` (Artan), `status` (Artan)
+  - Arkadaş silme işlemi sırasında kabul edilmiş istekleri silmek için (`src/app/(main)/friends/page.tsx`):
+    - Koleksiyon: `friendRequests`
+    - İndeks 1: `status` (Artan), `fromUserId` (Artan), `toUserId` (Artan)
+    - İndeks 2: `status` (Artan), `toUserId` (Artan), `fromUserId` (Artan)
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
@@ -90,3 +99,5 @@ Genel uygulama ayarlarını saklar.
   - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+```
