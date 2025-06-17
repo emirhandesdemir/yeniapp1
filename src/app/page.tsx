@@ -9,10 +9,9 @@ import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { db } from "@/lib/firebase";
-import { collection, query, onSnapshot, Timestamp, where } from "firebase/firestore";
-import { isFuture } from 'date-fns';
 import { motion } from "framer-motion";
+import CreatePostForm from "@/components/feed/CreatePostForm";
+import FeedList from "@/components/feed/FeedList";
 
 const cardVariants = {
   hidden: { opacity: 0, y: 30 },
@@ -51,12 +50,7 @@ const buttonItemVariants = {
 
 export default function HomePage() {
   const router = useRouter();
-  const { currentUser, userData, loading: authLoading } = useAuth();
-
-  const [activeRoomsCount, setActiveRoomsCount] = useState<number | null>(null);
-  const [friendsCount, setFriendsCount] = useState<number | null>(null);
-  const [loadingActiveRooms, setLoadingActiveRooms] = useState(true);
-  const [loadingFriendsCount, setLoadingFriendsCount] = useState(true);
+  const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
 
   useEffect(() => {
     if (!authLoading && !currentUser) {
@@ -64,53 +58,7 @@ export default function HomePage() {
     }
   }, [currentUser, authLoading, router]);
 
-  useEffect(() => {
-    const q = query(
-      collection(db, "chatRooms")
-    );
-
-    const unsubscribeRooms = onSnapshot(q, (snapshot) => {
-      let count = 0;
-      snapshot.docs.forEach(doc => {
-        const roomData = doc.data();
-        if (roomData.expiresAt && roomData.expiresAt instanceof Timestamp) {
-          if (isFuture(roomData.expiresAt.toDate())) {
-            count++;
-          }
-        } 
-      });
-      setActiveRoomsCount(count);
-      setLoadingActiveRooms(false);
-    }, (error) => {
-      console.error("Error fetching active rooms count:", error);
-      setActiveRoomsCount(0);
-      setLoadingActiveRooms(false);
-    });
-
-    return () => unsubscribeRooms();
-  }, []);
-
-  useEffect(() => {
-    if (currentUser?.uid) {
-      setLoadingFriendsCount(true);
-      const friendsQuery = query(collection(db, `users/${currentUser.uid}/confirmedFriends`));
-      const unsubscribeFriends = onSnapshot(friendsQuery, (snapshot) => {
-        setFriendsCount(snapshot.size);
-        setLoadingFriendsCount(false);
-      }, (error) => {
-        console.error("Error fetching friends count:", error);
-        setFriendsCount(0);
-        setLoadingFriendsCount(false);
-      });
-      return () => unsubscribeFriends();
-    } else {
-      setFriendsCount(0);
-      setLoadingFriendsCount(false);
-    }
-  }, [currentUser?.uid]);
-
-
-  if (authLoading || (currentUser && (loadingActiveRooms || loadingFriendsCount))) {
+  if (authLoading || (currentUser && isUserDataLoading)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-6">
@@ -195,75 +143,16 @@ export default function HomePage() {
             </Card>
           </motion.div>
 
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col rounded-xl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-xl font-medium">Sohbet Dünyası</CardTitle>
-                <MessagesSquare className="h-6 w-6 text-accent" />
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <div className="text-sm text-muted-foreground mb-4">
-                  {loadingActiveRooms ? (
-                    <div className="flex items-center">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" /> Aktif odalar yükleniyor...
-                    </div>
-                  ) : (
-                    `Şu anda keşfedilecek ${activeRoomsCount ?? 0} aktif sohbet odası bulunuyor.`
-                  )}
-                </div>
-              </CardContent>
-              <CardContent className="pt-0">
-                 <Button asChild className="w-full" variant="outline">
-                  <Link href="/chat">Tüm Odaları Gör</Link>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col rounded-xl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-xl font-medium">Bağlantıların</CardTitle>
-                <UsersIcon className="h-6 w-6 text-accent" />
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <div className="text-sm text-muted-foreground mb-4">
-                  {loadingFriendsCount ? (
-                    <div className="flex items-center">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" /> Arkadaş sayısı yükleniyor...
-                    </div>
-                  ) : (
-                    `Toplam ${friendsCount ?? 0} arkadaşın var. Yeni bağlantılar kur!`
-                  )}
-                </div>
-              </CardContent>
-               <CardContent className="pt-0">
-                <Button asChild className="w-full" variant="outline">
-                  <Link href="/friends">Arkadaşları Yönet</Link>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-md hover:shadow-xl transition-shadow duration-300 flex flex-col rounded-xl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-xl font-medium">Hesabım</CardTitle>
-                <UserCog className="h-6 w-6 text-accent" />
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <div className="text-sm text-muted-foreground mb-4">
-                  Kullanıcı bilgilerinizi, avatarınızı ve uygulama tercihlerinizi güncelleyin.
-                </div>
-              </CardContent>
-              <CardContent className="pt-0">
-                <Button asChild className="w-full" variant="outline">
-                  <Link href="/profile">Hesabımı Görüntüle</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Feed Components Added Here */}
+          <CreatePostForm />
+          <FeedList />
+          
         </div>
       </AppLayout>
     );
   }
 
+  // Fallback if !currentUser after loading or if userData is not available
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
       <div className="mb-6">
@@ -273,10 +162,8 @@ export default function HomePage() {
         Bir An...
       </h1>
       <p className="text-lg text-muted-foreground max-w-md">
-        Sayfa yönlendiriliyor veya son kontroller yapılıyor. Lütfen bekleyin.
+        Sayfa yükleniyor veya yönlendiriliyor. Lütfen bekleyin.
       </p>
     </div>
   );
 }
-
-    

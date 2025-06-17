@@ -17,7 +17,7 @@ import {
   ShoppingBag,
   UserCircle,
   Palette, 
-  Rss, // Rss ikonu eklendi
+  Rss, 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -63,8 +63,7 @@ interface BottomNavItemType {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
-  { href: '/feed', label: 'Akış', icon: Rss, activeIcon: Rss }, // Akış eklendi
+  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Rss }, // Anasayfa (artık akışı içeriyor) için Rss ikonu daha uygun olabilir
   { href: '/chat', label: 'Sohbet', icon: MessageSquare, activeIcon: MessageSquare },
   { href: '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: Users },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
@@ -468,7 +467,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {!isChatPage && isClient && ( 
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
           {bottomNavItems.map((item) => (
-            <BottomNavItem key={item.href} item={item} isActive={pathname === item.href || (item.href === "/feed" && pathname === "/feed") || (item.href === "/" && pathname === "/")} />
+            <BottomNavItem key={item.href} item={item} isActive={pathname === item.href} />
           ))}
         </nav>
       )}
