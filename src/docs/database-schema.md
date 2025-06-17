@@ -145,10 +145,12 @@ Kullanıcıların paylaştığı gönderileri saklar.
       - `content`: (String) Yorumun metin içeriği
       - `createdAt`: (Timestamp) Yorumun oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Akış sayfasında ve kullanıcı profil sayfasında gönderileri sıralamak için (`src/app/page.tsx`, `src/app/(main)/profile/[userId]/page.tsx`):
+  - Akış sayfasında gönderileri en yeniden eskiye sıralamak için (`src/app/page.tsx`):
     - Koleksiyon: `posts`
-    - Alanlar: `userId` (Artan), `createdAt` (Azalan) (Kullanıcıya özel gönderiler için)
-    - Alanlar: `createdAt` (Azalan) (Genel akış için)
+    - Alanlar: `createdAt` (Azalan)
+  - **Kullanıcının gönderilerini profil sayfasında listelemek için (`src/app/(main)/profile/[userId]/page.tsx`):**
+    - **Koleksiyon:** `posts`
+    - **Alanlar:** `userId` (Artan), `createdAt` (Azalan)
   - Bir gönderinin yorumlarını sıralamak için (`src/components/feed/PostCard.tsx`):
     - Koleksiyon Grubu: `comments` (Tüm `posts` koleksiyonlarındaki `comments` alt koleksiyonlarını hedefler)
     - Alanlar: `createdAt` (Artan)
@@ -174,3 +176,4 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
