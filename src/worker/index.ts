@@ -3,6 +3,14 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
+// Import OneSignal's Service Worker script
+// Bu satırın en üstte veya diğer importlardan önce olması önemlidir.
+try {
+  importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
+} catch (e) {
+  console.error('[Service Worker] Failed to import OneSignal SDK:', e);
+}
+
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 
 // Clean up old caches
@@ -29,32 +37,24 @@ self.addEventListener('activate', (event) => {
 });
 
 
-// Gelen push mesajlarını dinle (Şimdilik devre dışı)
+// Gelen push mesajlarını dinle (OneSignal bunu kendi içinde halleder, bu blok kaldırılabilir veya OneSignal'a özel bir durum için tutulabilir)
 /*
 self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push Received.');
-  console.log(`[Service Worker] Push had this data: "${event.data?.text()}"`);
-
-  const title = 'HiweWalk';
-  const options: NotificationOptions = { 
-    body: event.data?.text() || 'Yeni bir mesajınız var!',
-    icon: '/icons/icon-192x192.png', 
-    badge: '/icons/icon-192x192.png', 
-    vibrate: [200, 100, 200],
-    tag: 'new-message', 
-    // actions: [ 
-    //   { action: 'explore', title: 'Göz At', icon: '/icons/action-explore.png' },
-    //   { action: 'close', title: 'Kapat', icon: '/icons/action-close.png' },
-    // ]
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
+  // This event listener might be handled by OneSignal's imported script.
+  // If you need custom push handling *in addition* to OneSignal,
+  // ensure it doesn't conflict with OneSignal's operations.
+  console.log('[Service Worker] Push Received (custom handler).');
 });
 */
 
 // Bildirime tıklama olayını dinle
+// OneSignal SDK'sı kendi bildirim tıklama olaylarını yönetir.
+// Eğer OneSignal bildirimleri için özel bir davranış isteniyorsa,
+// bu OneSignal paneli üzerinden veya SDK'nın event listener'ları aracılığıyla yapılandırılmalıdır.
+// Bu genel 'notificationclick' listener, OneSignal dışı bildirimler için kalabilir veya
+// OneSignal'ın kendi listener'larıyla çakışmaması için dikkatli yönetilmelidir.
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification click Received.');
+  console.log('[Service Worker] Notification click Received (custom handler).');
   event.notification.close(); 
 
   event.waitUntil(
@@ -76,4 +76,3 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
-

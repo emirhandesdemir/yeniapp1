@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import OneSignal from 'react-onesignal';
 import {
   MessageSquare,
   Bell,
@@ -75,8 +76,8 @@ function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: 
   );
 }
 
-const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1';
-const LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY = 'lastShownDmTimestamps_v1';
+const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1_hiwewalk';
+const LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY = 'lastShownDmTimestamps_v1_hiwewalk';
 
 
 const pageVariants = {
@@ -116,10 +117,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
+  const [oneSignalInitialized, setOneSignalInitialized] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (isClient && !oneSignalInitialized && process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID && process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID !== 'YOUR_ONESIGNAL_APP_ID') {
+      OneSignal.init({ appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID })
+        .then(() => {
+          console.log("OneSignal SDK Initialized");
+          setOneSignalInitialized(true);
+          // OneSignal.Slidedown.promptPush(); // Kullanıcıya bildirim izni sormak için
+        })
+        .catch((e) => console.error("Error initializing OneSignal:", e));
+    } else if (isClient && !process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID === 'YOUR_ONESIGNAL_APP_ID') {
+        console.warn("OneSignal App ID is not configured in environment variables (NEXT_PUBLIC_ONESIGNAL_APP_ID). OneSignal will not be initialized.");
+        setOneSignalInitialized(true); // Mark as initialized to prevent re-attempts
+    }
+  }, [isClient, oneSignalInitialized]);
+
 
   useEffect(() => {
     if (isClient) {
