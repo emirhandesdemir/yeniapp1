@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users as RoomIcon } from "lucide-react"; 
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -19,21 +19,21 @@ import { isPast } from 'date-fns';
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
-  visible: { 
-    opacity: 1, 
-    y: 0, 
+  visible: {
+    opacity: 1,
+    y: 0,
     height: 'auto',
     marginBottom: '1.5rem', // Corresponds to space-y-6
-    transition: { 
+    transition: {
       type: "spring",
       stiffness: 100,
       damping: 20,
       duration: 0.5
-    } 
+    }
   },
-  exit: { 
-    opacity: 0, 
-    y: -20, 
+  exit: {
+    opacity: 0,
+    y: -20,
     height: 0,
     marginBottom: 0,
     transition: { duration: 0.3, ease: "easeInOut" }
@@ -60,23 +60,22 @@ const buttonItemVariants = {
   visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 200, damping: 10 } },
 };
 
-const SCROLL_HIDE_THRESHOLD = 100; 
+const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1';
 
-// Akışta gösterilecek öğeler için tür tanımları
 export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (ChatRoomFeedDisplayData & { feedItemType: 'room' });
 
 
 export default function HomePage() {
   const router = useRouter();
   const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
-  
+
   const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true);
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeRooms, setActiveRooms] = useState<ChatRoomFeedDisplayData[]>([]);
   const [combinedFeedItems, setCombinedFeedItems] = useState<FeedDisplayItem[]>([]);
-  
+
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingRooms, setLoadingRooms] = useState(true);
 
@@ -115,7 +114,6 @@ export default function HomePage() {
     }
   }, [currentUser, authLoading, router]);
 
-  // Gönderileri çekme
   useEffect(() => {
     setLoadingPosts(true);
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
@@ -133,21 +131,21 @@ export default function HomePage() {
     return () => unsubscribe();
   }, []);
 
-  // Aktif odaları çekme
   useEffect(() => {
     setLoadingRooms(true);
     const now = Timestamp.now();
     const qRooms = query(
-      collection(db, "chatRooms"), 
-      where("expiresAt", ">", now), 
-      orderBy("expiresAt", "asc"),
-      orderBy("createdAt", "desc"),
-      limit(3) 
+      collection(db, "chatRooms"),
+      where("expiresAt", ">", now),
+      orderBy("participantCount", "desc"), // Sort by most participants first
+      orderBy("createdAt", "desc"),       // Then by newest
+      limit(3)
     );
     const unsubscribeRooms = onSnapshot(qRooms, (snapshot) => {
       const fetchedRooms: ChatRoomFeedDisplayData[] = [];
       snapshot.forEach((doc) => {
         const roomData = doc.data();
+        // Client-side check just in case, though query should handle it
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
           fetchedRooms.push({
             id: doc.id,
@@ -155,7 +153,7 @@ export default function HomePage() {
             description: roomData.description,
             participantCount: roomData.participantCount,
             maxParticipants: roomData.maxParticipants,
-            createdAt: roomData.createdAt as Timestamp, 
+            createdAt: roomData.createdAt as Timestamp,
           } as ChatRoomFeedDisplayData);
         }
       });
@@ -168,17 +166,16 @@ export default function HomePage() {
     return () => unsubscribeRooms();
   }, []);
 
-  // Gönderileri ve odaları birleştirip sıralama
   useEffect(() => {
     if (loadingPosts || loadingRooms) return;
 
     const postItems: FeedDisplayItem[] = posts.map(p => ({ ...p, feedItemType: 'post' }));
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
-    
+
     const combined = [...postItems, ...roomItems].sort((a, b) => {
         const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
         const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
-        return timeB - timeA;
+        return timeB - timeA; // Sort by most recent first
     });
     setCombinedFeedItems(combined);
 
@@ -219,7 +216,7 @@ export default function HomePage() {
               >
                 <Card className="shadow-lg bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl">
                   <CardHeader className="p-3 sm:p-4">
-                    <motion.div 
+                    <motion.div
                       className="flex justify-between items-start mb-1 sm:mb-2"
                       variants={itemVariants}
                     >
@@ -235,14 +232,14 @@ export default function HomePage() {
                     </motion.div>
                   </CardHeader>
                   <CardContent className="p-3 sm:p-4 pt-0">
-                    <motion.div 
+                    <motion.div
                       className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 sm:mb-2.5"
                       variants={itemVariants}
                     >
                       <Gem className="h-3.5 w-3.5 text-yellow-400" />
                       <span className="font-medium">Elmasların: {userData?.diamonds ?? 0}</span>
                     </motion.div>
-                    <motion.div 
+                    <motion.div
                       className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2"
                       variants={buttonsContainerVariants}
                     >
@@ -256,7 +253,7 @@ export default function HomePage() {
                       </motion.div>
                       <motion.div variants={buttonItemVariants}>
                         <Button asChild size="sm" variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-1.5 sm:py-2 text-xs">
-                          <Link href="/chat"> 
+                          <Link href="/chat">
                             <PlusCircle className="mr-1.5 h-3.5 sm:h-4 sm:w-4" />
                             Yeni Oda Oluştur
                           </Link>
@@ -268,9 +265,9 @@ export default function HomePage() {
               </motion.div>
             )}
           </AnimatePresence>
-          
+
           <CreatePostForm />
-          
+
           {isLoadingFeed && (
             <div className="flex justify-center items-center py-10">
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -304,7 +301,7 @@ export default function HomePage() {
               })}
             </div>
           )}
-          
+
         </div>
       </AppLayout>
     );
@@ -324,5 +321,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-    

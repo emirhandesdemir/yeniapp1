@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, Sparkles, Wand2, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -19,7 +19,7 @@ import {
   serverTimestamp,
   doc,
   getDoc,
-  deleteDoc, 
+  deleteDoc,
   Timestamp,
   updateDoc,
   getDocs,
@@ -41,11 +41,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils"; 
-import Image from 'next/image'; // For Next.js optimized images, though <img> might be simpler for data URIs
+import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
+import Image from 'next/image';
 
-// Import the new Genkit flow
-import { generateEcho, type GenerateEchoInput, type GenerateEchoOutput } from '@/ai/flows/generate-echo-flow';
 
 interface Message {
   id: string;
@@ -57,15 +55,12 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
-  isEchoMessage?: boolean; // New field for echo messages
-  echoContentType?: 'image' | 'text'; // Type of echo content
-  echoContent?: string; // Content of the echo (data URI for image, or text)
 }
 
 interface ChatRoomDetails {
   id: string;
   name: string;
-  description?: string; 
+  description?: string;
   creatorId: string;
   participantCount?: number;
   maxParticipants: number;
@@ -73,7 +68,6 @@ interface ChatRoomDetails {
   currentGameQuestionId?: string | null;
   nextGameQuestionTimestamp?: Timestamp | null;
   gameInitialized?: boolean;
-  lastEchoTimestamp?: Timestamp | null; // For echo cooldown
 }
 
 interface ActiveParticipant {
@@ -105,11 +99,11 @@ interface GameQuestion {
   id: string;
   text: string;
   answer: string;
-  hint: string; 
+  hint: string;
 }
 
-const FIXED_GAME_REWARD = 1; 
-const HINT_COST = 1; 
+const FIXED_GAME_REWARD = 1;
+const HINT_COST = 1;
 
 const HARDCODED_QUESTIONS: GameQuestion[] = [
   { id: "q1", text: "Hangi anahtar kapı açmaz?", answer: "klavye", hint: "Bilgisayarda yazı yazmak için kullanılır." },
@@ -125,8 +119,6 @@ const HARDCODED_QUESTIONS: GameQuestion[] = [
 const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
-const ECHO_COOLDOWN_SECONDS = 60; // 1 minute cooldown for echo
-const MAX_MESSAGES_FOR_ECHO_CONTEXT = 7;
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -164,9 +156,6 @@ export default function ChatRoomPage() {
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [isEchoLoading, setIsEchoLoading] = useState(false);
-  const [lastEchoTimestampState, setLastEchoTimestampState] = useState<Timestamp | null>(null);
-
 
   useEffect(() => {
     const fetchGameSettings = async () => {
@@ -198,7 +187,7 @@ export default function ChatRoomPage() {
     const secs = seconds % 60;
     return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
-  
+
   useEffect(() => {
     if (countdownDisplayTimerRef.current) {
       clearInterval(countdownDisplayTimerRef.current);
@@ -214,10 +203,10 @@ export default function ChatRoomPage() {
           setNextQuestionCountdown(null);
         }
       };
-      updateCountdown(); 
+      updateCountdown();
       countdownDisplayTimerRef.current = setInterval(updateCountdown, 1000);
     } else if (roomDetails?.currentGameQuestionId) {
-        setNextQuestionCountdown(null); 
+        setNextQuestionCountdown(null);
     } else {
         setNextQuestionCountdown(null);
     }
@@ -232,12 +221,12 @@ const attemptToAskNewQuestion = useCallback(async () => {
       !isCurrentUserParticipant ||
       !gameSettings?.isGameEnabled ||
       !roomId ||
-      !roomDetails || 
-      roomDetails.currentGameQuestionId || 
-      availableGameQuestions.length === 0 
+      !roomDetails ||
+      roomDetails.currentGameQuestionId ||
+      availableGameQuestions.length === 0
     ) {
       console.log("[GameSystem] Conditions not met to ask new question or no questions available.", {
-        isCurrentUserParticipant, 
+        isCurrentUserParticipant,
         gameEnabled: gameSettings?.isGameEnabled,
         roomId,
         hasRoomDetails: !!roomDetails,
@@ -250,18 +239,18 @@ const attemptToAskNewQuestion = useCallback(async () => {
     try {
       console.log("[GameSystem] Attempting to ask a new question for room:", roomId);
       const roomDocRef = doc(db, "chatRooms", roomId);
-      const currentRoomSnap = await getDoc(roomDocRef); 
+      const currentRoomSnap = await getDoc(roomDocRef);
       if (!currentRoomSnap.exists()) {
         console.warn("[GameSystem] Room document disappeared while trying to ask question:", roomId);
         return;
       }
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
 
-      if (currentRoomData.currentGameQuestionId) { 
+      if (currentRoomData.currentGameQuestionId) {
         console.log("[GameSystem] Another question became active before this attempt for room:", roomId);
         return;
       }
-      
+
       const randomIndex = Math.floor(Math.random() * availableGameQuestions.length);
       const nextQuestion = availableGameQuestions[randomIndex];
       const intervalSeconds = gameSettings?.questionIntervalSeconds ?? 180;
@@ -270,9 +259,9 @@ const attemptToAskNewQuestion = useCallback(async () => {
       const batch = writeBatch(db);
       batch.update(roomDocRef, {
         currentGameQuestionId: nextQuestion.id,
-        nextGameQuestionTimestamp: newNextGameQuestionTimestamp, 
+        nextGameQuestionTimestamp: newNextGameQuestionTimestamp,
       });
-      
+
       batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
           text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${FIXED_GAME_REWARD} Elmas). Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`,
           senderId: "system",
@@ -300,13 +289,13 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (gameSettings?.isGameEnabled && isCurrentUserParticipant && roomDetails) {
         console.log("[GameSystem] Setting up 5s interval for room:", roomId, "Next Q Timestamp:", roomDetails.nextGameQuestionTimestamp?.toDate());
         gameQuestionIntervalTimerRef.current = setInterval(() => {
-            if (roomDetails.nextGameQuestionTimestamp && 
-                isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && 
-                !roomDetails.currentGameQuestionId) { 
+            if (roomDetails.nextGameQuestionTimestamp &&
+                isPast(roomDetails.nextGameQuestionTimestamp.toDate()) &&
+                !roomDetails.currentGameQuestionId) {
                 console.log("[GameSystem] Interval: Time for next question. Current nextGameQuestionTimestamp:", roomDetails.nextGameQuestionTimestamp?.toDate());
                 attemptToAskNewQuestion();
             }
-        }, 5000); 
+        }, 5000);
     } else {
         console.log("[GameSystem] Not setting up 5s interval. Conditions:", {gameEnabled: gameSettings?.isGameEnabled, isParticipant: isCurrentUserParticipant, hasRoomDetails: !!roomDetails});
     }
@@ -336,8 +325,8 @@ const attemptToAskNewQuestion = useCallback(async () => {
   }, [
     isCurrentUserParticipant,
     gameSettings,
-    roomDetails?.nextGameQuestionTimestamp, 
-    roomDetails?.currentGameQuestionId,    
+    roomDetails?.nextGameQuestionTimestamp,
+    roomDetails?.currentGameQuestionId,
     availableGameQuestions,
     attemptToAskNewQuestion,
     roomId
@@ -359,7 +348,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
 
   const handleCloseGameQuestionCard = () => {
-    setShowGameQuestionCard(false); 
+    setShowGameQuestionCard(false);
   };
 
 
@@ -377,7 +366,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         await updateDoc(participantRef, { isTyping });
       }
     } catch (error) {
-        // console.warn("Error updating typing status (minor):", error); 
+        // console.warn("Error updating typing status (minor):", error);
     }
   }, [currentUser, roomId, isCurrentUserParticipant]);
 
@@ -444,10 +433,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
         timestamp: serverTimestamp(),
         isGameMessage: true,
       });
-      
+
       if (gameSettings?.isGameEnabled) {
         let gameInfoMessage = `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `;
-        const updatedRoomSnap = await getDoc(roomRef); 
+        const updatedRoomSnap = await getDoc(roomRef);
         const updatedRoomData = updatedRoomSnap.data() as ChatRoomDetails;
 
         if (updatedRoomData?.currentGameQuestionId) {
@@ -489,10 +478,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
       typingTimeoutRef.current = null;
     }
     await updateUserTypingStatus(false);
-    
+
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
-    
+
     const userDisplayNameForLeave = userData?.displayName || currentUser?.displayName;
     if (userDisplayNameForLeave) {
         try {
@@ -505,7 +494,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 isGameMessage: true,
             });
         } catch (msgError) {
-            // console.warn("Error sending leave message (minor):", msgError); 
+            // console.warn("Error sending leave message (minor):", msgError);
         }
     }
 
@@ -530,7 +519,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         const fetchedRoomDetails: ChatRoomDetails = {
           id: docSnap.id,
           name: data.name,
-          description: data.description, 
+          description: data.description,
           creatorId: data.creatorId,
           participantCount: data.participantCount || 0,
           maxParticipants: data.maxParticipants || 7,
@@ -538,10 +527,8 @@ const attemptToAskNewQuestion = useCallback(async () => {
           currentGameQuestionId: data.currentGameQuestionId,
           nextGameQuestionTimestamp: data.nextGameQuestionTimestamp,
           gameInitialized: data.gameInitialized,
-          lastEchoTimestamp: data.lastEchoTimestamp, // Fetch last echo timestamp
         };
         setRoomDetails(fetchedRoomDetails);
-        setLastEchoTimestampState(data.lastEchoTimestamp); // Set state for cooldown
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
         console.log("[ChatRoomPage] Room details updated:", fetchedRoomDetails);
       } else {
@@ -569,8 +556,8 @@ const attemptToAskNewQuestion = useCallback(async () => {
       let currentUserIsStillParticipant = false;
       snapshot.forEach((doc) => {
         const participantData = doc.data();
-        fetchedParticipants.push({ 
-            id: doc.id, 
+        fetchedParticipants.push({
+            id: doc.id,
             displayName: participantData.displayName,
             photoURL: participantData.photoURL,
             joinedAt: participantData.joinedAt,
@@ -581,7 +568,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         }
       });
       setActiveParticipants(fetchedParticipants);
-      
+
       if (isCurrentUserParticipant !== currentUserIsStillParticipant) {
         setIsCurrentUserParticipant(currentUserIsStillParticipant);
         if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
@@ -609,10 +596,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
           senderName: data.senderName,
           senderAvatar: data.senderAvatar,
           timestamp: data.timestamp,
-          isGameMessage: data.isGameMessage || false, 
-          isEchoMessage: data.isEchoMessage || false,
-          echoContentType: data.echoContentType,
-          echoContent: data.echoContent,
+          isGameMessage: data.isGameMessage || false,
         });
       });
       setMessages(fetchedMessages.map(msg => ({
@@ -638,7 +622,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       if (isCurrentUserParticipant) {
@@ -647,7 +631,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      if (gameQuestionIntervalTimerRef.current) { 
+      if (gameQuestionIntervalTimerRef.current) {
         clearInterval(gameQuestionIntervalTimerRef.current);
       }
       if (countdownDisplayTimerRef.current) {
@@ -691,10 +675,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
             clearTimeout(typingTimeoutRef.current);
             typingTimeoutRef.current = null;
         }
-    } else { 
+    } else {
         typingTimeoutRef.current = setTimeout(() => {
             updateUserTypingStatus(false);
-            typingTimeoutRef.current = null; 
+            typingTimeoutRef.current = null;
         }, TYPING_DEBOUNCE_DELAY);
     }
   };
@@ -703,7 +687,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData) return;
-    
+
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
@@ -711,14 +695,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
     await updateUserTypingStatus(false);
 
     const tempMessage = newMessage.trim();
-    setNewMessage(""); 
+    setNewMessage("");
 
     const roomDocRef = doc(db, "chatRooms", roomId);
 
     if (tempMessage.toLowerCase() === "/hint" && activeGameQuestion && gameSettings?.isGameEnabled) {
         if ((userData.diamonds ?? 0) < HINT_COST) {
             toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"});
-            setNewMessage(tempMessage); 
+            setNewMessage(tempMessage);
             return;
         }
         setIsSending(true);
@@ -732,7 +716,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                         <span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span>
                     </div>
                 ),
-                duration: 10000, 
+                duration: 10000,
             });
             await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
                 text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`,
@@ -754,7 +738,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (tempMessage.toLowerCase().startsWith("/answer ") && activeGameQuestion && gameSettings?.isGameEnabled) {
       setIsSending(true);
       const userAnswer = tempMessage.substring(8).trim();
-      
+
       const currentRoomSnap = await getDoc(roomDocRef);
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
 
@@ -767,12 +751,12 @@ const attemptToAskNewQuestion = useCallback(async () => {
       if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
         const reward = FIXED_GAME_REWARD;
         await updateUserDiamonds((userData.diamonds || 0) + reward);
-        
+
         const batch = writeBatch(db);
-        batch.update(roomDocRef, { 
+        batch.update(roomDocRef, {
             currentGameQuestionId: null,
             nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds))
-        }); 
+        });
         batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
           text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`,
           senderId: "system",
@@ -811,7 +795,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
     } catch (error) {
       console.error("Error sending message:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-      setNewMessage(tempMessage); 
+      setNewMessage(tempMessage);
     } finally {
       setIsSending(false);
     }
@@ -826,7 +810,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       return;
     }
     try {
-      await deleteChatRoomAndSubcollections(roomId); 
+      await deleteChatRoomAndSubcollections(roomId);
       toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` });
       router.push("/chat");
     } catch (error) {
@@ -874,10 +858,10 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
 
   const handleOpenUserInfoPopover = async (senderId: string) => {
-    if (!currentUser || senderId === currentUser.uid) return; 
+    if (!currentUser || senderId === currentUser.uid) return;
     setPopoverOpenForUserId(senderId);
     setPopoverLoading(true);
-    setRelevantFriendRequest(null); 
+    setRelevantFriendRequest(null);
     try {
       const userDocRef = doc(db, "users", senderId);
       const userDocSnap = await getDoc(userDocRef);
@@ -926,7 +910,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         return;
       }
 
-      setFriendshipStatus("none"); 
+      setFriendshipStatus("none");
     } catch (error) {
       console.error("Error fetching user info for popover:", error);
       toast({ title: "Hata", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
@@ -952,7 +936,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
       setFriendshipStatus("request_sent");
       setRelevantFriendRequest({
-        id: newRequestRef.id, 
+        id: newRequestRef.id,
         fromUserId: currentUser.uid,
         fromUsername: userData.displayName || "",
         fromAvatarUrl: userData.photoURL || null,
@@ -960,7 +944,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         toUsername: popoverTargetUser.displayName || "",
         toAvatarUrl: popoverTargetUser.photoURL || null,
         status: "pending",
-        createdAt: Timestamp.now() 
+        createdAt: Timestamp.now()
       });
     } catch (error) {
       console.error("Error sending friend request from popover:", error);
@@ -992,7 +976,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       await batch.commit();
       toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} ile arkadaş oldunuz.` });
       setFriendshipStatus("friends");
-      setRelevantFriendRequest(null); 
+      setRelevantFriendRequest(null);
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -1005,63 +989,8 @@ const attemptToAskNewQuestion = useCallback(async () => {
     if (!currentUser?.uid || !targetUserId) return;
     const dmId = generateDmChatId(currentUser.uid, targetUserId);
     router.push(`/dm/${dmId}`);
-    setPopoverOpenForUserId(null); 
+    setPopoverOpenForUserId(null);
   };
-
-  const handleGenerateEcho = async () => {
-    if (!currentUser || !userData || !roomId || !canSendMessage) return;
-    if (isEchoLoading || (lastEchoTimestampState && Date.now() - lastEchoTimestampState.toMillis() < ECHO_COOLDOWN_SECONDS * 1000)) {
-        toast({title: "Lütfen Bekleyin", description: "Yeni bir yankı oluşturmak için biraz beklemeniz gerekiyor.", variant: "default"});
-        return;
-    }
-
-    setIsEchoLoading(true);
-    try {
-      const recentMessagesText = messages
-        .filter(msg => !msg.isGameMessage && !msg.isEchoMessage && msg.text) // Filter out system/game/echo messages
-        .slice(-MAX_MESSAGES_FOR_ECHO_CONTEXT) // Get last N messages
-        .map(msg => `${msg.senderName}: ${msg.text}`);
-
-      if (recentMessagesText.length < 1) {
-        toast({title: "Yetersiz İçerik", description: "Yankı oluşturmak için odada daha fazla konuşma olması gerekiyor.", variant: "default"});
-        setIsEchoLoading(false);
-        return;
-      }
-      
-      const desiredOutputType = Math.random() < 0.4 ? 'image' : 'text'; // 40% chance for image
-
-      const input: GenerateEchoInput = {
-        recentMessages: recentMessagesText,
-        desiredOutputType: desiredOutputType,
-      };
-
-      const result: GenerateEchoOutput = await generateEcho(input);
-      
-      const newEchoTimestamp = Timestamp.now();
-      await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-        senderId: "echo_system",
-        senderName: "Küre Yankısı",
-        senderAvatar: null, // No avatar for echo
-        timestamp: newEchoTimestamp,
-        isEchoMessage: true,
-        echoContentType: result.actualOutputType,
-        echoContent: result.outputContent,
-      });
-      
-      // Update lastEchoTimestamp in room details
-      const roomDocRef = doc(db, "chatRooms", roomId);
-      await updateDoc(roomDocRef, { lastEchoTimestamp: newEchoTimestamp });
-      setLastEchoTimestampState(newEchoTimestamp); // Update local state for cooldown
-
-    } catch (error) {
-      console.error("Error generating echo:", error);
-      toast({ title: "Yankı Hatası", description: "Küre Yankısı oluşturulurken bir sorun oluştu.", variant: "destructive" });
-    } finally {
-      setIsEchoLoading(false);
-    }
-  };
-
-  const isEchoOnCooldown = lastEchoTimestampState && (Date.now() - lastEchoTimestampState.toMillis() < ECHO_COOLDOWN_SECONDS * 1000);
 
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipant)) {
@@ -1079,14 +1008,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
         <GameQuestionCard
           question={activeGameQuestion}
           onClose={handleCloseGameQuestionCard}
-          reward={FIXED_GAME_REWARD} 
+          reward={FIXED_GAME_REWARD}
         />
       )}
 
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
             <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
-            <Link href="/chat"> 
+            <Link href="/chat">
                 <ArrowLeft className="h-5 w-5" />
                 <span className="sr-only">Geri</span>
             </Link>
@@ -1243,29 +1172,12 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 </div>
             )}
             {messages.map((msg) => (
-            <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""} ${(msg.isGameMessage || msg.isEchoMessage) ? "justify-center" : ""}`}>
+            <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""} ${msg.isGameMessage ? "justify-center" : ""}`}>
                 {msg.isGameMessage ? (
                     <div className="w-full max-w-md mx-auto my-2">
                         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
                            {msg.text.toLowerCase().includes("[oyun]") ? <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" /> : <MessageSquare className="inline h-4 w-4 mr-1.5 text-blue-500" /> }
                            {msg.text}
-                        </div>
-                    </div>
-                ) : msg.isEchoMessage ? (
-                    <div className="w-full max-w-md mx-auto my-3">
-                        <div className="text-xs text-center p-3 rounded-lg bg-gradient-to-br from-accent/15 via-card to-primary/10 border border-dashed border-accent/30 shadow-lg">
-                           <div className="flex items-center justify-center gap-1.5 mb-2 text-accent">
-                             <Wand2 className="h-4 w-4" />
-                             <span className="font-semibold">{msg.senderName}</span>
-                           </div>
-                           {msg.echoContentType === 'image' && msg.echoContent ? (
-                             <Image src={msg.echoContent} alt="Küre Yankısı Resmi" width={300} height={200} className="rounded-md mx-auto shadow-inner object-contain max-h-48" data-ai-hint="ai generated art" />
-                           ) : (
-                             <p className="italic text-muted-foreground">{msg.echoContent || "Bir yankı fısıldandı..."}</p>
-                           )}
-                           <p className="text-[10px] text-muted-foreground/70 mt-2">
-                            {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
-                           </p>
                         </div>
                     </div>
                 ) : (
@@ -1353,26 +1265,6 @@ const attemptToAskNewQuestion = useCallback(async () => {
 
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
         <div className="relative flex items-center gap-2">
-           <TooltipProvider delayDuration={150}>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        type="button" 
-                        onClick={handleGenerateEcho}
-                        disabled={!canSendMessage || isUserLoading || isEchoLoading || !!isEchoOnCooldown} 
-                        className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-muted-foreground hover:text-accent"
-                    >
-                        {isEchoLoading ? <Loader2 className="h-5 w-5 animate-spin"/> : <Sparkles className="h-5 w-5"/>}
-                        <span className="sr-only">Küre Yankısı Oluştur</span>
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                <p>{isEchoOnCooldown ? `Sonraki yankı için bekle...` : `Küre Yankısı Oluştur`}</p>
-                </TooltipContent>
-            </Tooltip>
-           </TooltipProvider>
           <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
             <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
@@ -1413,4 +1305,3 @@ const attemptToAskNewQuestion = useCallback(async () => {
     </div>
   );
 }
-

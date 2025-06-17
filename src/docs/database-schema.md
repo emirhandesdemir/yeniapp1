@@ -47,9 +47,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
 - **Gerekli İndeksler:**
-  - Ana sayfadaki akışta aktif odaları listelemek için (`src/app/page.tsx`):
+  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için:
     - Koleksiyon: `chatRooms`
-    - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan), `__name__` (Artan)
+    - Alanlar: `expiresAt` (Artan), `participantCount` (Azalan), `createdAt` (Azalan)
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan)
@@ -146,4 +146,3 @@ Genel uygulama ayarlarını saklar.
   - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-

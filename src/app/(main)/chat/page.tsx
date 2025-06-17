@@ -7,7 +7,7 @@ import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, Shoppi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -81,7 +81,7 @@ export default function ChatRoomsPage() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState(new Date()); // For client-side expiry display updates
 
   const [isRoomsInfoCardVisible, setIsRoomsInfoCardVisible] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -116,14 +116,32 @@ export default function ChatRoomsPage() {
 
   useEffect(() => {
     document.title = 'Sohbet Odaları - Sohbet Küresi';
-    const q = query(collection(db, "chatRooms"), orderBy("createdAt", "desc"));
+    const currentTime = Timestamp.now();
+    const q = query(
+      collection(db, "chatRooms"),
+      where("expiresAt", ">", currentTime),      // Fetch only active rooms
+      orderBy("expiresAt", "asc"),             // Rooms ending sooner first (can be changed)
+      orderBy("participantCount", "desc"),   // Then by most participants
+      orderBy("createdAt", "desc")           // Then by newest
+    );
+
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const rooms: ChatRoom[] = [];
       querySnapshot.forEach((doc) => {
         const roomData = doc.data() as Omit<ChatRoom, 'id'>;
-        rooms.push({ id: doc.id, ...roomData });
+        // Double check expiry client-side, though query should handle it
+        if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
+            rooms.push({ id: doc.id, ...roomData });
+        }
       });
-      setChatRooms(rooms);
+      // Re-sort client side to ensure participantCount and createdAt take precedence
+      // after filtering by expiresAt (Firestore's multi-field ordering has limitations)
+      const sortedRooms = rooms.sort((a,b) => {
+        const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
+        if (participantDiff !== 0) return participantDiff;
+        return b.createdAt.toMillis() - a.createdAt.toMillis();
+      });
+      setChatRooms(sortedRooms);
       setLoading(false);
     }, (error) => {
       console.error("Error fetching chat rooms: ", error);
@@ -283,7 +301,6 @@ export default function ChatRoomsPage() {
     );
   }
 
-  const activeChatRooms = chatRooms.filter(room => !(room.expiresAt && isPast(room.expiresAt.toDate())));
   const hasEnoughDiamonds = (userData?.diamonds ?? 0) >= ROOM_CREATION_COST;
 
   return (
@@ -430,7 +447,7 @@ export default function ChatRoomsPage() {
         </Dialog>
       </div>
 
-      {activeChatRooms.length === 0 && !loading ? (
+      {chatRooms.length === 0 && !loading ? (
         <Card className="col-span-full text-center py-10 sm:py-16 bg-card border border-border/20 rounded-xl shadow-lg">
             <CardHeader>
                 <MessageSquare className="mx-auto h-16 w-16 sm:h-20 sm:w-20 text-primary/70 mb-4" />
@@ -457,7 +474,7 @@ export default function ChatRoomsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {activeChatRooms.map((room) => (
+          {chatRooms.map((room) => (
             <Card
               key={room.id}
               className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl bg-card border border-border/20 hover:border-primary/40 dark:border-border/10 dark:hover:border-primary/50 group"
@@ -525,6 +542,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-    
-
-    
