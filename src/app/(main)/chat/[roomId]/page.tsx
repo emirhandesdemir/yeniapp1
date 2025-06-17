@@ -398,7 +398,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       await batch.commit();
       setIsCurrentUserParticipant(false);
     } catch (error) { console.error("Error leaving room:", error); }
-  }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus, userData?.displayName, isVoiceChatActive]);
+  }, [currentUser, roomId, isCurrentUserParticipant, updateUserTypingStatus, userData?.displayName, isVoiceChatActive, handleLeaveVoiceChat]);
 
 
   useEffect(() => {
@@ -520,6 +520,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
     
     setIsSending(true);
     const tempMessage = newMessage.trim();
+    setNewMessage(""); // Clear input immediately to prevent double send
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     updateUserTypingStatus(false);
     const roomDocRef = doc(db, "chatRooms", roomId);
@@ -529,14 +530,15 @@ const attemptToAskNewQuestion = useCallback(async () => {
         if ((userData.diamonds ?? 0) < HINT_COST) {
             toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive"}); 
             setIsSending(false); 
+            // setNewMessage(tempMessage); // Restore message if failed
             return;
         }
         try {
             await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST);
             toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 });
             await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true });
-        } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"});
-        } finally { setIsSending(false); setNewMessage(""); } return;
+        } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive"}); // setNewMessage(tempMessage);
+        } finally { setIsSending(false); } return;
       }
       if (tempMessage.toLowerCase().startsWith("/answer ")) {
         const userAnswer = tempMessage.substring(8).trim();
@@ -544,7 +546,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
         if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) {
           toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" }); 
           setIsSending(false); 
-          setNewMessage("");
+          // setNewMessage(tempMessage);
           return;
         }
         if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) {
@@ -559,7 +561,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
           toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" });
         }
         setIsSending(false); 
-        setNewMessage("");
+        // setNewMessage(tempMessage); // Consider if we want to restore the "/answer" command or clear it
         return;
       }
     }
@@ -569,10 +571,14 @@ const attemptToAskNewQuestion = useCallback(async () => {
         text: tempMessage, senderId: currentUser.uid, senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL, timestamp: serverTimestamp(), isGameMessage: false,
       });
-      setNewMessage("");
+      // setNewMessage(""); // Already cleared at the beginning
     } catch (error) {
-      console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
-    } finally { setIsSending(false); }
+      console.error("Error sending message:", error); 
+      toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
+      // setNewMessage(tempMessage); // Restore message on error
+    } finally { 
+        setIsSending(false); 
+    }
   };
 
 
@@ -749,7 +755,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
       localStreamRef.current = null;
     }
     remoteStreamsRef.current = {};
-    setRemoteAudioRefs({}); // Clear audio element refs
+    remoteAudioRefs.current = {}; // Clear audio element refs
 
     if (currentUser?.uid && roomId) {
       try {
