@@ -254,18 +254,16 @@ export default function ChatRoomPage() {
       setQuestionAnswerCountdown(null);
     }
     return () => { if (gameAnswerDeadlineTimerRef.current) clearInterval(gameAnswerDeadlineTimerRef.current); };
-  }, [roomDetails?.currentGameQuestionId, roomDetails?.currentGameAnswerDeadline]);
+  }, [roomDetails?.currentGameQuestionId, roomDetails?.currentGameAnswerDeadline, handleGameAnswerTimeout]);
 
   const isHandlingTimeoutRef = useRef(false);
 
   const handleGameAnswerTimeout = useCallback(async () => {
     if (!roomId || !roomDetails?.currentGameQuestionId || !activeGameQuestion) return;
     console.log("[GameSystem] Answer timeout for question:", activeGameQuestion.text);
-    // Ensure this runs only once for a given question timeout
     const roomDocRef = doc(db, "chatRooms", roomId);
     const currentRoomSnap = await getDoc(roomDocRef);
     if (!currentRoomSnap.exists() || currentRoomSnap.data()?.currentGameQuestionId !== roomDetails.currentGameQuestionId) {
-      // Question already changed or room deleted, do nothing
       return;
     }
 
@@ -296,7 +294,7 @@ export default function ChatRoomPage() {
     try {
       const roomDocRef = doc(db, "chatRooms", roomId); const currentRoomSnap = await getDoc(roomDocRef);
       if (!currentRoomSnap.exists()) return; const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
-      if (currentRoomData.currentGameQuestionId) return; // Already a question active, don't ask another
+      if (currentRoomData.currentGameQuestionId) return; 
       const randomIndex = Math.floor(Math.random() * availableGameQuestions.length); const nextQuestion = availableGameQuestions[randomIndex];
       
       const batch = writeBatch(db);
@@ -314,11 +312,10 @@ export default function ChatRoomPage() {
     if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current);
     if (gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && roomDetails) {
       gameQuestionIntervalTimerRef.current = setInterval(() => { 
-        // Check if it's time for a new question only if no question is currently active AND no answer deadline is set
         if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline) {
           attemptToAskNewQuestion(); 
         }
-      }, 5000); // Check every 5 seconds
+      }, 5000); 
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
   }, [gameSettings, roomDetails, attemptToAskNewQuestion]);
@@ -424,7 +421,7 @@ export default function ChatRoomPage() {
        if (localStreamRef.current && isCurrentUserInVoiceChat) { newVoiceParticipants.forEach(p => { if (p.id !== currentUser?.uid && !peerConnectionsRef.current[p.id]) { initiatePeerConnection(p.id, true); } }); }
     }, (error) => { console.error("Error fetching voice participants:", error); toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" }); });
     return () => unsubscribeVoice();
-  }, [roomId, currentUser?.uid, toast, isCurrentUserInVoiceChat]);
+  }, [roomId, currentUser?.uid, toast, isCurrentUserInVoiceChat, cleanupPeerConnection, initiatePeerConnection]);
 
 
   useEffect(() => {
@@ -438,6 +435,9 @@ export default function ChatRoomPage() {
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
     return () => unsubscribeMessages();
   }, [roomId, currentUser?.uid, toast]);
+
+  const isCurrentUserInVoiceChatRef = useRef(isCurrentUserInVoiceChat);
+  useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
 
   useEffect(() => {
     const handleBeforeUnloadInternal = () => { handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true); };
@@ -456,10 +456,8 @@ export default function ChatRoomPage() {
       resetWebRTCState(); if (signalsListenerUnsubscribeRef.current) { signalsListenerUnsubscribeRef.current(); signalsListenerUnsubscribeRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Dependencies should be correctly managed, but for now, keeping it empty for cleanup.
-  const isCurrentUserInVoiceChatRef = useRef(isCurrentUserInVoiceChat);
-  useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
-
+  }, []); 
+  
   const scrollToBottom = () => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } };
   useEffect(() => { scrollToBottom(); }, [messages]);
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
@@ -530,7 +528,7 @@ export default function ChatRoomPage() {
     return `Kalan: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
-  const handleOpenUserInfoPopover = async (senderId: string) => {
+  const handleOpenUserInfoPopover = useCallback(async (senderId: string) => {
     if (!currentUser || senderId === currentUser.uid) return; setPopoverOpenForUserId(senderId); setPopoverLoading(true); setRelevantFriendRequest(null);
     try {
       const userDocRef = doc(db, "users", senderId); const userDocSnap = await getDoc(userDocRef); if (!userDocSnap.exists()) { toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" }); setPopoverOpenForUserId(null); return; }
@@ -541,7 +539,7 @@ export default function ChatRoomPage() {
       setFriendshipStatus("none");
     } catch (error) { console.error("Error fetching user info for popover:", error); toast({ title: "Hata", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" }); }
     finally { setPopoverLoading(false); }
-  };
+  }, [currentUser, toast]);
 
   const handleSendFriendRequestPopover = async () => {
     if (!currentUser || !userData || !popoverTargetUser) return; setPopoverLoading(true);
@@ -562,18 +560,46 @@ export default function ChatRoomPage() {
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
 
   const sendSignalMessage = useCallback(async (toUid: string, type: 'offer' | 'answer' | 'candidate', data: any) => { if (!currentUser || !roomId) return; const signalColRef = collection(db, `chatRooms/${roomId}/webrtcSignals`); await addDoc(signalColRef, { fromUid: currentUser.uid, toUid, type, data, createdAt: serverTimestamp() }); }, [currentUser, roomId]);
-  const cleanupPeerConnection = useCallback((peerId: string) => { if (peerConnectionsRef.current[peerId]) { peerConnectionsRef.current[peerId].close(); delete peerConnectionsRef.current[peerId]; } setRemoteStreams(prev => { const newStreams = { ...prev }; delete newStreams[peerId]; return newStreams; }); }, []);
+  
+  const cleanupPeerConnection = useCallback((peerId: string) => {
+    if (peerConnectionsRef.current[peerId]) {
+      peerConnectionsRef.current[peerId].getSenders().forEach(sender => {
+        if (sender.track) {
+          sender.track.stop(); // Stop individual tracks
+        }
+      });
+      peerConnectionsRef.current[peerId].close();
+      delete peerConnectionsRef.current[peerId];
+      console.log(`[WebRTC] Cleaned up peer connection for ${peerId}`);
+    }
+    setRemoteStreams(prev => {
+      const newStreams = { ...prev };
+      if (newStreams[peerId]) {
+        newStreams[peerId].getTracks().forEach(track => track.stop()); // Stop tracks on remote stream
+      }
+      delete newStreams[peerId];
+      return newStreams;
+    });
+  }, []);
   
   const resetWebRTCState = useCallback(() => { 
+    console.log("[WebRTC] Resetting WebRTC state...");
     Object.keys(peerConnectionsRef.current).forEach(peerId => { cleanupPeerConnection(peerId); }); 
     peerConnectionsRef.current = {}; 
-    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; } 
+    if (localStreamRef.current) { 
+        localStreamRef.current.getTracks().forEach(track => track.stop()); 
+        localStreamRef.current = null; 
+        console.log("[WebRTC] Local stream stopped and cleared.");
+    } 
     setRemoteStreams({}); 
+    console.log("[WebRTC] WebRTC state reset complete.");
   }, [cleanupPeerConnection]);
 
-  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => { if (!currentUser || !localStreamRef.current) return null; if (peerConnectionsRef.current[peerId]) { console.log(`[WebRTC] Peer connection for ${peerId} already exists or being created.`); return peerConnectionsRef.current[peerId]; } console.log(`[WebRTC] Creating new peer connection to ${peerId}. Initiator: ${isInitiator}`); const pc = new RTCPeerConnection(STUN_SERVERS); peerConnectionsRef.current[peerId] = pc; localStreamRef.current.getTracks().forEach(track => { pc.addTrack(track, localStreamRef.current!); }); pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } }; pc.ontrack = (event) => { console.log(`[WebRTC] Remote track received from ${peerId}`, event.streams[0]); setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] })); }; pc.oniceconnectionstatechange = () => { console.log(`[WebRTC] ICE connection state change for ${peerId}: ${pc.iceConnectionState}`); }; return pc; }, [currentUser, sendSignalMessage]);
+  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => { if (!currentUser || !localStreamRef.current) return null; if (peerConnectionsRef.current[peerId]) { console.log(`[WebRTC] Peer connection for ${peerId} already exists or being created.`); return peerConnectionsRef.current[peerId]; } console.log(`[WebRTC] Creating new peer connection to ${peerId}. Initiator: ${isInitiator}`); const pc = new RTCPeerConnection(STUN_SERVERS); peerConnectionsRef.current[peerId] = pc; localStreamRef.current.getTracks().forEach(track => { try { pc.addTrack(track, localStreamRef.current!); } catch (e) { console.error(`[WebRTC] Error adding track to PC for ${peerId}:`, e); } }); pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } }; pc.ontrack = (event) => { console.log(`[WebRTC] Remote track received from ${peerId}`, event.streams[0]); setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] })); }; pc.oniceconnectionstatechange = () => { console.log(`[WebRTC] ICE connection state change for ${peerId}: ${pc.iceConnectionState}`); if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') { cleanupPeerConnection(peerId); } }; return pc; }, [currentUser, sendSignalMessage, cleanupPeerConnection]);
+  
   const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => { if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) return; console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`); const pc = createPeerConnection(peerId, isInitiator); if (!pc) return; if (isInitiator) { try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSignalMessage(peerId, 'offer', offer); console.log(`[WebRTC] Offer sent to ${peerId}`); } catch (error) { console.error(`[WebRTC] Error creating offer for ${peerId}:`, error); } } }, [currentUser, createPeerConnection, sendSignalMessage]);
-  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => { if (!currentUser || !localStreamRef.current || !roomId) return; const { fromUid, type, data } = signal; console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`); let pc = peerConnectionsRef.current[fromUid]; if (!pc && (type === 'offer' || type === 'candidate')) { console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`); pc = createPeerConnection(fromUid, false)!; if (!pc) return; } else if (!pc) { console.warn(`[WebRTC] PC not found for ${fromUid} on ${type}, cannot process.`); return; } try { if (type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); sendSignalMessage(fromUid, 'answer', answer); console.log(`[WebRTC] Answer sent to ${fromUid}`); } else if (type === 'answer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`); } else if (type === 'candidate') { await pc.addIceCandidate(new RTCIceCandidate(data)); console.log(`[WebRTC] ICE candidate added from ${fromUid}`); } } catch (error) { console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error); } }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
+  
+  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => { if (!currentUser || !localStreamRef.current || !roomId) return; const { fromUid, type, data } = signal; console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`); let pc = peerConnectionsRef.current[fromUid]; if (!pc && (type === 'offer' || type === 'candidate')) { console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`); pc = createPeerConnection(fromUid, false)!; if (!pc) return; } else if (!pc) { console.warn(`[WebRTC] PC not found for ${fromUid} on ${type}, cannot process.`); return; } try { if (type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); sendSignalMessage(fromUid, 'answer', answer); console.log(`[WebRTC] Answer sent to ${fromUid}`); } else if (type === 'answer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`); } else if (type === 'candidate') { if (pc.remoteDescription) { await pc.addIceCandidate(new RTCIceCandidate(data)); console.log(`[WebRTC] ICE candidate added from ${fromUid}`); } else { console.warn(`[WebRTC] Remote description not set for ${fromUid}, delaying ICE candidate.`); /* TODO: Queue candidate if necessary */ } } } catch (error) { console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error); } }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
 
   useEffect(() => {
     if (!isCurrentUserInVoiceChat || !currentUser || !roomId) { if (signalsListenerUnsubscribeRef.current) { signalsListenerUnsubscribeRef.current(); signalsListenerUnsubscribeRef.current = null; } return; }
@@ -601,11 +627,9 @@ export default function ChatRoomPage() {
       localStreamRef.current = stream;
       console.log("[WebRTC] Local stream obtained.");
       
-      // UI'ı hemen güncelle, Firestore ve WebRTC işlemleri arka planda devam etsin
       setIsCurrentUserInVoiceChat(true);
-      setSelfMuted(false); // Başlangıçta sessiz değil
+      setSelfMuted(false); 
 
-      // Firestore'a katılımı kaydet
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid); 
       await setDoc(voiceParticipantRef, { uid: currentUser.uid, displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", photoURL: userData.photoURL || currentUser.photoURL || null, joinedAt: serverTimestamp(), isMuted: false, isMutedByAdmin: false, isSpeaking: false, }); 
       const roomRef = doc(db, "chatRooms", roomId); 
@@ -613,20 +637,17 @@ export default function ChatRoomPage() {
       
       toast({ title: "Sesli Sohbete Katıldın!" });
       
-      // Mevcut diğer katılımcılarla WebRTC bağlantılarını başlat
-      // activeVoiceParticipants state'i onSnapshot ile güncel olduğu için onu kullanabiliriz
-      const updatedRoomSnap = await getDoc(doc(db, "chatRooms", roomId, "voiceParticipants")); // Bu hatalı, katılımcıları tekrar çekmeliyiz
       const currentVoiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`));
       const currentVoiceParticipantsSnap = await getDocs(currentVoiceParticipantsQuery);
       const currentActiveVoiceParticipants: ActiveVoiceParticipantData[] = [];
       currentVoiceParticipantsSnap.forEach(doc => {
-          if (doc.id !== currentUser.uid) { // Kendimizle bağlantı kurmaya çalışmayalım
+          if (doc.id !== currentUser.uid) { 
              currentActiveVoiceParticipants.push({ id: doc.id, ...doc.data() } as ActiveVoiceParticipantData);
           }
       });
       
       currentActiveVoiceParticipants.forEach(p => { 
-          if (localStreamRef.current) { // Yerel akışın hala mevcut olduğundan emin ol
+          if (localStreamRef.current) { 
             initiatePeerConnection(p.id, true); 
           }
       });
@@ -634,10 +655,10 @@ export default function ChatRoomPage() {
     } catch (error: any) { 
       console.error("Error joining voice chat / getting media:", error); 
       toast({ title: "Hata", description: `Sesli sohbete katılırken bir sorun oluştu: ${error.message || 'Medya erişimi reddedildi.'}`, variant: "destructive" }); 
-      resetWebRTCState(); // Hata durumunda WebRTC durumunu sıfırla
-      setIsCurrentUserInVoiceChat(false); // UI'ı geri al
+      resetWebRTCState();
+      setIsCurrentUserInVoiceChat(false); 
       setSelfMuted(false);
-      // Firestore'dan katılımı geri alma (eğer yazıldıysa)
+      
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
       const voiceParticipantSnap = await getDoc(voiceParticipantRef);
       if (voiceParticipantSnap.exists()) {
@@ -683,17 +704,21 @@ export default function ChatRoomPage() {
     try { 
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid); 
         await updateDoc(voiceParticipantRef, { isMuted: newMuteState }); 
-        setSelfMuted(newMuteState); // UI'ı hemen güncelle
+        setSelfMuted(newMuteState); 
     } catch (error) { 
         console.error("Error toggling self mute:", error); 
         toast({ title: "Hata", description: "Mikrofon durumu güncellenirken bir sorun oluştu.", variant: "destructive" }); 
-        // Hata durumunda yerel akışın durumunu geri al
         localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = selfMuted; });
     } 
   };
   const handleAdminKickFromVoice = async (targetUserId: string) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; cleanupPeerConnection(targetUserId); try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); const roomRef = doc(db, "chatRooms", roomId); const batch = writeBatch(db); batch.delete(voiceParticipantRef); batch.update(roomRef, { voiceParticipantCount: increment(-1) }); await batch.commit(); toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." }); } catch (error) { console.error("Error kicking user from voice:", error); toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" }); } };
   const handleAdminToggleMuteUserVoice = async (targetUserId: string, currentMuteState?: boolean) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState }); toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` }); } catch (error) { console.error("Error toggling user mute by admin:", error); toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" }); } };
-  const handleVoiceParticipantSlotClick = (participantId: string | null) => { if (participantId && participantId !== currentUser?.uid) { handleOpenUserInfoPopover(participantId); } };
+  
+  const handleVoiceParticipantSlotClick = useCallback((participantId: string | null) => {
+    if (participantId && participantId !== currentUser?.uid) {
+      handleOpenUserInfoPopover(participantId);
+    }
+  }, [currentUser, handleOpenUserInfoPopover]);
 
   const handleKickParticipantFromTextChat = async (targetUserId: string, targetUsername?: string) => {
     if (!isCurrentUserRoomCreator || !currentUser || targetUserId === currentUser.uid) {
@@ -710,7 +735,6 @@ export default function ChatRoomPage() {
       const roomRef = doc(db, "chatRooms", roomId);
       batch.update(roomRef, { participantCount: increment(-1) });
 
-      // Also remove from voice chat if present
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
       const voiceParticipantSnap = await getDoc(voiceParticipantRef);
       if (voiceParticipantSnap.exists()) {
@@ -786,7 +810,7 @@ export default function ChatRoomPage() {
       <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= (roomDetails.maxParticipants ?? MAX_VOICE_PARTICIPANTS_CONST)} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
       <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={onOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={onAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
+          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
         </ScrollArea>
       </div>
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
@@ -798,3 +822,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
