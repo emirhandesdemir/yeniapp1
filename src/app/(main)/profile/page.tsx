@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent, useRef } from "react";
+import { useState, useEffect, type ChangeEvent } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound } from "lucide-react"; // Eye ve UsersRound ikonları eklendi
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus } from "lucide-react";
 import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import Link from "next/link";
 import { Switch } from "@/components/ui/switch";
+import { LogOutIcon, LayoutDashboard } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 
 interface UserProfileForm {
@@ -36,6 +38,19 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'dark', label: 'Koyu Tema' },
 ];
 
+const PREDEFINED_AVATARS = [
+  "https://placehold.co/128x128/ADD8E6/333333.png?text=SK1", // Light Blue
+  "https://placehold.co/128x128/7FFFD4/333333.png?text=SK2", // Aquamarine
+  "https://placehold.co/128x128/F0F8FF/333333.png?text=SK3", // Alice Blue
+  "https://placehold.co/128x128/FFB6C1/333333.png?text=SK4", // Light Pink
+  "https://placehold.co/128x128/90EE90/333333.png?text=SK5", // Light Green
+  "https://placehold.co/128x128/FFA07A/333333.png?text=SK6", // Light Salmon
+  "https://placehold.co/128x128/DDA0DD/333333.png?text=SK7", // Plum
+  "https://placehold.co/128x128/B0E0E6/333333.png?text=SK8", // Powder Blue
+  null, // "Avatarı Kaldır" seçeneği için
+];
+
+
 export default function ProfilePage() {
   const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -43,14 +58,12 @@ export default function ProfilePage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null); // Bu, düzenleme sırasında seçilen veya mevcut avatarı tutar
 
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
     postsVisibleToFriendsOnly: false,
     activeRoomsVisibleToFriendsOnly: false,
-    feedShowsEveryone: true, // Yeni ayar eklendi
+    feedShowsEveryone: true,
   });
 
   useEffect(() => {
@@ -60,52 +73,51 @@ export default function ProfilePage() {
         username: userData.displayName || currentUser.displayName || "",
         bio: userData.bio || "",
       });
-      setPreviewImage(userData.photoURL || currentUser.photoURL);
+      setPreviewImage(userData.photoURL || currentUser.photoURL || null);
       setPrivacySettings({ 
         postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
         activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
-        feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true, // userData'dan oku
+        feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
       });
     } else if (currentUser) {
         setTempProfile({
             username: currentUser.displayName || "",
             bio: "",
         });
-         setPreviewImage(currentUser.photoURL);
+         setPreviewImage(currentUser.photoURL || null);
          setPrivacySettings({
             postsVisibleToFriendsOnly: false,
             activeRoomsVisibleToFriendsOnly: false,
-            feedShowsEveryone: true, // Varsayılan
+            feedShowsEveryone: true,
          });
     }
   }, [currentUser, userData]);
 
+  // userData güncellendiğinde previewImage ve diğer ayarları tekrar senkronize et
   useEffect(() => {
-    if (userData?.photoURL) {
-      setPreviewImage(userData.photoURL);
-    }
-    if (userData?.bio) {
+    if (userData) {
+      if (!isEditing) { // Sadece düzenleme modunda değilken senkronize et, kullanıcının anlık seçimlerini bozmamak için
+        setPreviewImage(userData.photoURL || null);
         setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
+      }
+      setPrivacySettings(prev => ({
+          ...prev,
+          postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
+          activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+          feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
+      }));
     }
-    if (userData?.privacySettings) {
-        setPrivacySettings(prev => ({
-            ...prev,
-            postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
-            activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
-            feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
-        }));
-    }
-  }, [userData?.photoURL, userData?.bio, userData?.privacySettings]);
+  }, [userData, isEditing]);
 
 
   const handleEditToggle = () => {
-    if (isEditing) {
+    if (isEditing) { // Düzenlemeden çıkılıyorsa (Vazgeç)
       if (currentUser && userData) {
         setTempProfile({
             username: userData.displayName || currentUser.displayName || "",
             bio: userData.bio || ""
         });
-        setPreviewImage(userData.photoURL || currentUser.photoURL);
+        setPreviewImage(userData.photoURL || currentUser.photoURL || null); // Orijinal fotoğrafa dön
         setPrivacySettings({ 
             postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
             activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
@@ -113,10 +125,13 @@ export default function ProfilePage() {
         });
       } else if (currentUser) {
         setTempProfile({ username: currentUser.displayName || "", bio: "" });
-        setPreviewImage(currentUser.photoURL);
+        setPreviewImage(currentUser.photoURL || null);
         setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true });
       }
-      setSelectedFile(null);
+    } else { // Düzenlemeye giriliyorsa
+       if (currentUser && userData) {
+        setPreviewImage(userData.photoURL || currentUser.photoURL || null); // Mevcut fotoğrafla başla
+       }
     }
     setIsEditing(!isEditing);
   };
@@ -126,34 +141,8 @@ export default function ProfilePage() {
     setTempProfile(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast({ title: "Hata", description: "Dosya boyutu 5MB'den büyük olamaz.", variant: "destructive" });
-        return;
-      }
-      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
-        toast({ title: "Hata", description: "Sadece JPG, PNG, GIF veya WEBP formatında resim yükleyebilirsiniz.", variant: "destructive" });
-        return;
-      }
-      setSelectedFile(file);
-      setPreviewImage(URL.createObjectURL(file));
-    }
-  };
-
-  const handleRemoveProfilePicture = async () => {
-    if (!currentUser || !userData?.photoURL) {
-        toast({ title: "Bilgi", description: "Kaldırılacak bir profil fotoğrafı bulunmuyor." });
-        return;
-    }
-    if (!confirm("Profil fotoğrafınızı kaldırmak istediğinizden emin misiniz?")) return;
-
-    const success = await updateUserProfile({ photoFile: null });
-    if (success) {
-      setPreviewImage(null);
-      setSelectedFile(null);
-    }
+  const handleAvatarSelect = (avatarUrl: string | null) => {
+    setPreviewImage(avatarUrl);
   };
 
   const handlePrivacySettingChange = (setting: keyof PrivacySettings, value: boolean) => {
@@ -163,7 +152,7 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!currentUser) return;
 
-    const updates: { displayName?: string; photoFile?: File | null; bio?: string; privacySettings?: PrivacySettings } = {};
+    const updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings } = {};
     let profileChanged = false;
 
     const currentDisplayName = userData?.displayName || currentUser.displayName || "";
@@ -181,11 +170,13 @@ export default function ProfilePage() {
         updates.bio = tempProfile.bio.trim();
         profileChanged = true;
     }
-
-    if (selectedFile) {
-        updates.photoFile = selectedFile;
+    
+    const originalPhotoURL = userData?.photoURL || currentUser?.photoURL || null;
+    if (previewImage !== originalPhotoURL) { // previewImage, düzenleme sırasında seçilen URL'yi tutar
+        updates.newPhotoURL = previewImage; // Bu null olabilir (kullanıcı "Avatarı Kaldır" seçtiyse)
         profileChanged = true;
     }
+
 
     const currentPrivacySettings = userData?.privacySettings || { 
         postsVisibleToFriendsOnly: false, 
@@ -211,7 +202,6 @@ export default function ProfilePage() {
     const success = await updateUserProfile(updates);
     if (success) {
       setIsEditing(false);
-      setSelectedFile(null);
     }
   };
 
@@ -239,15 +229,8 @@ export default function ProfilePage() {
       </div>
     );
   }
-
-  let displayPhotoUrl = isEditing
-    ? (previewImage || userData?.photoURL || currentUser?.photoURL)
-    : (userData?.photoURL || currentUser?.photoURL);
-
-  if (displayPhotoUrl && !displayPhotoUrl.startsWith('http') && !displayPhotoUrl.startsWith('/')) {
-    displayPhotoUrl = `/${displayPhotoUrl}`;
-  }
-
+  
+  const displayPhotoUrlToShow = isEditing ? previewImage : (userData?.photoURL || currentUser?.photoURL || null);
 
   return (
     <div className="space-y-6">
@@ -256,50 +239,30 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center text-center -mt-12 sm:-mt-16">
           <div className="relative group">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
-              {displayPhotoUrl ? (
+              {displayPhotoUrlToShow ? (
                   <AvatarImage
-                    src={displayPhotoUrl}
+                    src={displayPhotoUrlToShow}
                     alt={tempProfile.username || "Kullanıcı"}
                     data-ai-hint="user portrait"
-                    key={displayPhotoUrl}
+                    key={displayPhotoUrlToShow} // Key değişikliği yeniden render'ı tetikler
                   />
               ) : null }
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
             {isEditing && (
-              <Button
+               <Button
                 type="button"
                 variant="outline"
                 size="icon"
                 className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-card hover:bg-muted shadow-md"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Profil fotoğrafı seç"
+                onClick={() => { /* Avatar seçiciyi açmak için bir modal veya popover tetiklenebilir veya doğrudan aşağıda gösterilebilir */ }}
+                aria-label="Avatar seç"
                 disabled={isUserLoading}
               >
-                <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
+                <ImagePlus className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
             )}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/png, image/jpeg, image/gif, image/webp"
-              className="hidden"
-              disabled={isUserLoading || !isEditing}
-            />
           </div>
-           {isEditing && (userData?.photoURL || previewImage) && (
-            <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-2 text-xs text-destructive hover:text-destructive-foreground hover:bg-destructive/90"
-                onClick={handleRemoveProfilePicture}
-                disabled={isUserLoading}
-            >
-                <Trash2 className="mr-1 h-3 w-3"/> Fotoğrafı Kaldır
-            </Button>
-           )}
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-primary-foreground/90">
             {isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName || "Kullanıcı Adı Yok")}
           </CardTitle>
@@ -329,12 +292,32 @@ export default function ProfilePage() {
                   disabled={isUserLoading}
                 />
               </div>
-              {previewImage && selectedFile && displayPhotoUrl && (
-                <div className="my-4">
-                    <Label>Yeni Fotoğraf Önizlemesi</Label>
-                    <Image src={displayPhotoUrl} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md mt-1 object-cover h-32 w-32 border" />
+              
+              <div className="space-y-3 pt-2">
+                <Label className="text-base">Avatar Seç</Label>
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 sm:gap-3">
+                  {PREDEFINED_AVATARS.map((avatarUrl, index) => (
+                    <button
+                      key={avatarUrl || `remove-avatar-${index}`}
+                      type="button"
+                      onClick={() => handleAvatarSelect(avatarUrl)}
+                      className={cn(
+                        "aspect-square rounded-full border-2 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                        previewImage === avatarUrl ? "border-primary ring-2 ring-primary scale-110" : "border-transparent hover:border-primary/50",
+                        !avatarUrl && "flex items-center justify-center bg-muted hover:bg-muted/80" // "Avatarı Kaldır" için stil
+                      )}
+                      aria-label={avatarUrl ? `Avatar ${index + 1} seç` : "Avatarı kaldır"}
+                    >
+                      {avatarUrl ? (
+                        <Image src={avatarUrl} alt={`Avatar ${index + 1}`} width={64} height={64} className="rounded-full object-cover" data-ai-hint="predefined avatar choice" />
+                      ) : (
+                        <XCircle className="h-8 w-8 text-muted-foreground" /> 
+                      )}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
+
 
               <Card className="pt-4 bg-transparent border-border/50">
                 <CardHeader className="p-0 px-2 pb-3">
@@ -501,3 +484,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    

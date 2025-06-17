@@ -24,7 +24,7 @@ const INITIAL_DIAMONDS = 10;
 export interface PrivacySettings {
   postsVisibleToFriendsOnly?: boolean;
   activeRoomsVisibleToFriendsOnly?: boolean;
-  feedShowsEveryone?: boolean; // Yeni ayar eklendi
+  feedShowsEveryone?: boolean;
 }
 
 export interface UserData {
@@ -49,7 +49,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; photoFile?: File | null; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -92,13 +92,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (docSnap.exists()) {
                 console.log(`[AuthContext] User document found for ${user.uid}. Data:`, docSnap.data());
                 const existingData = docSnap.data() as UserData;
-                // Ensure privacySettings and feedShowsEveryone exist with defaults
                 const updatedData = {
                     ...existingData,
                     privacySettings: {
                         postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
                         activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
-                        feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true, // Varsayılan eklendi
+                        feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true,
                     },
                 };
                 setUserData(updatedData);
@@ -111,13 +110,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     photoURL: user.photoURL,
                     diamonds: INITIAL_DIAMONDS,
                     role: "user",
-                    createdAt: Timestamp.now(), // Geçici, setDoc ile serverTimestamp kullanılacak
+                    createdAt: Timestamp.now(), 
                     bio: "",
                     gender: "belirtilmemiş",
                     privacySettings: { 
                         postsVisibleToFriendsOnly: false,
                         activeRoomsVisibleToFriendsOnly: false,
-                        feedShowsEveryone: true, // Varsayılan eklendi
+                        feedShowsEveryone: true, 
                     },
                 };
 
@@ -131,7 +130,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUserData(freshSnap.data() as UserData);
                     } else {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
-                        setUserData(dataToSet); // Client-side timestamp ile fallback
+                        setUserData(dataToSet); 
                         toast({
                             title: "Kullanıcı Verisi Senkronizasyonu",
                             description: "Kullanıcı bilgileriniz oluşturuldu ancak anlık senkronizasyonda bir gecikme olabilir.",
@@ -169,7 +168,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const createUserDocument = async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
     const userDocRef = doc(db, "users", user.uid);
-    const initialPhotoURL = user.photoURL;
+    const initialPhotoURL = user.photoURL; 
     const dataToSetForLog: Partial<UserData> & {createdAt: string} = {
       uid: user.uid,
       email: user.email,
@@ -183,7 +182,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       privacySettings: {
         postsVisibleToFriendsOnly: false,
         activeRoomsVisibleToFriendsOnly: false,
-        feedShowsEveryone: true, // Varsayılan eklendi
+        feedShowsEveryone: true, 
       },
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
@@ -202,7 +201,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             privacySettings: {
                 postsVisibleToFriendsOnly: false,
                 activeRoomsVisibleToFriendsOnly: false,
-                feedShowsEveryone: true, // Varsayılan eklendi
+                feedShowsEveryone: true,
             },
         };
         await setDoc(userDocRef, dataToSave);
@@ -236,7 +235,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
-      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
+      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null }); // New users start with no photo
       console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
       await createUserDocument(userCredential.user, username, gender);
       console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
@@ -290,12 +289,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
         console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
+        // Google users' photoURL will be used if available, otherwise null.
         await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
         const firestoreData = docSnap.data() as UserData;
         const updatesToFirestore: Partial<UserData> = {};
-         // Ensure privacySettings and its sub-properties are initialized if they don't exist
         const currentPrivacySettings = firestoreData.privacySettings || {};
         updatesToFirestore.privacySettings = {
             postsVisibleToFriendsOnly: currentPrivacySettings.postsVisibleToFriendsOnly ?? false,
@@ -306,29 +305,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (user.displayName && user.displayName !== firestoreData.displayName) {
             updatesToFirestore.displayName = user.displayName;
         }
+        // Update photoURL from Google if it's different, or if Firestore has none and Google has one.
         if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
             updatesToFirestore.photoURL = user.photoURL;
+        } else if (!firestoreData.photoURL && user.photoURL) {
+            updatesToFirestore.photoURL = user.photoURL;
         }
+
         if (firestoreData.bio === undefined) {
             updatesToFirestore.bio = "";
         }
         if (firestoreData.gender === undefined) {
             updatesToFirestore.gender = "belirtilmemiş";
         }
-
-        // Check if any actual update to privacySettings or other fields is needed
+        
         let needsUpdate = false;
-        if (user.displayName && user.displayName !== firestoreData.displayName) needsUpdate = true;
-        if (user.photoURL && user.photoURL !== firestoreData.photoURL) needsUpdate = true;
-        if (firestoreData.bio === undefined) needsUpdate = true;
-        if (firestoreData.gender === undefined) needsUpdate = true;
+        if (updatesToFirestore.displayName) needsUpdate = true;
+        if (updatesToFirestore.photoURL) needsUpdate = true;
+        if (updatesToFirestore.bio !== undefined) needsUpdate = true;
+        if (updatesToFirestore.gender !== undefined) needsUpdate = true;
         if (updatesToFirestore.privacySettings.postsVisibleToFriendsOnly !== (firestoreData.privacySettings?.postsVisibleToFriendsOnly ?? false) ||
             updatesToFirestore.privacySettings.activeRoomsVisibleToFriendsOnly !== (firestoreData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false) ||
             updatesToFirestore.privacySettings.feedShowsEveryone !== (firestoreData.privacySettings?.feedShowsEveryone ?? true)
         ) {
             needsUpdate = true;
         }
-
 
         if (needsUpdate) {
             await updateDoc(userDocRef, updatesToFirestore);
@@ -373,32 +374,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const updateUserProfile = async (updates: { displayName?: string; photoFile?: File | null; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
+  const updateUserProfile = async (updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", updates);
+    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", JSON.stringify(updates));
 
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
 
     try {
-      if (updates.photoFile instanceof File) {
-        console.warn("[AuthContext] Photo file provided, but upload system is not configured. Skipping photo upload.");
-        toast({
-          title: "Bilgi",
-          description: "Yeni fotoğraf yükleme özelliği şu anda devre dışı. Diğer profil bilgileriniz (varsa) güncellenecektir.",
-          variant: "default",
-        });
-      } else if (updates.photoFile === null) {
-        console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi.");
-        authUpdates.photoURL = null;
-        firestoreUpdates.photoURL = null;
-      }
-
       const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
       if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
           if(updates.displayName.trim().length < 3){
@@ -410,6 +398,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           authUpdates.displayName = updates.displayName.trim();
           firestoreUpdates.displayName = updates.displayName.trim();
       }
+      
+      // Handle newPhotoURL (string or null)
+      const currentPhotoURL = userData?.photoURL || auth.currentUser.photoURL || null;
+      if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) {
+          console.log("[AuthContext] Fotoğraf URL güncellemesi sağlandı:", updates.newPhotoURL);
+          authUpdates.photoURL = updates.newPhotoURL; // Can be string or null
+          firestoreUpdates.photoURL = updates.newPhotoURL; // Can be string or null
+      }
+
 
       const currentBio = userData?.bio || "";
       if (updates.bio !== undefined && updates.bio.trim() !== currentBio) {
@@ -423,7 +420,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             ...(userData?.privacySettings || { 
                 postsVisibleToFriendsOnly: false, 
                 activeRoomsVisibleToFriendsOnly: false,
-                feedShowsEveryone: true, // Varsayılan değer
+                feedShowsEveryone: true,
              }), 
             ...updates.privacySettings 
         };
@@ -434,9 +431,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         console.log("[AuthContext] Profile uygulanacak gerçek bir değişiklik yok.");
-        if (!(updates.photoFile instanceof File)) {
-            toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
-        }
+        toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         setIsUserLoading(false);
         return true;
       }
@@ -537,3 +532,5 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
+
+    
