@@ -4,23 +4,24 @@
 import type { FC } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Gamepad2, Gem, X } from "lucide-react";
+import { Gamepad2, Gem, X, Clock } from "lucide-react"; // Clock ikonu eklendi
 import { useEffect, useState } from 'react';
 
 interface GameQuestion {
   id: string;
   text: string;
   answer: string;
-  hint: string; // İpucu eklendi, reward kaldırıldı
+  hint: string;
 }
 
 interface GameQuestionCardProps {
   question: GameQuestion;
   onClose: () => void;
-  reward: number; // Sabit ödülü props olarak alacak
+  reward: number;
+  countdown: number | null; // Yeni prop: Soru cevaplama için kalan süre
 }
 
-const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward }) => {
+const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward, countdown }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -31,6 +32,13 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward
   const handleClose = () => {
     setIsVisible(false);
     setTimeout(onClose, 300);
+  };
+
+  const formatCountdown = (seconds: number | null): string => {
+    if (seconds === null || seconds < 0) return "00:00";
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   return (
@@ -60,11 +68,19 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward
         </CardContent>
         <CardFooter className="flex justify-between items-center pt-3 pb-4 bg-secondary/30 dark:bg-card/60 rounded-b-lg px-4">
           <div className="text-sm text-muted-foreground">
-            Cevap için: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">/answer &lt;cevabınız&gt;</code>
+            Cevap: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">/answer &lt;cevabınız&gt;</code>
           </div>
-          <div className="flex items-center gap-1 text-sm font-semibold text-yellow-500 dark:text-yellow-400">
-            <Gem className="h-4 w-4" />
-            <span>{reward} Elmas</span>
+          <div className="flex items-center gap-3">
+            {countdown !== null && (
+              <div className="flex items-center gap-1 text-sm font-semibold text-destructive">
+                <Clock className="h-4 w-4" />
+                <span>{formatCountdown(countdown)}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1 text-sm font-semibold text-yellow-500 dark:text-yellow-400">
+              <Gem className="h-4 w-4" />
+              <span>{reward} Elmas</span>
+            </div>
           </div>
         </CardFooter>
       </Card>

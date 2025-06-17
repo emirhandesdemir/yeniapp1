@@ -43,6 +43,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir.
   - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
   - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
+  - `currentGameAnswerDeadline`: (Timestamp, nullable) Mevcut oyun sorusu için son cevap verme zamanı.
 - **Not:** Oda oluşturma maliyeti varsayılan olarak **10 elmas**tır.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.

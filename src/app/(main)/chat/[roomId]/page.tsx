@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut } from "lucide-react"; // LogOut eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -31,7 +31,7 @@ import {
 } from "firebase/firestore";
 import { useAuth, type UserData, type FriendRequest } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast, addSeconds } from 'date-fns';
+import { addMinutes, formatDistanceToNow, isPast, addSeconds, format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -72,6 +72,7 @@ interface ChatRoomDetails {
   nextGameQuestionTimestamp?: Timestamp | null;
   gameInitialized?: boolean;
   voiceParticipantCount?: number;
+  currentGameAnswerDeadline?: Timestamp | null; // Yeni alan: Soru cevaplama son tarihi
 }
 
 export interface ActiveTextParticipant {
@@ -106,6 +107,7 @@ interface GameQuestion {
 
 const FIXED_GAME_REWARD = 1;
 const HINT_COST = 1;
+const GAME_ANSWER_TIMEOUT_SECONDS = 15; // Soru cevaplama süresi (saniye)
 
 const HARDCODED_QUESTIONS: GameQuestion[] = [
   { id: "q1", text: "Hangi anahtar kapı açmaz?", answer: "klavye", hint: "Bilgisayarda yazı yazmak için kullanılır." },
@@ -122,6 +124,9 @@ const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
 const MAX_VOICE_PARTICIPANTS = 7;
 
+const MAX_MESSAGES_PER_WINDOW = 3; // Spam için: 5 saniyede maksimum 3 mesaj
+const MESSAGE_WINDOW_SECONDS = 5;
+
 const STUN_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -133,7 +138,7 @@ interface WebRTCSignal {
   fromUid: string;
   toUid: string;
   type: 'offer' | 'answer' | 'candidate';
-  data: any; // SDP offer/answer or ICE candidate
+  data: any;
   createdAt?: Timestamp;
 }
 
@@ -177,12 +182,14 @@ export default function ChatRoomPage() {
   const [availableGameQuestions, setAvailableGameQuestions] = useState<GameQuestion[]>([...HARDCODED_QUESTIONS]);
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const gameAnswerDeadlineTimerRef = useRef<NodeJS.Timeout | null>(null); // Soru cevaplama süresi için timer
+  const [questionAnswerCountdown, setQuestionAnswerCountdown] = useState<number | null>(null);
 
-  // WebRTC State
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<{ [peerId: string]: RTCPeerConnection }>({});
   const [remoteStreams, setRemoteStreams] = useState<{ [peerId: string]: MediaStream }>({});
   const signalsListenerUnsubscribeRef = useRef<Unsubscribe | null>(null);
+  const lastMessageTimesRef = useRef<number[]>([]); // Spam kontrolü için
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
@@ -209,7 +216,7 @@ export default function ChatRoomPage() {
 
   useEffect(() => {
     if (countdownDisplayTimerRef.current) clearInterval(countdownDisplayTimerRef.current);
-    if (roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId) {
+    if (roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline) {
       const updateCountdown = () => {
         if (roomDetails?.nextGameQuestionTimestamp) {
           const now = new Date(); const nextTime = roomDetails.nextGameQuestionTimestamp.toDate();
@@ -220,7 +227,59 @@ export default function ChatRoomPage() {
       updateCountdown(); countdownDisplayTimerRef.current = setInterval(updateCountdown, 1000);
     } else { setNextQuestionCountdown(null); }
     return () => { if (countdownDisplayTimerRef.current) clearInterval(countdownDisplayTimerRef.current); };
-  }, [roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId]);
+  }, [roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId, roomDetails?.currentGameAnswerDeadline]);
+
+  // Soru cevaplama süresi sayacı
+  useEffect(() => {
+    if (gameAnswerDeadlineTimerRef.current) clearInterval(gameAnswerDeadlineTimerRef.current);
+    if (roomDetails?.currentGameQuestionId && roomDetails.currentGameAnswerDeadline) {
+      const updateAnswerCountdown = () => {
+        if (roomDetails.currentGameAnswerDeadline) {
+          const now = new Date();
+          const deadlineTime = roomDetails.currentGameAnswerDeadline.toDate();
+          const diffSeconds = Math.max(0, Math.floor((deadlineTime.getTime() - now.getTime()) / 1000));
+          setQuestionAnswerCountdown(diffSeconds);
+          if (diffSeconds === 0) {
+            handleGameAnswerTimeout();
+          }
+        } else {
+          setQuestionAnswerCountdown(null);
+        }
+      };
+      updateAnswerCountdown();
+      gameAnswerDeadlineTimerRef.current = setInterval(updateAnswerCountdown, 1000);
+    } else {
+      setQuestionAnswerCountdown(null);
+    }
+    return () => { if (gameAnswerDeadlineTimerRef.current) clearInterval(gameAnswerDeadlineTimerRef.current); };
+  }, [roomDetails?.currentGameQuestionId, roomDetails?.currentGameAnswerDeadline]);
+
+
+  const handleGameAnswerTimeout = useCallback(async () => {
+    if (!roomId || !roomDetails?.currentGameQuestionId || !activeGameQuestion) return;
+    console.log("[GameSystem] Answer timeout for question:", activeGameQuestion.text);
+    try {
+      const roomDocRef = doc(db, "chatRooms", roomId);
+      const batch = writeBatch(db);
+      batch.update(roomDocRef, {
+        currentGameQuestionId: null,
+        currentGameAnswerDeadline: null,
+        nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings?.questionIntervalSeconds ?? 180))
+      });
+      batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
+        text: `[OYUN] Süre doldu! Kimse "${activeGameQuestion.text}" sorusunu bilemedi. Doğru cevap: ${activeGameQuestion.answer}.`,
+        senderId: "system",
+        senderName: "Oyun Sistemi",
+        timestamp: serverTimestamp(),
+        isGameMessage: true
+      });
+      await batch.commit();
+      toast({ title: "Süre Doldu!", description: `Kimse soruyu bilemedi. Cevap: ${activeGameQuestion.answer}`, duration: 7000});
+    } catch (error) {
+      console.error("[GameSystem] Error handling game answer timeout:", error);
+    }
+  }, [roomId, roomDetails?.currentGameQuestionId, activeGameQuestion, gameSettings?.questionIntervalSeconds, toast]);
+
 
   const attemptToAskNewQuestion = useCallback(async () => {
     if (!isCurrentUserParticipantRef.current || !gameSettings?.isGameEnabled || !roomId || !roomDetails || roomDetails.currentGameQuestionId || availableGameQuestions.length === 0) return;
@@ -229,10 +288,14 @@ export default function ChatRoomPage() {
       if (!currentRoomSnap.exists()) return; const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
       if (currentRoomData.currentGameQuestionId) return;
       const randomIndex = Math.floor(Math.random() * availableGameQuestions.length); const nextQuestion = availableGameQuestions[randomIndex];
-      const intervalSeconds = gameSettings?.questionIntervalSeconds ?? 180; const newNextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), intervalSeconds));
+      
       const batch = writeBatch(db);
-      batch.update(roomDocRef, { currentGameQuestionId: nextQuestion.id, nextGameQuestionTimestamp: newNextGameQuestionTimestamp });
-      batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), { text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${FIXED_GAME_REWARD} Elmas). Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`, senderId: "system", senderName: "Oyun Sistemi", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true });
+      batch.update(roomDocRef, {
+        currentGameQuestionId: nextQuestion.id,
+        nextGameQuestionTimestamp: null, // Yeni soru sorulduğunda bir sonraki soru zamanı null yapılır, cevaplanınca veya timeout olunca ayarlanır.
+        currentGameAnswerDeadline: Timestamp.fromDate(addSeconds(new Date(), GAME_ANSWER_TIMEOUT_SECONDS)) // Cevaplama süresi eklendi
+      });
+      batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), { text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${FIXED_GAME_REWARD} Elmas). Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın. (Süre: ${GAME_ANSWER_TIMEOUT_SECONDS}sn)`, senderId: "system", senderName: "Oyun Sistemi", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true });
       await batch.commit();
     } catch (error) { console.error("[GameSystem] Error attempting to ask new question:", error); toast({ title: "Oyun Hatası", description: "Yeni soru hazırlanırken bir sorun oluştu.", variant: "destructive" }); }
   }, [gameSettings, roomId, roomDetails, availableGameQuestions, toast]);
@@ -240,12 +303,12 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current);
     if (gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && roomDetails) {
-      gameQuestionIntervalTimerRef.current = setInterval(() => { if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId) { attemptToAskNewQuestion(); } }, 5000);
+      gameQuestionIntervalTimerRef.current = setInterval(() => { if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline) { attemptToAskNewQuestion(); } }, 5000);
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
   }, [gameSettings, roomDetails, attemptToAskNewQuestion]);
 
-  useEffect(() => { if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId && availableGameQuestions.length > 0 && isPast(roomDetails.nextGameQuestionTimestamp.toDate())) { attemptToAskNewQuestion(); } }, [gameSettings, roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId, availableGameQuestions, attemptToAskNewQuestion]);
+  useEffect(() => { if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline && availableGameQuestions.length > 0 && isPast(roomDetails.nextGameQuestionTimestamp.toDate())) { attemptToAskNewQuestion(); } }, [gameSettings, roomDetails, availableGameQuestions, attemptToAskNewQuestion]);
   useEffect(() => { if (roomDetails?.currentGameQuestionId) { const question = HARDCODED_QUESTIONS.find(q => q.id === roomDetails.currentGameQuestionId); setActiveGameQuestion(question || null); setShowGameQuestionCard(!!question); } else { setActiveGameQuestion(null); setShowGameQuestionCard(false); } }, [roomDetails?.currentGameQuestionId]);
   const handleCloseGameQuestionCard = () => setShowGameQuestionCard(false);
   const getAvatarFallbackText = (name?: string | null) => name ? name.substring(0, 2).toUpperCase() : "PN";
@@ -281,14 +344,14 @@ export default function ChatRoomPage() {
       const batch = writeBatch(db);
       batch.set(participantRef, { joinedAt: serverTimestamp(), displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", photoURL: userData.photoURL || currentUser.photoURL || null, uid: currentUser.uid, isTyping: false });
       batch.update(roomRef, { participantCount: increment(1) });
-      if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId) { batch.update(roomRef, { gameInitialized: true, nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)), currentGameQuestionId: null }); }
+      if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId && !currentRoomData.currentGameAnswerDeadline) { batch.update(roomRef, { gameInitialized: true, nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)), currentGameQuestionId: null, currentGameAnswerDeadline: null }); }
       await batch.commit(); setIsCurrentUserParticipant(true); toast({ title: "Odaya Katıldınız!", description: `${roomDetails.name} odasına başarıyla katıldınız.` });
       const userDisplayNameForJoin = userData.displayName || currentUser.displayName || "Bir kullanıcı";
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[SİSTEM] ${userDisplayNameForJoin} odaya katıldı.`, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true });
       if (gameSettings?.isGameEnabled) {
         let gameInfoMessage = `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `;
         const updatedRoomSnap = await getDoc(roomRef); const updatedRoomData = updatedRoomSnap.data() as ChatRoomDetails;
-        if (updatedRoomData?.currentGameQuestionId) { const currentQ = HARDCODED_QUESTIONS.find(q => q.id === updatedRoomData.currentGameQuestionId); if (currentQ) gameInfoMessage += `Aktif bir soru var: "${currentQ.text}". Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`; }
+        if (updatedRoomData?.currentGameQuestionId) { const currentQ = HARDCODED_QUESTIONS.find(q => q.id === updatedRoomData.currentGameQuestionId); if (currentQ) gameInfoMessage += `Aktif bir soru var: "${currentQ.text}". Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`; if (updatedRoomData.currentGameAnswerDeadline) gameInfoMessage += ` (Kalan Süre: ${formatCountdown(Math.max(0, Math.floor((updatedRoomData.currentGameAnswerDeadline.toDate().getTime() - new Date().getTime())/1000)))})` }
         else if (updatedRoomData?.nextGameQuestionTimestamp) { const now = new Date(); const nextTime = updatedRoomData.nextGameQuestionTimestamp.toDate(); const diffSeconds = Math.max(0, Math.floor((nextTime.getTime() - now.getTime()) / 1000)); gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(diffSeconds)} sonra gelecek.`; }
         else if (typeof gameSettings.questionIntervalSeconds === 'number') { gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`; }
         if (gameInfoMessage !== `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `) { await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: gameInfoMessage, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true }); }
@@ -303,7 +366,7 @@ export default function ChatRoomPage() {
     const unsubscribeRoom = onSnapshot(roomDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const fetchedRoomDetails: ChatRoomDetails = { id: docSnap.id, name: data.name, description: data.description, creatorId: data.creatorId, participantCount: data.participantCount || 0, maxParticipants: data.maxParticipants || MAX_VOICE_PARTICIPANTS, expiresAt: data.expiresAt, currentGameQuestionId: data.currentGameQuestionId, nextGameQuestionTimestamp: data.nextGameQuestionTimestamp, gameInitialized: data.gameInitialized, voiceParticipantCount: data.voiceParticipantCount || 0 };
+        const fetchedRoomDetails: ChatRoomDetails = { id: docSnap.id, name: data.name, description: data.description, creatorId: data.creatorId, participantCount: data.participantCount || 0, maxParticipants: data.maxParticipants || MAX_VOICE_PARTICIPANTS, expiresAt: data.expiresAt, currentGameQuestionId: data.currentGameQuestionId, nextGameQuestionTimestamp: data.nextGameQuestionTimestamp, gameInitialized: data.gameInitialized, voiceParticipantCount: data.voiceParticipantCount || 0, currentGameAnswerDeadline: data.currentGameAnswerDeadline };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
       setLoadingRoom(false);
@@ -338,31 +401,14 @@ export default function ChatRoomPage() {
           setSelfMuted(doc.data().isMuted || false);
         }
       });
-      
-      // WebRTC: Handle users leaving
       const currentPeerIds = Object.keys(peerConnectionsRef.current);
       const newParticipantIds = newVoiceParticipants.map(p => p.id);
-      currentPeerIds.forEach(peerId => {
-        if (peerId !== currentUser?.uid && !newParticipantIds.includes(peerId)) {
-          cleanupPeerConnection(peerId);
-        }
-      });
-
-      setActiveVoiceParticipants(newVoiceParticipants);
-      setIsCurrentUserInVoiceChat(currentUserInCall);
-
-       // WebRTC: Handle new users joining (initiate connection if current user is already in call)
-       if (localStreamRef.current && isCurrentUserInVoiceChat) {
-        newVoiceParticipants.forEach(p => {
-          if (p.id !== currentUser?.uid && !peerConnectionsRef.current[p.id]) {
-            initiatePeerConnection(p.id, true); // Current user is initiator
-          }
-        });
-      }
-
+      currentPeerIds.forEach(peerId => { if (peerId !== currentUser?.uid && !newParticipantIds.includes(peerId)) { cleanupPeerConnection(peerId); } });
+      setActiveVoiceParticipants(newVoiceParticipants); setIsCurrentUserInVoiceChat(currentUserInCall);
+       if (localStreamRef.current && isCurrentUserInVoiceChat) { newVoiceParticipants.forEach(p => { if (p.id !== currentUser?.uid && !peerConnectionsRef.current[p.id]) { initiatePeerConnection(p.id, true); } }); }
     }, (error) => { console.error("Error fetching voice participants:", error); toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" }); });
     return () => unsubscribeVoice();
-  }, [roomId, currentUser?.uid, toast, isCurrentUserInVoiceChat]); // Added isCurrentUserInVoiceChat
+  }, [roomId, currentUser?.uid, toast, isCurrentUserInVoiceChat]);
 
 
   useEffect(() => {
@@ -378,30 +424,24 @@ export default function ChatRoomPage() {
   }, [roomId, currentUser?.uid, toast]);
 
   useEffect(() => {
-    const handleBeforeUnloadInternal = () => { handleLeaveRoom(true); if (isCurrentUserInVoiceChat) handleLeaveVoiceChat(true); };
+    const handleBeforeUnloadInternal = () => { handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true); };
     window.addEventListener('beforeunload', handleBeforeUnloadInternal);
     const currentTypingTimeout = typingTimeoutRef.current;
     const currentGameQuestionIntervalTimer = gameQuestionIntervalTimerRef.current;
     const currentCountdownDisplayTimer = countdownDisplayTimerRef.current;
+    const currentGameAnswerDeadlineTimer = gameAnswerDeadlineTimerRef.current;
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
-      handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true); // Use ref here
+      handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true);
       if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
       if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
       if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
-      resetWebRTCState(); // Clean up WebRTC on unmount
-      if (signalsListenerUnsubscribeRef.current) {
-        signalsListenerUnsubscribeRef.current();
-        signalsListenerUnsubscribeRef.current = null;
-      }
+      if (currentGameAnswerDeadlineTimer) clearInterval(currentGameAnswerDeadlineTimer);
+      resetWebRTCState(); if (signalsListenerUnsubscribeRef.current) { signalsListenerUnsubscribeRef.current(); signalsListenerUnsubscribeRef.current = null; }
     };
-  }, []); // Removed isCurrentUserInVoiceChat and handleLeaveVoiceChat from dependencies
-  
+  }, []);
   const isCurrentUserInVoiceChatRef = useRef(isCurrentUserInVoiceChat);
-  useEffect(() => {
-    isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat;
-  }, [isCurrentUserInVoiceChat]);
-
+  useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
 
   const scrollToBottom = () => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } };
   useEffect(() => { scrollToBottom(); }, [messages]);
@@ -420,10 +460,22 @@ export default function ChatRoomPage() {
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (isSending || isUserLoading || !currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData) return;
+
+    const now = Date.now();
+    lastMessageTimesRef.current = lastMessageTimesRef.current.filter(time => now - time < MESSAGE_WINDOW_SECONDS * 1000);
+    if (lastMessageTimesRef.current.length >= MAX_MESSAGES_PER_WINDOW) {
+      toast({ title: "Spam Uyarısı", description: `Çok hızlı mesaj gönderiyorsunuz. Lütfen biraz yavaşlayın.`, variant: "destructive" });
+      return;
+    }
+
     setIsSending(true); const tempMessage = newMessage.trim();
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     updateUserTypingStatus(false); const roomDocRef = doc(db, "chatRooms", roomId);
     if (activeGameQuestion && gameSettings?.isGameEnabled) {
+      if (roomDetails?.currentGameAnswerDeadline && isPast(roomDetails.currentGameAnswerDeadline.toDate())) {
+        toast({ title: "Süre Doldu!", description: "Bu soru için cevap süresi doldu.", variant: "destructive" });
+        setIsSending(false); return;
+      }
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) { toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive" }); setIsSending(false); return; }
         try { await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST); toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 }); await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true }); } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive" }); } finally { setNewMessage(""); setIsSending(false); } return;
@@ -431,12 +483,12 @@ export default function ChatRoomPage() {
       if (tempMessage.toLowerCase().startsWith("/answer ")) {
         const userAnswer = tempMessage.substring(8).trim(); const currentRoomSnap = await getDoc(roomDocRef); const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
         if (currentRoomData?.currentGameQuestionId !== activeGameQuestion.id) { toast({ title: "Geç Kaldın!", description: "Bu soruya zaten cevap verildi veya soru değişti.", variant: "destructive" }); setIsSending(false); return; }
-        if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) { const reward = FIXED_GAME_REWARD; await updateUserDiamonds((userData.diamonds || 0) + reward); const batch = writeBatch(db); batch.update(roomDocRef, { currentGameQuestionId: null, nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)) }); batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), { text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true }); await batch.commit(); toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` }); setAvailableGameQuestions(prev => prev.filter(q => q.id !== activeGameQuestion.id)); }
+        if (userAnswer.toLowerCase() === activeGameQuestion.answer.toLowerCase()) { const reward = FIXED_GAME_REWARD; await updateUserDiamonds((userData.diamonds || 0) + reward); const batch = writeBatch(db); batch.update(roomDocRef, { currentGameQuestionId: null, currentGameAnswerDeadline: null, nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)) }); batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), { text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true }); await batch.commit(); toast({ title: "Doğru Cevap!", description: `${reward} elmas kazandın!` }); setAvailableGameQuestions(prev => prev.filter(q => q.id !== activeGameQuestion.id)); }
         else { addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName}, "${userAnswer}" cevabın doğru değil. Tekrar dene!`, senderId: "system", senderName: "Oyun Sistemi", timestamp: serverTimestamp(), isGameMessage: true }); toast({ title: "Yanlış Cevap", description: "Maalesef doğru değil, tekrar deneyebilirsin.", variant: "destructive" }); }
         setNewMessage(""); setIsSending(false); return;
       }
     }
-    try { await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: tempMessage, senderId: currentUser.uid, senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı", senderAvatar: userData?.photoURL || currentUser.photoURL, timestamp: serverTimestamp(), isGameMessage: false }); setNewMessage(""); } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); } finally { setIsSending(false); }
+    try { await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: tempMessage, senderId: currentUser.uid, senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı", senderAvatar: userData?.photoURL || currentUser.photoURL, timestamp: serverTimestamp(), isGameMessage: false }); setNewMessage(""); lastMessageTimesRef.current.push(now); } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); } finally { setIsSending(false); }
   };
 
   const handleDeleteRoom = async () => {
@@ -492,282 +544,76 @@ export default function ChatRoomPage() {
   const handleViewProfileAction = (targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); };
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
 
-  // WebRTC Functions
-  const sendSignalMessage = useCallback(async (toUid: string, type: 'offer' | 'answer' | 'candidate', data: any) => {
-    if (!currentUser || !roomId) return;
-    const signalColRef = collection(db, `chatRooms/${roomId}/webrtcSignals`);
-    await addDoc(signalColRef, {
-      fromUid: currentUser.uid, toUid, type, data, createdAt: serverTimestamp()
-    });
-  }, [currentUser, roomId]);
-
-  const cleanupPeerConnection = useCallback((peerId: string) => {
-    if (peerConnectionsRef.current[peerId]) {
-      peerConnectionsRef.current[peerId].close();
-      delete peerConnectionsRef.current[peerId];
-    }
-    setRemoteStreams(prev => {
-      const newStreams = { ...prev };
-      delete newStreams[peerId];
-      return newStreams;
-    });
-  }, []);
-
-  const resetWebRTCState = useCallback(() => {
-    Object.keys(peerConnectionsRef.current).forEach(peerId => {
-      cleanupPeerConnection(peerId);
-    });
-    peerConnectionsRef.current = {};
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-    setRemoteStreams({});
-  }, [cleanupPeerConnection]);
-
-  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => {
-    if (!currentUser || !localStreamRef.current) return null;
-    if (peerConnectionsRef.current[peerId]) {
-        console.log(`[WebRTC] Peer connection for ${peerId} already exists or being created.`);
-        return peerConnectionsRef.current[peerId];
-    }
-
-    console.log(`[WebRTC] Creating new peer connection to ${peerId}. Initiator: ${isInitiator}`);
-    const pc = new RTCPeerConnection(STUN_SERVERS);
-    peerConnectionsRef.current[peerId] = pc;
-
-    localStreamRef.current.getTracks().forEach(track => {
-      pc.addTrack(track, localStreamRef.current!);
-    });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendSignalMessage(peerId, 'candidate', event.candidate.toJSON());
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log(`[WebRTC] Remote track received from ${peerId}`, event.streams[0]);
-      setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] }));
-    };
-
-    pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC] ICE connection state change for ${peerId}: ${pc.iceConnectionState}`);
-        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') {
-            // cleanupPeerConnection(peerId); // Potentially too aggressive, let participant list handle cleanup
-        }
-    };
-    return pc;
-  }, [currentUser, sendSignalMessage]);
-
-
-  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => {
-    if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) return;
-    console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`);
-    
-    const pc = createPeerConnection(peerId, isInitiator);
-    if (!pc) return;
-
-    if (isInitiator) {
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignalMessage(peerId, 'offer', offer);
-        console.log(`[WebRTC] Offer sent to ${peerId}`);
-      } catch (error) {
-        console.error(`[WebRTC] Error creating offer for ${peerId}:`, error);
-      }
-    }
-  }, [currentUser, createPeerConnection, sendSignalMessage]);
-
-  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => {
-    if (!currentUser || !localStreamRef.current || !roomId) return;
-    const { fromUid, type, data } = signal;
-
-    console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`);
-
-    let pc = peerConnectionsRef.current[fromUid];
-    if (!pc && (type === 'offer' || type === 'candidate')) {
-      // If we receive an offer or candidate before PC is established (e.g., other user initiated)
-      console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`);
-      pc = createPeerConnection(fromUid, false)!; // We are not the initiator if we are receiving an offer
-      if (!pc) return; // Should not happen if createPeerConnection is robust
-    } else if (!pc) {
-        console.warn(`[WebRTC] PC not found for ${fromUid} on ${type}, cannot process.`);
-        return;
-    }
-
-
-    try {
-      if (type === 'offer') {
-        await pc.setRemoteDescription(new RTCSessionDescription(data));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignalMessage(fromUid, 'answer', answer);
-        console.log(`[WebRTC] Answer sent to ${fromUid}`);
-      } else if (type === 'answer') {
-        await pc.setRemoteDescription(new RTCSessionDescription(data));
-        console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`);
-      } else if (type === 'candidate') {
-        await pc.addIceCandidate(new RTCIceCandidate(data));
-        console.log(`[WebRTC] ICE candidate added from ${fromUid}`);
-      }
-    } catch (error) {
-      console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error);
-    }
-  }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
-
+  const sendSignalMessage = useCallback(async (toUid: string, type: 'offer' | 'answer' | 'candidate', data: any) => { if (!currentUser || !roomId) return; const signalColRef = collection(db, `chatRooms/${roomId}/webrtcSignals`); await addDoc(signalColRef, { fromUid: currentUser.uid, toUid, type, data, createdAt: serverTimestamp() }); }, [currentUser, roomId]);
+  const cleanupPeerConnection = useCallback((peerId: string) => { if (peerConnectionsRef.current[peerId]) { peerConnectionsRef.current[peerId].close(); delete peerConnectionsRef.current[peerId]; } setRemoteStreams(prev => { const newStreams = { ...prev }; delete newStreams[peerId]; return newStreams; }); }, []);
+  const resetWebRTCState = useCallback(() => { Object.keys(peerConnectionsRef.current).forEach(peerId => { cleanupPeerConnection(peerId); }); peerConnectionsRef.current = {}; if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; } setRemoteStreams({}); }, [cleanupPeerConnection]);
+  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => { if (!currentUser || !localStreamRef.current) return null; if (peerConnectionsRef.current[peerId]) { console.log(`[WebRTC] Peer connection for ${peerId} already exists or being created.`); return peerConnectionsRef.current[peerId]; } console.log(`[WebRTC] Creating new peer connection to ${peerId}. Initiator: ${isInitiator}`); const pc = new RTCPeerConnection(STUN_SERVERS); peerConnectionsRef.current[peerId] = pc; localStreamRef.current.getTracks().forEach(track => { pc.addTrack(track, localStreamRef.current!); }); pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } }; pc.ontrack = (event) => { console.log(`[WebRTC] Remote track received from ${peerId}`, event.streams[0]); setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] })); }; pc.oniceconnectionstatechange = () => { console.log(`[WebRTC] ICE connection state change for ${peerId}: ${pc.iceConnectionState}`); }; return pc; }, [currentUser, sendSignalMessage]);
+  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => { if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) return; console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`); const pc = createPeerConnection(peerId, isInitiator); if (!pc) return; if (isInitiator) { try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSignalMessage(peerId, 'offer', offer); console.log(`[WebRTC] Offer sent to ${peerId}`); } catch (error) { console.error(`[WebRTC] Error creating offer for ${peerId}:`, error); } } }, [currentUser, createPeerConnection, sendSignalMessage]);
+  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => { if (!currentUser || !localStreamRef.current || !roomId) return; const { fromUid, type, data } = signal; console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`); let pc = peerConnectionsRef.current[fromUid]; if (!pc && (type === 'offer' || type === 'candidate')) { console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`); pc = createPeerConnection(fromUid, false)!; if (!pc) return; } else if (!pc) { console.warn(`[WebRTC] PC not found for ${fromUid} on ${type}, cannot process.`); return; } try { if (type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); sendSignalMessage(fromUid, 'answer', answer); console.log(`[WebRTC] Answer sent to ${fromUid}`); } else if (type === 'answer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`); } else if (type === 'candidate') { await pc.addIceCandidate(new RTCIceCandidate(data)); console.log(`[WebRTC] ICE candidate added from ${fromUid}`); } } catch (error) { console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error); } }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
 
   useEffect(() => {
-    if (!isCurrentUserInVoiceChat || !currentUser || !roomId) {
-      if (signalsListenerUnsubscribeRef.current) {
-        signalsListenerUnsubscribeRef.current();
-        signalsListenerUnsubscribeRef.current = null;
-      }
-      return;
-    }
-
-    const signalsQuery = query(
-      collection(db, `chatRooms/${roomId}/webrtcSignals`),
-      where("toUid", "==", currentUser.uid),
-      orderBy("createdAt", "asc") // Process in order
-    );
-
-    let lastProcessedTimestamp: Timestamp | null = null;
-
-    signalsListenerUnsubscribeRef.current = onSnapshot(signalsQuery, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") {
-          const signalData = change.doc.data() as WebRTCSignal;
-          // Prevent re-processing old signals if listener restarts, by checking timestamp
-          if (!lastProcessedTimestamp || (signalData.createdAt && signalData.createdAt.toMillis() > lastProcessedTimestamp.toMillis())) {
-            handleIncomingSignal(signalData);
-            if (signalData.createdAt) {
-                lastProcessedTimestamp = signalData.createdAt;
-            }
-          }
-        }
-      });
-    }, (error) => {
-        console.error("[WebRTC] Error listening to signals: ", error);
-    });
-    console.log("[WebRTC] Started listening for signals.");
-
-    return () => {
-      if (signalsListenerUnsubscribeRef.current) {
-        console.log("[WebRTC] Stopping signals listener.");
-        signalsListenerUnsubscribeRef.current();
-        signalsListenerUnsubscribeRef.current = null;
-      }
-    };
+    if (!isCurrentUserInVoiceChat || !currentUser || !roomId) { if (signalsListenerUnsubscribeRef.current) { signalsListenerUnsubscribeRef.current(); signalsListenerUnsubscribeRef.current = null; } return; }
+    const signalsQuery = query( collection(db, `chatRooms/${roomId}/webrtcSignals`), where("toUid", "==", currentUser.uid), orderBy("createdAt", "asc") ); let lastProcessedTimestamp: Timestamp | null = null;
+    signalsListenerUnsubscribeRef.current = onSnapshot(signalsQuery, (snapshot) => { snapshot.docChanges().forEach((change) => { if (change.type === "added") { const signalData = change.doc.data() as WebRTCSignal; if (!lastProcessedTimestamp || (signalData.createdAt && signalData.createdAt.toMillis() > lastProcessedTimestamp.toMillis())) { handleIncomingSignal(signalData); if (signalData.createdAt) { lastProcessedTimestamp = signalData.createdAt; } } } }); }, (error) => { console.error("[WebRTC] Error listening to signals: ", error); }); console.log("[WebRTC] Started listening for signals.");
+    return () => { if (signalsListenerUnsubscribeRef.current) { console.log("[WebRTC] Stopping signals listener."); signalsListenerUnsubscribeRef.current(); signalsListenerUnsubscribeRef.current = null; } };
   }, [isCurrentUserInVoiceChat, currentUser, roomId, handleIncomingSignal]);
-
 
   const handleJoinVoiceChat = async () => {
     if (!currentUser || !userData || !roomId || !roomDetails || isCurrentUserInVoiceChat) return;
-    if ((roomDetails.voiceParticipantCount ?? 0) >= (roomDetails.maxParticipants ?? MAX_VOICE_PARTICIPANTS)) {
-      toast({ title: "Sesli Sohbet Dolu", description: "Bu odadaki sesli sohbet maksimum katılımcı sayısına ulaşmış.", variant: "destructive" });
+    if ((roomDetails.voiceParticipantCount ?? 0) >= (roomDetails.maxParticipants ?? MAX_VOICE_PARTICIPANTS)) { toast({ title: "Sesli Sohbet Dolu", description: "Bu odadaki sesli sohbet maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); return; }
+    setIsProcessingVoiceJoinLeave(true);
+    try { localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false }); console.log("[WebRTC] Local stream obtained.");
+      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid); await setDoc(voiceParticipantRef, { uid: currentUser.uid, displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", photoURL: userData.photoURL || currentUser.photoURL || null, joinedAt: serverTimestamp(), isMuted: false, isMutedByAdmin: false, isSpeaking: false, }); const roomRef = doc(db, "chatRooms", roomId); await updateDoc(roomRef, { voiceParticipantCount: increment(1) }); setIsCurrentUserInVoiceChat(true); setSelfMuted(false); toast({ title: "Sesli Sohbete Katıldın!" });
+      activeVoiceParticipants.forEach(p => { if (p.id !== currentUser.uid) { initiatePeerConnection(p.id, true); } });
+    } catch (error) { console.error("Error joining voice chat / getting media:", error); toast({ title: "Hata", description: "Sesli sohbete katılırken veya medya erişimi sırasında bir sorun oluştu.", variant: "destructive" }); resetWebRTCState(); } finally { setIsProcessingVoiceJoinLeave(false); }
+  };
+  const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
+    if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) return Promise.resolve(); if (!isPageUnload) setIsProcessingVoiceJoinLeave(true); resetWebRTCState();
+    try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid); const roomRef = doc(db, "chatRooms", roomId); const batch = writeBatch(db); batch.delete(voiceParticipantRef); batch.update(roomRef, { voiceParticipantCount: increment(-1) }); await batch.commit(); setIsCurrentUserInVoiceChat(false); if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" }); } catch (error) { console.error("Error leaving voice chat (Firestore):", error); if (!isPageUnload) toast({ title: "Hata", description: "Sesli sohbetten ayrılırken bir sorun oluştu.", variant: "destructive" }); } finally { if (!isPageUnload) setIsProcessingVoiceJoinLeave(false); } return Promise.resolve();
+  }, [currentUser, roomId, resetWebRTCState, toast]);
+  const toggleSelfMute = async () => { if (!currentUser || !roomId || !isCurrentUserInVoiceChat) return; const newMuteState = !selfMuted; if (localStreamRef.current) { localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = !newMuteState; }); } try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid); await updateDoc(voiceParticipantRef, { isMuted: newMuteState }); setSelfMuted(newMuteState); } catch (error) { console.error("Error toggling self mute:", error); toast({ title: "Hata", description: "Mikrofon durumu güncellenirken bir sorun oluştu.", variant: "destructive" }); } };
+  const handleAdminKickFromVoice = async (targetUserId: string) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; cleanupPeerConnection(targetUserId); try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); const roomRef = doc(db, "chatRooms", roomId); const batch = writeBatch(db); batch.delete(voiceParticipantRef); batch.update(roomRef, { voiceParticipantCount: increment(-1) }); await batch.commit(); toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." }); } catch (error) { console.error("Error kicking user from voice:", error); toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" }); } };
+  const handleAdminToggleMuteUserVoice = async (targetUserId: string, currentMuteState?: boolean) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState }); toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` }); } catch (error) { console.error("Error toggling user mute by admin:", error); toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" }); } };
+  const handleVoiceParticipantSlotClick = (participantId: string | null) => { if (participantId && participantId !== currentUser?.uid) { handleOpenUserInfoPopover(participantId); } };
+
+  const handleKickParticipantFromTextChat = async (targetUserId: string, targetUsername?: string) => {
+    if (!isCurrentUserRoomCreator || !currentUser || targetUserId === currentUser.uid) {
+      toast({ title: "Yetki Hatası", description: "Bu kullanıcıyı odadan atma yetkiniz yok.", variant: "destructive" });
       return;
     }
-    setIsProcessingVoiceJoinLeave(true);
+    if (!confirm(`${targetUsername || 'Bu kullanıcıyı'} metin sohbetinden atmak istediğinizden emin misiniz?`)) return;
+
     try {
-      // Get local media stream
-      localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      console.log("[WebRTC] Local stream obtained.");
-
-      // Update Firestore for voice participant
-      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
-      await setDoc(voiceParticipantRef, {
-        uid: currentUser.uid, displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
-        photoURL: userData.photoURL || currentUser.photoURL || null, joinedAt: serverTimestamp(),
-        isMuted: false, isMutedByAdmin: false, isSpeaking: false,
-      });
-      const roomRef = doc(db, "chatRooms", roomId);
-      await updateDoc(roomRef, { voiceParticipantCount: increment(1) });
-
-      setIsCurrentUserInVoiceChat(true); setSelfMuted(false);
-      toast({ title: "Sesli Sohbete Katıldın!" });
-
-      // Initiate connections to existing participants
-      activeVoiceParticipants.forEach(p => {
-        if (p.id !== currentUser.uid) {
-          initiatePeerConnection(p.id, true); // Current user initiates
-        }
-      });
-
-    } catch (error) {
-      console.error("Error joining voice chat / getting media:", error);
-      toast({ title: "Hata", description: "Sesli sohbete katılırken veya medya erişimi sırasında bir sorun oluştu.", variant: "destructive" });
-      resetWebRTCState();
-    } finally {
-      setIsProcessingVoiceJoinLeave(false);
-    }
-  };
-
-  const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
-    if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) return Promise.resolve(); // Use ref for current state
-    if (!isPageUnload) setIsProcessingVoiceJoinLeave(true);
-
-    resetWebRTCState(); // Closes PCs, stops local stream
-
-    // Firestore cleanup
-    try {
-      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
-      const roomRef = doc(db, "chatRooms", roomId);
       const batch = writeBatch(db);
-      batch.delete(voiceParticipantRef);
-      batch.update(roomRef, { voiceParticipantCount: increment(-1) });
-      await batch.commit();
-      setIsCurrentUserInVoiceChat(false); // This will trigger listener cleanup
-      if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" });
-    } catch (error) {
-      console.error("Error leaving voice chat (Firestore):", error);
-      if (!isPageUnload) toast({ title: "Hata", description: "Sesli sohbetten ayrılırken bir sorun oluştu.", variant: "destructive" });
-    } finally {
-      if (!isPageUnload) setIsProcessingVoiceJoinLeave(false);
-    }
-    return Promise.resolve();
-  }, [currentUser, roomId, resetWebRTCState, toast]); // Removed isCurrentUserInVoiceChat
+      const participantRef = doc(db, `chatRooms/${roomId}/participants`, targetUserId);
+      batch.delete(participantRef);
 
-  const toggleSelfMute = async () => {
-    if (!currentUser || !roomId || !isCurrentUserInVoiceChat) return;
-    const newMuteState = !selfMuted;
-    // WebRTC: Mute/unmute local audio track
-    if (localStreamRef.current) {
-        localStreamRef.current.getAudioTracks().forEach(track => {
-            track.enabled = !newMuteState;
-        });
-    }
-    try {
-      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
-      await updateDoc(voiceParticipantRef, { isMuted: newMuteState });
-      setSelfMuted(newMuteState);
-    } catch (error) { console.error("Error toggling self mute:", error); toast({ title: "Hata", description: "Mikrofon durumu güncellenirken bir sorun oluştu.", variant: "destructive" }); }
-  };
-
-  const handleAdminKickFromVoice = async (targetUserId: string) => {
-    if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
-    cleanupPeerConnection(targetUserId); // Clean up WebRTC connection for kicked user
-    try {
-      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
       const roomRef = doc(db, "chatRooms", roomId);
-      const batch = writeBatch(db); batch.delete(voiceParticipantRef); batch.update(roomRef, { voiceParticipantCount: increment(-1) });
-      await batch.commit(); toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." });
-    } catch (error) { console.error("Error kicking user from voice:", error); toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" }); }
-  };
+      batch.update(roomRef, { participantCount: increment(-1) });
 
-  const handleAdminToggleMuteUserVoice = async (targetUserId: string, currentMuteState?: boolean) => {
-    if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
-    // WebRTC: Admin mute is a signaling concern, not directly controlling remote track.
-    // The UI will reflect isMutedByAdmin, and the user's client should respect this.
-    try {
+      // Sesli sohbetteyse oradan da at
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
-      await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState });
-      toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` });
-    } catch (error) { console.error("Error toggling user mute by admin:", error); toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" }); }
+      const voiceParticipantSnap = await getDoc(voiceParticipantRef);
+      if (voiceParticipantSnap.exists()) {
+        batch.delete(voiceParticipantRef);
+        batch.update(roomRef, { voiceParticipantCount: increment(-1) });
+        cleanupPeerConnection(targetUserId); // WebRTC bağlantısını temizle
+      }
+      
+      const systemMessage = `[SİSTEM] ${targetUsername || 'Bir kullanıcı'} oda sahibi tarafından odadan atıldı.`;
+      batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
+        text: systemMessage, senderId: "system", senderName: "Sistem", timestamp: serverTimestamp(), isGameMessage: true
+      });
+
+      await batch.commit();
+      toast({ title: "Başarılı", description: `${targetUsername || 'Kullanıcı'} odadan atıldı.` });
+      setPopoverOpenForUserId(null); // Popover'ı kapat
+    } catch (error) {
+      console.error("Error kicking participant from text chat:", error);
+      toast({ title: "Hata", description: "Kullanıcı odadan atılırken bir sorun oluştu.", variant: "destructive" });
+    }
   };
 
-  const handleVoiceParticipantSlotClick = (participantId: string | null) => { if (participantId && participantId !== currentUser?.uid) { handleOpenUserInfoPopover(participantId); } };
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current)) {
     return (<div className="flex flex-1 items-center justify-center h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-2 text-lg">Oda yükleniyor...</p></div>);
@@ -775,45 +621,30 @@ export default function ChatRoomPage() {
 
   return (
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
-      {/* Hidden container for remote audio elements */}
-      <div style={{ display: 'none' }}>
-        {Object.entries(remoteStreams).map(([peerId, stream]) => (
-          <audio key={peerId} autoPlay playsInline ref={audioEl => { if (audioEl) audioEl.srcObject = stream; }} />
-        ))}
-      </div>
-
-      {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && ( <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} /> )}
+      <div style={{ display: 'none' }}> {Object.entries(remoteStreams).map(([peerId, stream]) => ( <audio key={peerId} autoPlay playsInline ref={audioEl => { if (audioEl) audioEl.srcObject = stream; }} /> ))} </div>
+      {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && ( <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} countdown={questionAnswerCountdown} /> )}
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-20">
         <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
-          <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
-            <Link href="/chat"> <ArrowLeft className="h-5 w-5" /> <span className="sr-only">Geri</span> </Link>
-          </Button>
-          <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
-            <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint="group chat" />
-            <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback>
-          </Avatar>
+          <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9"> <Link href="/chat"> <ArrowLeft className="h-5 w-5" /> <span className="sr-only">Geri</span> </Link> </Button>
+          <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint="group chat" /> <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback> </Avatar>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
-              {isCurrentUserRoomCreator && <UsersRound className="h-4 w-4 text-yellow-500 flex-shrink-0" />}
-              {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)}
-            </div>
-            <div className="flex items-center text-xs text-muted-foreground gap-x-2">
-              {roomDetails.expiresAt && (<div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getPreciseExpiryInfo()}>{getPreciseExpiryInfo()}</span> </div>)}
-              {gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && (<div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}><Puzzle className="mr-1 h-3.5 w-3.5 text-primary" /> <span className="text-xs text-muted-foreground font-mono"> {formatCountdown(nextQuestionCountdown)} </span></div>)}
-            </div>
+            <div className="flex items-center gap-2"> <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2> {isCurrentUserRoomCreator && <UsersRound className="h-4 w-4 text-yellow-500 flex-shrink-0" />} {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)} </div>
+            <div className="flex items-center text-xs text-muted-foreground gap-x-2"> {roomDetails.expiresAt && (<div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getPreciseExpiryInfo()}>{getPreciseExpiryInfo()}</span> </div>)} {gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && (<div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}><Puzzle className="mr-1 h-3.5 w-3.5 text-primary" /> <span className="text-xs text-muted-foreground font-mono"> {formatCountdown(nextQuestionCountdown)} </span></div>)} {gameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && questionAnswerCountdown !== null && activeGameQuestion && (<div className="flex items-center truncate ml-2 border-l pl-2 border-destructive/70" title={`Soruya cevap vermek için kalan süre: ${formatCountdown(questionAnswerCountdown)}`}><Gamepad2 className="mr-1 h-3.5 w-3.5 text-destructive" /> <span className="text-xs text-destructive font-mono"> {formatCountdown(questionAnswerCountdown)} </span></div>)} </div>
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
           <Popover><PopoverTrigger asChild><Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5"> <UsersRound className="h-4 w-4" /> <span className="text-xs">{activeTextParticipants.length}/{roomDetails.maxParticipants}</span> </Button></PopoverTrigger>
             <PopoverContent className="w-64 p-0"><div className="p-2 border-b"><h3 className="text-xs font-medium text-center text-muted-foreground"> Metin Sohbeti Katılımcıları ({activeTextParticipants.length}/{roomDetails.maxParticipants}) </h3></div>
-              <ScrollArea className="max-h-60">
-                {activeTextParticipants.length === 0 && !isProcessingJoinLeave && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" /> Odada kimse yok. </div>)}
-                {isProcessingJoinLeave && activeTextParticipants.length === 0 && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" /> Yükleniyor... </div>)}
+              <ScrollArea className="max-h-60"> {activeTextParticipants.length === 0 && !isProcessingJoinLeave && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" /> Odada kimse yok. </div>)} {isProcessingJoinLeave && activeTextParticipants.length === 0 && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" /> Yükleniyor... </div>)}
                 <ul className="divide-y divide-border">
                   {activeTextParticipants.map(participant => (<li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
-                    <Link href={`/profile/${participant.id}`} className="flex-shrink-0"><Avatar className="h-7 w-7"><AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar" /><AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback></Avatar></Link>
-                    <div className="flex-1 min-w-0"><Link href={`/profile/${participant.id}`}><span className="text-xs font-medium truncate text-muted-foreground block hover:underline">{participant.displayName || "Bilinmeyen"}{participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}</span></Link><span className="text-[10px] text-muted-foreground/70 block">{participant.joinedAt ? formatDistanceToNow(participant.joinedAt.toDate(), { addSuffix: true, locale: tr, includeSeconds: false }) : 'Yeni katıldı'}</span></div>
+                    <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="flex-shrink-0 cursor-pointer"><Avatar className="h-7 w-7"><AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar" /><AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback></Avatar></div>
+                    <div className="flex-1 min-w-0"><div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="cursor-pointer"><span className="text-xs font-medium truncate text-muted-foreground block hover:underline">{participant.displayName || "Bilinmeyen"}{participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}</span></div><span className="text-[10px] text-muted-foreground/70 block">{participant.joinedAt ? formatDistanceToNow(participant.joinedAt.toDate(), { addSuffix: true, locale: tr, includeSeconds: false }) : 'Yeni katıldı'}</span></div>
+                    {isCurrentUserRoomCreator && participant.id !== currentUser?.uid && (
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive/70 hover:text-destructive" onClick={() => handleKickParticipantFromTextChat(participant.id, participant.displayName || undefined)} title="Odadan At">
+                            <LogOut className="h-3.5 w-3.5"/>
+                        </Button>
+                    )}
                   </li>))}
                 </ul>
               </ScrollArea>
@@ -822,41 +653,18 @@ export default function ChatRoomPage() {
           {currentUser && roomDetails.creatorId === currentUser.uid && (<DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9"><MoreVertical className="h-5 w-5" /><span className="sr-only">Oda Seçenekleri</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{!isRoomExpired && roomDetails.expiresAt && (<DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>{isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Süre Uzat ({ROOM_EXTENSION_COST} <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)</DropdownMenuItem>)}<DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10"> <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil </DropdownMenuItem></DropdownMenuContent></DropdownMenu>)}
         </div>
       </header>
-
-      <div className="p-3 border-b bg-background/70 backdrop-blur-sm">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3>
-          {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2">
-            <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button>
-            <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button>
-          </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)}
-        </div>
-        <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} />
-      </div>
-
+      <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
       <div className="flex flex-1 overflow-hidden">
-        <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
-          {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)}
-          {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)}
-          {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)}
-          {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)}
-          {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} />))}
+        <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
+          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
         </ScrollArea>
       </div>
-
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
-        <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button>
-          <Input placeholder={activeGameQuestion && gameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button>
-            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button>
-          </div>
+        <div className="relative flex items-center gap-2"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button> <Input placeholder={activeGameQuestion && gameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
         </div>
         {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
       </form>
     </div>
   );
 }
-

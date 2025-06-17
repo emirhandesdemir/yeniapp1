@@ -4,7 +4,7 @@ import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink } from "lucide-react"; // ExternalLink eklendi
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut } from "lucide-react"; // LogOut eklendi
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
@@ -34,10 +34,12 @@ interface ChatMessageItemProps {
   onAcceptFriendRequestPopover: () => void;
   onSendFriendRequestPopover: () => void;
   onDmAction: (targetUserId: string | undefined | null) => void;
-  onViewProfileAction: (targetUserId: string | undefined | null) => void; // Yeni prop
+  onViewProfileAction: (targetUserId: string | undefined | null) => void;
   getAvatarFallbackText: (name?: string | null) => string;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
+  isCurrentUserRoomCreator: boolean; // Yeni prop: Mevcut kullanıcı oda sahibi mi?
+  onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void; // Yeni prop: Katılımcıyı atma fonksiyonu
 }
 
 const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
@@ -53,14 +55,15 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   onAcceptFriendRequestPopover,
   onSendFriendRequestPopover,
   onDmAction,
-  onViewProfileAction, // Kullanılıyor
+  onViewProfileAction,
   getAvatarFallbackText,
   currentUserPhotoURL,
   currentUserDisplayName,
+  isCurrentUserRoomCreator,
+  onKickParticipantFromTextChat,
 }) => {
   if (msg.isGameMessage) {
     let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
-
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
@@ -118,8 +121,19 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                             </Button>
                         )}
                         <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => onDmAction(popoverTargetUser?.uid)} >
-                        <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> DM Gönder
+                            <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> DM Gönder
                         </Button>
+                        {isCurrentUserRoomCreator && msg.senderId !== currentUserUid && onKickParticipantFromTextChat && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="w-full text-xs mt-1"
+                            onClick={() => onKickParticipantFromTextChat(msg.senderId, popoverTargetUser?.displayName || "Kullanıcı")}
+                            disabled={popoverLoading}
+                          >
+                            <LogOut className="mr-1.5 h-3.5 w-3.5" /> Odadan At
+                          </Button>
+                        )}
                     </div>
                 )}
             </PopoverContent>
