@@ -362,10 +362,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex flex-col min-h-screen bg-background">
       {!isChatPage && (
         <header className="flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
-          <Link href="/" className="flex items-center gap-2 font-semibold text-primary dark:text-sidebar-primary">
-            <Flame className="h-7 w-7" />
-            <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
-          </Link>
+          <Button asChild variant="ghost" size="icon" className="rounded-full text-primary dark:text-primary hover:bg-primary/10 -ml-2 sm:ml-0 p-0 h-auto">
+            <Link href="/" aria-label="Anasayfa" className="flex items-center gap-2 p-2">
+              <Flame className="h-7 w-7" />
+              <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
+            </Link>
+          </Button>
 
           <div className="flex items-center gap-1 sm:gap-1.5">
             <Link href="/direct-messages" passHref>
@@ -377,13 +379,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
-                  <Bell className="h-5 w-5" />
-                  {incomingRequests.length > 0 && (
-                    <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
-                    </span>
-                  )}
+                  {/* This div is the single, direct child of the Button (which is child of PopoverTrigger asChild) */}
+                  <div className="relative flex items-center justify-center w-full h-full">
+                    <Bell className="h-5 w-5" />
+                    {incomingRequests.length > 0 && (
+                      <span className="absolute top-0 right-0 flex h-3 w-3 -mt-0.5 -mr-0.5"> {/* Adjusted positioning for dot */}
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span>
+                      </span>
+                    )}
+                  </div>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
@@ -472,3 +477,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
