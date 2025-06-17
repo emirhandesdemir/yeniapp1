@@ -51,6 +51,8 @@ textarea {
     --input: 240 6% 90%;  /* Standard light input */
     --ring: 221 83% 53%; /* Primary color for rings */
 
+    --radius: 1rem; /* Increased for more rounded corners */
+
     /* Vibrant Chart colors */
     --chart-1: hsl(var(--primary));
     --chart-2: hsl(var(--accent));
@@ -89,6 +91,8 @@ textarea {
     --border: 240 4% 20%; /* Slightly more visible border in dark mode */
     --input: 240 4% 20%;  /* Slightly more visible input in dark mode */
     --ring: 221 90% 70%; /* Brighter primary for rings in dark mode */
+
+    --radius: 1rem; /* Increased for more rounded corners in dark mode */
 
     /* Vibrant Chart colors for dark mode */
     --chart-1: hsl(var(--primary));
