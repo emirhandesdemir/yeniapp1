@@ -1,29 +1,23 @@
 
 import { type NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { v2 as cloudinary } from 'cloudinary';
 
-// Ensure the upload directory exists
-const ensureUploadDirExists = () => {
-  const uploadDir = path.join(process.cwd(), 'public/uploads');
-  if (!fs.existsSync(uploadDir)) {
-    try {
-      fs.mkdirSync(uploadDir, { recursive: true });
-      console.log(`[API Upload] Created upload directory: ${uploadDir}`);
-    } catch (error) {
-      console.error(`[API Upload] Failed to create upload directory: ${uploadDir}`, error);
-      // If we can't create the directory, uploads will fail.
-      // This error should be caught by the caller.
-      throw error; 
-    }
-  }
-};
+// Configure Cloudinary with your credentials
+// These should be set as environment variables in your hosting environment (e.g., Netlify)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true, // Ensure HTTPS URLs are returned
+});
 
 export async function POST(req: NextRequest) {
-  try {
-    // Ensure directory exists before processing form data
-    ensureUploadDirExists();
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    console.error('[API Upload] Cloudinary environment variables are not set.');
+    return NextResponse.json({ error: 'Cloudinary configuration missing on the server.' }, { status: 500 });
+  }
 
+  try {
     const formData = await req.formData();
     const file = formData.get('photoFile') as File | null;
 
@@ -33,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     // Validate file type (server-side)
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!file.mimetype || !allowedTypes.includes(file.mimetype)) {
+    if (!file.type || !allowedTypes.includes(file.type)) { // file.mimetype is not standard, use file.type
       return NextResponse.json({ error: 'Invalid file type. Only JPG, PNG, GIF, WEBP are allowed.' }, { status: 400 });
     }
     
@@ -46,45 +40,35 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // IMPORTANT: Writing to `public/uploads` is generally NOT reliable or persistent
-    // in serverless environments like Firebase App Hosting or Vercel.
-    // Files may be lost on redeployments or instance restarts.
-    // Firebase Storage is the recommended solution for persistent file storage.
-    const uploadDir = path.join(process.cwd(), 'public/uploads');
-    
-    // Generate a unique filename to prevent overwrites and handle special characters
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
-    const extension = path.extname(file.name) || '.dat'; // Fallback extension
-    const originalNameWithoutExt = path.basename(file.name, extension);
-    const safeOriginalName = originalNameWithoutExt.replace(/[^a-z0-9_.-]/gi, '_').substring(0, 50);
-    const filename = `${safeOriginalName}-${uniqueSuffix}${extension}`;
-    const filePath = path.join(uploadDir, filename);
+    // Upload to Cloudinary
+    const uploadResult = await new Promise<{ secure_url?: string; public_id?: string; error?: any }>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { resource_type: 'image' }, // You can specify folder, tags, etc. here
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result || {});
+          }
+        }
+      );
+      uploadStream.end(buffer);
+    });
 
-    try {
-      fs.writeFileSync(filePath, buffer);
-      console.log(`[API Upload] File successfully written to: ${filePath}`);
-    } catch (writeError: any) {
-      console.error('[API Upload] Error writing file to public/uploads:', writeError);
-      return NextResponse.json({ error: 'Failed to save file to server.', details: writeError.message }, { status: 500 });
+    if (uploadResult.error || !uploadResult.secure_url) {
+      console.error('[API Upload] Cloudinary upload failed:', uploadResult.error);
+      return NextResponse.json({ error: 'Failed to upload file to Cloudinary.', details: uploadResult.error?.message || 'Unknown Cloudinary error' }, { status: 500 });
     }
 
-    const publicFilePath = `/uploads/${filename}`;
-    console.log(`[API Upload] File available at public path: ${publicFilePath}`);
-    return NextResponse.json({ success: true, filePath: publicFilePath }, { status: 200 });
+    console.log(`[API Upload] File successfully uploaded to Cloudinary: ${uploadResult.secure_url}`);
+    return NextResponse.json({ success: true, url: uploadResult.secure_url, public_id: uploadResult.public_id }, { status: 200 });
 
   } catch (error: any) {
     console.error('[API Upload] Error in POST handler:', error);
     let errorMessage = 'File upload processing failed.';
     if (error.message) {
       errorMessage = error.message;
-    } else if (typeof error === 'string') {
-      errorMessage = error;
     }
-    // Check for specific error types if needed, e.g. disk full, permissions
-    return NextResponse.json({ error: errorMessage, details: error.code || 'Unknown error code' }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, details: error.code || error.message || 'Unknown error code' }, { status: 500 });
   }
 }
-
-// Note: The `export const config = { api: { bodyParser: false } };` is
-// for Pages Router API routes. It's not needed for App Router API routes
-// when using `req.formData()`.

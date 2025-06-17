@@ -342,7 +342,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
-    let newLocalPhotoPath: string | null = null;
+    let newCloudinaryUrl: string | null = null; // Değişiklik: newLocalPhotoPath -> newCloudinaryUrl
 
     try {
       if (updates.photoFile) {
@@ -350,7 +350,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const formData = new FormData();
         formData.append('photoFile', updates.photoFile);
 
-        const response = await fetch('/api/upload/route.ts', { // API rotası düzeltildi
+        const response = await fetch('/api/upload/route', { // API rotası düzeltildi (sonundaki .ts kaldırıldı)
           method: 'POST',
           body: formData,
         });
@@ -368,12 +368,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw new Error(errorMessage);
         }
         const result = await response.json();
-        newLocalPhotoPath = result.filePath;
-        console.log("[AuthContext] Yeni yerel fotoğraf yolu API'den alındı:", newLocalPhotoPath);
-        authUpdates.photoURL = newLocalPhotoPath; 
-        firestoreUpdates.photoURL = newLocalPhotoPath; 
+        newCloudinaryUrl = result.url; // Değişiklik: result.filePath -> result.url
+        console.log("[AuthContext] Yeni Cloudinary fotoğraf URL'si API'den alındı:", newCloudinaryUrl);
+        authUpdates.photoURL = newCloudinaryUrl; 
+        firestoreUpdates.photoURL = newCloudinaryUrl; 
       } else if (updates.photoFile === null) { 
-            console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi (yerel dosya).");
+            console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi.");
             authUpdates.photoURL = null; 
             firestoreUpdates.photoURL = null; 
       }
