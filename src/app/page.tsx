@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users } from "lucide-react";
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, XCircle } from "lucide-react"; // XCircle buraya eklendi
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
