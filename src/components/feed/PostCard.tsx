@@ -233,7 +233,7 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <p className="text-xs text-foreground/80 whitespace-pre-wrap break-words">
+        <p className="text-sm font-medium text-foreground/90 whitespace-pre-wrap break-words">
           {originalPost.content}
         </p>
         {originalPost.sharedRoomId && originalPost.sharedRoomName && (
@@ -288,7 +288,7 @@ export default function PostCard({ post }: PostCardProps) {
       <CardContent className="p-4 pt-1 pb-3">
         {post.isRepost ? (
           <>
-            <p className="text-xs text-muted-foreground mb-1.5">
+            <p className="text-sm text-muted-foreground mb-1.5">
               {/* Repost yapan kullanıcı kendi profiline yönlendirilmeli, orijinal değil */}
               <Link href={`/profile/${post.userId}`} className="font-medium hover:underline">
                 {post.username}
@@ -306,7 +306,7 @@ export default function PostCard({ post }: PostCardProps) {
             })}
           </>
         ) : (
-          <p className="text-sm text-foreground/90 whitespace-pre-wrap break-words">
+          <p className="text-base font-semibold text-foreground whitespace-pre-wrap break-words">
             {post.content}
           </p>
         )}
@@ -383,3 +383,4 @@ export default function PostCard({ post }: PostCardProps) {
     </Card>
   );
 }
+
