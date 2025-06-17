@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import OneSignal from 'react-onesignal';
+// import OneSignal from 'react-onesignal'; // Kaldırıldı
 import {
   MessageSquare,
   Bell,
@@ -117,12 +117,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
-  const [oneSignalInitialized, setOneSignalInitialized] = useState(false);
+  // const [oneSignalInitialized, setOneSignalInitialized] = useState(false); // Kaldırıldı
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
+  // OneSignal SDK'sının başlatılması artık /src/app/layout.tsx içindeki script tarafından yapılıyor.
+  // Bu useEffect bloğu kaldırıldı.
+  /*
   useEffect(() => {
     if (isClient && !oneSignalInitialized && process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID && process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID !== 'YOUR_ONESIGNAL_APP_ID') {
       OneSignal.init({ appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID })
@@ -137,6 +140,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setOneSignalInitialized(true); // Mark as initialized to prevent re-attempts
     }
   }, [isClient, oneSignalInitialized]);
+  */
 
 
   useEffect(() => {
