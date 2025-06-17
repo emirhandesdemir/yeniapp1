@@ -47,12 +47,13 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
 - **Gerekli İndeksler:**
-  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için:
+  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları (`expiresAt` > şimdi) listelemek ve katılımcı sayısına, ardından oluşturulma tarihine göre sıralamak için:
     - Koleksiyon: `chatRooms`
-    - Alanlar: `expiresAt` (Artan), `participantCount` (Azalan), `createdAt` (Azalan)
+    - Alanlar: `participantCount` (Azalan), `createdAt` (Azalan), `expiresAt` (Artan)
+    - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresi içerir. Firestore, sorgu gereksinimlerine göre tam indeks yapısını önerecektir._
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan)
+    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan veya Azalan, Firestore'un önerisine göre)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
