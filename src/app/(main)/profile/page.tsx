@@ -1,16 +1,16 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent, useRef } from "react"; 
-import Image from "next/image"; 
+import { useState, useEffect, type ChangeEvent, useRef } from "react";
+import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette, Users } from "lucide-react"; 
-import { useAuth } from "@/contexts/AuthContext";
+import { User, Mail, Edit3, Save, XCircle, Loader2, Camera, Trash2, LogOutIcon, LayoutDashboard, Palette, Users, LockKeyhole, ShieldCheck } from "lucide-react";
+import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ThemeSetting } from "@/contexts/ThemeContext";
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Link from "next/link";
+import { Switch } from "@/components/ui/switch";
 
 
 interface UserProfileForm {
@@ -36,7 +37,7 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
 ];
 
 export default function ProfilePage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth(); 
+  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
 
@@ -46,23 +47,38 @@ export default function ProfilePage() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Privacy settings state
+  const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
+    postsVisibleToFriendsOnly: false,
+    activeRoomsVisibleToFriendsOnly: false,
+  });
+
   useEffect(() => {
     document.title = 'Profilim - Sohbet Küresi';
     if (currentUser && userData) {
       setTempProfile({
         username: userData.displayName || currentUser.displayName || "",
-        bio: userData.bio || "", 
+        bio: userData.bio || "",
       });
-      setPreviewImage(userData.photoURL || currentUser.photoURL); 
+      setPreviewImage(userData.photoURL || currentUser.photoURL);
+      setPrivacySettings({ // Initialize privacy settings from userData
+        postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
+        activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+      });
     } else if (currentUser) {
         setTempProfile({
             username: currentUser.displayName || "",
-            bio: "", // userData olmadığı için bio boş kalır
+            bio: "",
         });
          setPreviewImage(currentUser.photoURL);
+         // Default privacy settings if userData is not yet available but currentUser is
+         setPrivacySettings({
+            postsVisibleToFriendsOnly: false,
+            activeRoomsVisibleToFriendsOnly: false,
+         });
     }
   }, [currentUser, userData]);
-  
+
   useEffect(() => {
     if (userData?.photoURL) {
       setPreviewImage(userData.photoURL);
@@ -70,22 +86,30 @@ export default function ProfilePage() {
     if (userData?.bio) {
         setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
     }
-  }, [userData?.photoURL, userData?.bio]);
+    if (userData?.privacySettings) {
+        setPrivacySettings(userData.privacySettings);
+    }
+  }, [userData?.photoURL, userData?.bio, userData?.privacySettings]);
 
 
   const handleEditToggle = () => {
     if (isEditing) {
       if (currentUser && userData) {
-        setTempProfile({ 
-            username: userData.displayName || currentUser.displayName || "", 
-            bio: userData.bio || "" 
-        }); 
+        setTempProfile({
+            username: userData.displayName || currentUser.displayName || "",
+            bio: userData.bio || ""
+        });
         setPreviewImage(userData.photoURL || currentUser.photoURL);
+        setPrivacySettings({ // Reset privacy settings to saved state on cancel
+            postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
+            activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+        });
       } else if (currentUser) {
         setTempProfile({ username: currentUser.displayName || "", bio: "" });
         setPreviewImage(currentUser.photoURL);
+        setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false });
       }
-      setSelectedFile(null); 
+      setSelectedFile(null);
     }
     setIsEditing(!isEditing);
   };
@@ -110,7 +134,7 @@ export default function ProfilePage() {
       setPreviewImage(URL.createObjectURL(file));
     }
   };
-  
+
   const handleRemoveProfilePicture = async () => {
     if (!currentUser || !userData?.photoURL) {
         toast({ title: "Bilgi", description: "Kaldırılacak bir profil fotoğrafı bulunmuyor." });
@@ -120,16 +144,19 @@ export default function ProfilePage() {
 
     const success = await updateUserProfile({ photoFile: null });
     if (success) {
-      setPreviewImage(null); 
+      setPreviewImage(null);
       setSelectedFile(null);
     }
   };
 
+  const handlePrivacySettingChange = (setting: keyof PrivacySettings, value: boolean) => {
+    setPrivacySettings(prev => ({ ...prev, [setting]: value }));
+  };
 
   const handleSave = async () => {
     if (!currentUser) return;
-    
-    const updates: { displayName?: string; photoFile?: File | null; bio?: string } = {};
+
+    const updates: { displayName?: string; photoFile?: File | null; bio?: string; privacySettings?: PrivacySettings } = {};
     let profileChanged = false;
 
     const currentDisplayName = userData?.displayName || currentUser.displayName || "";
@@ -141,7 +168,7 @@ export default function ProfilePage() {
         updates.displayName = tempProfile.username.trim();
         profileChanged = true;
     }
-    
+
     const currentBio = userData?.bio || "";
     if (tempProfile.bio.trim() !== currentBio) {
         updates.bio = tempProfile.bio.trim();
@@ -153,8 +180,17 @@ export default function ProfilePage() {
         profileChanged = true;
     }
 
+    // Check if privacy settings changed
+    const currentPrivacySettings = userData?.privacySettings || { postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false };
+    if (privacySettings.postsVisibleToFriendsOnly !== currentPrivacySettings.postsVisibleToFriendsOnly ||
+        privacySettings.activeRoomsVisibleToFriendsOnly !== currentPrivacySettings.activeRoomsVisibleToFriendsOnly) {
+        updates.privacySettings = privacySettings;
+        profileChanged = true;
+    }
+
+
     if (!profileChanged) {
-        setIsEditing(false); 
+        setIsEditing(false);
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         return;
     }
@@ -162,15 +198,15 @@ export default function ProfilePage() {
     const success = await updateUserProfile(updates);
     if (success) {
       setIsEditing(false);
-      setSelectedFile(null); 
+      setSelectedFile(null);
     }
   };
-  
+
   const getAvatarFallbackText = () => {
     const nameToUse = isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName);
     if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "PN"; 
+    return "PN";
   };
 
   if (isUserLoading && !currentUser && !userData) {
@@ -181,8 +217,8 @@ export default function ProfilePage() {
       </div>
     );
   }
-  
-  if (!currentUser && !isUserLoading) { 
+
+  if (!currentUser && !isUserLoading) {
      return (
       <div className="flex flex-1 items-center justify-center">
         <p className="text-muted-foreground">Giriş yapmış kullanıcı bulunamadı. Yönlendiriliyor...</p>
@@ -190,13 +226,13 @@ export default function ProfilePage() {
       </div>
     );
   }
-  
-  let displayPhotoUrl = isEditing 
-    ? (previewImage || userData?.photoURL || currentUser?.photoURL) 
+
+  let displayPhotoUrl = isEditing
+    ? (previewImage || userData?.photoURL || currentUser?.photoURL)
     : (userData?.photoURL || currentUser?.photoURL);
 
   if (displayPhotoUrl && !displayPhotoUrl.startsWith('http') && !displayPhotoUrl.startsWith('/')) {
-    displayPhotoUrl = `/${displayPhotoUrl}`; 
+    displayPhotoUrl = `/${displayPhotoUrl}`;
   }
 
 
@@ -208,10 +244,10 @@ export default function ProfilePage() {
           <div className="relative group">
             <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
               {displayPhotoUrl ? (
-                  <AvatarImage 
-                    src={displayPhotoUrl} 
-                    alt={tempProfile.username || "Kullanıcı"} 
-                    data-ai-hint="user portrait" 
+                  <AvatarImage
+                    src={displayPhotoUrl}
+                    alt={tempProfile.username || "Kullanıcı"}
+                    data-ai-hint="user portrait"
                     key={displayPhotoUrl}
                   />
               ) : null }
@@ -240,10 +276,10 @@ export default function ProfilePage() {
             />
           </div>
            {isEditing && (userData?.photoURL || previewImage) && (
-            <Button 
-                type="button" 
-                variant="ghost" 
-                size="sm" 
+            <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 className="mt-2 text-xs text-destructive hover:text-destructive-foreground hover:bg-destructive/90"
                 onClick={handleRemoveProfilePicture}
                 disabled={isUserLoading}
@@ -269,23 +305,59 @@ export default function ProfilePage() {
               </div>
               <div>
                 <Label htmlFor="bio">Hakkımda</Label>
-                <Textarea 
-                  id="bio" 
-                  name="bio" 
-                  value={tempProfile.bio} 
-                  onChange={handleInputChange} 
-                  rows={3} 
-                  className="mt-1" 
+                <Textarea
+                  id="bio"
+                  name="bio"
+                  value={tempProfile.bio}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="mt-1"
                   placeholder="Kendinizden bahsedin..."
-                  disabled={isUserLoading} 
+                  disabled={isUserLoading}
                 />
               </div>
-              {previewImage && selectedFile && displayPhotoUrl && ( 
+              {previewImage && selectedFile && displayPhotoUrl && (
                 <div className="my-4">
                     <Label>Yeni Fotoğraf Önizlemesi</Label>
                     <Image src={displayPhotoUrl} alt="Profil fotoğrafı önizlemesi" width={128} height={128} className="rounded-md mt-1 object-cover h-32 w-32 border" />
                 </div>
               )}
+
+              {/* Privacy Settings in Edit Mode */}
+              <Card className="pt-4 bg-transparent border-border/50">
+                <CardHeader className="p-0 px-2 pb-3">
+                    <div className="flex items-center gap-2">
+                        <LockKeyhole className="h-5 w-5 text-primary" />
+                        <CardTitle className="text-lg">Gizlilik Ayarları</CardTitle>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3 p-2">
+                    <div className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
+                        <Label htmlFor="postsVisibleToFriendsOnly" className="flex-1 cursor-pointer text-sm">
+                            Gönderilerimi sadece arkadaşlarım görsün
+                        </Label>
+                        <Switch
+                            id="postsVisibleToFriendsOnly"
+                            checked={privacySettings.postsVisibleToFriendsOnly}
+                            onCheckedChange={(checked) => handlePrivacySettingChange('postsVisibleToFriendsOnly', checked)}
+                            disabled={isUserLoading}
+                        />
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
+                        <Label htmlFor="activeRoomsVisibleToFriendsOnly" className="flex-1 cursor-pointer text-sm">
+                            Aktif odalarımı sadece arkadaşlarım görsün
+                        </Label>
+                        <Switch
+                            id="activeRoomsVisibleToFriendsOnly"
+                            checked={privacySettings.activeRoomsVisibleToFriendsOnly}
+                            onCheckedChange={(checked) => handlePrivacySettingChange('activeRoomsVisibleToFriendsOnly', checked)}
+                            disabled={isUserLoading}
+                        />
+                    </div>
+                </CardContent>
+              </Card>
+
+
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 sm:pt-4">
                 <Button type="button" variant="outline" onClick={handleEditToggle} disabled={isUserLoading} className="w-full sm:w-auto">
                   <XCircle className="mr-2 h-4 w-4" /> Vazgeç
@@ -306,8 +378,8 @@ export default function ProfilePage() {
               </div>
               <div className="flex flex-col sm:flex-row justify-end items-center gap-2 pt-4">
                 {userData?.role === 'admin' && (
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full sm:w-auto border-purple-500 text-purple-500 hover:bg-purple-500/10"
                     onClick={() => setIsAdminPanelOpen(true)}
                     disabled={isUserLoading}
@@ -332,6 +404,22 @@ export default function ProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      {!isEditing && (
+        <Card>
+            <CardHeader>
+            <div className="flex items-center gap-2">
+                <ShieldCheck className="h-6 w-6 text-primary" />
+                <CardTitle className="text-xl sm:text-2xl">Gizlilik Durumu</CardTitle>
+            </div>
+            <CardDescription>Mevcut profil gizlilik ayarlarınız.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+                <p>Gönderiler: <span className="font-medium text-foreground">{privacySettings.postsVisibleToFriendsOnly ? "Sadece Arkadaşlar" : "Herkese Açık"}</span></p>
+                <p>Aktif Odalar: <span className="font-medium text-foreground">{privacySettings.activeRoomsVisibleToFriendsOnly ? "Sadece Arkadaşlar" : "Herkese Açık"}</span></p>
+            </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

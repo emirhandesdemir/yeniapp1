@@ -21,16 +21,22 @@ import { useToast } from '@/hooks/use-toast';
 
 const INITIAL_DIAMONDS = 10;
 
+export interface PrivacySettings {
+  postsVisibleToFriendsOnly?: boolean;
+  activeRoomsVisibleToFriendsOnly?: boolean;
+}
+
 export interface UserData {
   uid: string;
   email: string | null;
   displayName: string | null;
-  photoURL: string | null; 
+  photoURL: string | null;
   diamonds: number;
-  createdAt: Timestamp; 
+  createdAt: Timestamp;
   role?: "admin" | "user";
   bio?: string;
-  gender?: 'kadın' | 'erkek' | 'belirtilmemiş'; // Cinsiyet alanı eklendi
+  gender?: 'kadın' | 'erkek' | 'belirtilmemiş';
+  privacySettings?: PrivacySettings;
 }
 
 interface AuthContextType {
@@ -42,7 +48,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; photoFile?: File | null; bio?: string }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; photoFile?: File | null; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -67,8 +73,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isUserLoading, setIsUserLoading] = useState(false); 
-  const [isUserDataLoading, setIsUserDataLoading] = useState(true); 
+  const [isUserLoading, setIsUserLoading] = useState(false);
+  const [isUserDataLoading, setIsUserDataLoading] = useState(true);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
@@ -91,18 +97,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     uid: user.uid,
                     email: user.email,
                     displayName: user.displayName,
-                    photoURL: user.photoURL, 
+                    photoURL: user.photoURL,
                     diamonds: INITIAL_DIAMONDS,
                     role: "user",
-                    createdAt: Timestamp.now(), 
+                    createdAt: Timestamp.now(),
                     bio: "",
-                    gender: "belirtilmemiş", // Google ile ilk girişte veya eksik belgede varsayılan
+                    gender: "belirtilmemiş",
+                    privacySettings: { // Initialize privacy settings
+                        postsVisibleToFriendsOnly: false,
+                        activeRoomsVisibleToFriendsOnly: false,
+                    },
                 };
 
                 try {
                     await setDoc(userDocRef, { ...dataToSet, createdAt: serverTimestamp() });
                     console.log(`[AuthContext] Successfully initiated user document creation for ${user.uid}. Fetching document after creation...`);
-                    
+
                     const freshSnap = await getDoc(userDocRef);
                     if (freshSnap.exists()) {
                         console.log(`[AuthContext] User document for ${user.uid} confirmed exists after creation. Data:`, freshSnap.data());
@@ -111,7 +121,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
                         const fallbackUserData: UserData = {
                             ...dataToSet,
-                            createdAt: Timestamp.now(), 
+                            createdAt: Timestamp.now(),
                         };
                         setUserData(fallbackUserData);
                         toast({
@@ -126,13 +136,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         description: `Kullanıcı bilgileriniz veritabanına kaydedilemedi (Hata: ${creationError.message}). Lütfen tekrar deneyin veya destek ile iletişime geçin.`,
                         variant: "destructive",
                     });
-                    setUserData(null); 
+                    setUserData(null);
                 }
             }
         } catch (error: any) {
              console.error("[AuthContext] Error fetching/creating user document on auth state change:", error.message, error.code, error.stack);
              toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
-             setUserData(null); 
+             setUserData(null);
         } finally {
             console.log(`[AuthContext] Finished processing user data for ${user ? user.uid : 'null user'}. Setting isUserDataLoading to false.`);
             setIsUserDataLoading(false);
@@ -147,24 +157,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
     return unsubscribe;
-  }, [toast]); 
+  }, [toast]);
 
   const createUserDocument = async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
     const userDocRef = doc(db, "users", user.uid);
-    const initialPhotoURL = user.photoURL; 
-    const dataToSetForLog: Partial<UserData> & {createdAt: string} = { 
-      uid: user.uid, 
-      email: user.email, 
-      displayName: username || user.displayName, 
-      photoURL: initialPhotoURL, 
-      diamonds: INITIAL_DIAMONDS, 
+    const initialPhotoURL = user.photoURL;
+    const dataToSetForLog: Partial<UserData> & {createdAt: string} = {
+      uid: user.uid,
+      email: user.email,
+      displayName: username || user.displayName,
+      photoURL: initialPhotoURL,
+      diamonds: INITIAL_DIAMONDS,
       role: "user",
       createdAt: "serverTimestamp()",
       bio: "",
       gender: gender || "belirtilmemiş",
+      privacySettings: {
+        postsVisibleToFriendsOnly: false,
+        activeRoomsVisibleToFriendsOnly: false,
+      },
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
-    
+
     try {
         const dataToSave: UserData = {
             uid: user.uid,
@@ -174,12 +188,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
             diamonds: INITIAL_DIAMONDS,
             role: "user",
             createdAt: serverTimestamp() as Timestamp, // Cast to Timestamp for type safety
-            bio: "", 
+            bio: "",
             gender: gender || "belirtilmemiş",
+            privacySettings: {
+                postsVisibleToFriendsOnly: false,
+                activeRoomsVisibleToFriendsOnly: false,
+            },
         };
         await setDoc(userDocRef, dataToSave);
         console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
-        
+
         const docSnap = await getDoc(userDocRef);
         if (docSnap.exists()) {
             console.log(`[AuthContext] User document for ${user.uid} confirmed exists after createUserDocument. Data:`, docSnap.data());
@@ -196,6 +214,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 createdAt: Timestamp.now(),
                 bio: "",
                 gender: gender || "belirtilmemiş",
+                privacySettings: {
+                    postsVisibleToFriendsOnly: false,
+                    activeRoomsVisibleToFriendsOnly: false,
+                },
             };
             setUserData(fallbackUserData);
              toast({
@@ -215,7 +237,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
-      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null }); 
+      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
       console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
       await createUserDocument(userCredential.user, username, gender);
       console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
@@ -269,8 +291,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
         console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
-        // Google'dan cinsiyet bilgisi alamayız, bu yüzden 'belirtilmemiş' olarak kaydedilecek.
-        await createUserDocument(user, user.displayName || undefined, "belirtilmemiş"); 
+        await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
         const firestoreData = docSnap.data() as UserData;
@@ -282,10 +303,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
             updatesToFirestore.photoURL = user.photoURL;
         }
         if (firestoreData.bio === undefined) {
-            updatesToFirestore.bio = ""; 
+            updatesToFirestore.bio = "";
         }
-        if (firestoreData.gender === undefined) { // Eğer eski kullanıcıysa ve gender alanı yoksa
+        if (firestoreData.gender === undefined) {
             updatesToFirestore.gender = "belirtilmemiş";
+        }
+        if (firestoreData.privacySettings === undefined) {
+            updatesToFirestore.privacySettings = {
+                postsVisibleToFriendsOnly: false,
+                activeRoomsVisibleToFriendsOnly: false,
+            };
         }
 
         if (Object.keys(updatesToFirestore).length > 0) {
@@ -331,34 +358,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const updateUserProfile = async (updates: { displayName?: string; photoFile?: File | null; bio?: string }): Promise<boolean> => {
+  const updateUserProfile = async (updates: { displayName?: string; photoFile?: File | null; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", { displayName: updates.displayName, photoFileProvided: !!updates.photoFile, bio: updates.bio });
-    
+    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", updates);
+
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
 
     try {
       if (updates.photoFile instanceof File) {
-        // The Cloudinary upload system was reverted. 
-        // New photo uploads via this API route are currently not supported.
-        // We can inform the user or simply skip the photo upload part.
-        // For now, we'll skip and only update other profile info if provided.
         console.warn("[AuthContext] Photo file provided, but upload system is not configured. Skipping photo upload.");
         toast({
           title: "Bilgi",
           description: "Yeni fotoğraf yükleme özelliği şu anda devre dışı. Diğer profil bilgileriniz (varsa) güncellenecektir.",
           variant: "default",
         });
-      } else if (updates.photoFile === null) { 
+      } else if (updates.photoFile === null) {
         console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi.");
-        authUpdates.photoURL = null; 
-        firestoreUpdates.photoURL = null; 
+        authUpdates.photoURL = null;
+        firestoreUpdates.photoURL = null;
       }
 
       const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
@@ -366,7 +389,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           if(updates.displayName.trim().length < 3){
               toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
               setIsUserLoading(false);
-              return false; 
+              return false;
           }
           console.log("[AuthContext] Görünen ad güncellemesi sağlandı:", updates.displayName);
           authUpdates.displayName = updates.displayName.trim();
@@ -379,12 +402,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
           firestoreUpdates.bio = updates.bio.trim();
       }
 
+      if (updates.privacySettings) {
+        console.log("[AuthContext] Gizlilik ayarları güncellemesi sağlandı:", updates.privacySettings);
+        // Firestore'da map alanını güncellerken, mevcut diğer ayarları korumak için merge:true kullanılır.
+        // Veya spesifik alanları güncellemek için dot notation da kullanılabilir (e.g., "privacySettings.postsVisibleToFriendsOnly": true).
+        // Burada basitlik için tüm privacySettings objesini gönderiyoruz.
+        firestoreUpdates.privacySettings = { ...userData?.privacySettings, ...updates.privacySettings };
+      }
+
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         console.log("[AuthContext] Profile uygulanacak gerçek bir değişiklik yok.");
-        // Do not show "no changes" toast if a photo upload was attempted but skipped.
         if (!(updates.photoFile instanceof File)) {
             toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         }
@@ -401,7 +431,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[AuthContext] Firestore kullanıcı belgesi şununla güncelleniyor:", firestoreUpdates);
         await updateDoc(userDocRef, firestoreUpdates);
       }
-      
+
       const updatedDocSnap = await getDoc(userDocRef);
       if (updatedDocSnap.exists()) {
         setUserData(updatedDocSnap.data() as UserData);
@@ -413,10 +443,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     } catch (error: any) {
       console.error("[AuthContext] Genel profil güncelleme başarısız:", error.code || error.name, error.message, error.stack);
-      toast({ 
-        title: "Profil Güncelleme Hatası", 
-        description: `Profil güncellenirken bir sorun oluştu: ${error.message || 'Bilinmeyen hata'}`, 
-        variant: "destructive" 
+      toast({
+        title: "Profil Güncelleme Hatası",
+        description: `Profil güncellenirken bir sorun oluştu: ${error.message || 'Bilinmeyen hata'}`,
+        variant: "destructive"
       });
       return false;
     } finally {
@@ -461,9 +491,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const value = {
     currentUser,
     userData,
-    loading, 
-    isUserLoading, 
-    isUserDataLoading, 
+    loading,
+    isUserLoading,
+    isUserDataLoading,
     signUp,
     logIn,
     logOut,
@@ -475,4 +505,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  fromUsername: string;
+  fromAvatarUrl: string | null;
+  toUserId: string;
+  toUsername: string;
+  toAvatarUrl: string | null;
+  status: "pending" | "accepted" | "declined";
+  createdAt: Timestamp;
 }

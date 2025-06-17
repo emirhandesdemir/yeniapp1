@@ -16,6 +16,9 @@ Kullanıcı profil bilgilerini saklar.
   - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin")
   - `bio`: (String, nullable) Kullanıcının hakkında yazdığı kısa metin.
   - `gender`: (String, nullable) Kullanıcının cinsiyeti (örneğin, "kadın", "erkek", "belirtilmemiş")
+  - `privacySettings`: (Map, nullable) Kullanıcının gizlilik ayarlarını saklar.
+    - `postsVisibleToFriendsOnly`: (Boolean) `true` ise gönderiler sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
+    - `activeRoomsVisibleToFriendsOnly`: (Boolean) `true` ise kullanıcının aktif odaları sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`
@@ -50,7 +53,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan), `participantCount` (Azalan), `createdAt` (Azalan)
-  - **Kullanıcının Aktif Odalarını Listeleme (Gönderi Oluşturma Formu):**
+  - **Kullanıcının Aktif Odalarını Listeleme (Gönderi Oluşturma Formu ve Profil Sayfası):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
   - **Süresi Dolmuş Odaları Toplu Silme (Admin Paneli):**
@@ -103,6 +106,11 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
     - Koleksiyon: `friendRequests`
     - İndeks 1: `status` (Artan), `fromUserId` (Artan), `toUserId` (Artan)
     - İndeks 2: `status` (Artan), `toUserId` (Artan), `fromUserId` (Artan)
+  - Bir kullanıcının profil sayfasında arkadaşlık durumunu kontrol etmek için:
+    - Koleksiyon: `friendRequests`
+    - Alanlar: `fromUserId` (Artan), `toUserId` (Artan), `status` (Artan)
+    - Alanlar: `toUserId` (Artan), `fromUserId` (Artan), `status` (Artan)
+
 
 ## `posts`
 Kullanıcıların paylaştığı gönderileri saklar.
@@ -137,9 +145,10 @@ Kullanıcıların paylaştığı gönderileri saklar.
       - `content`: (String) Yorumun metin içeriği
       - `createdAt`: (Timestamp) Yorumun oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Akış sayfasında gönderileri sıralamak için (`src/app/page.tsx`):
+  - Akış sayfasında ve kullanıcı profil sayfasında gönderileri sıralamak için (`src/app/page.tsx`, `src/app/(main)/profile/[userId]/page.tsx`):
     - Koleksiyon: `posts`
-    - Alanlar: `createdAt` (Azalan)
+    - Alanlar: `userId` (Artan), `createdAt` (Azalan) (Kullanıcıya özel gönderiler için)
+    - Alanlar: `createdAt` (Azalan) (Genel akış için)
   - Bir gönderinin yorumlarını sıralamak için (`src/components/feed/PostCard.tsx`):
     - Koleksiyon Grubu: `comments` (Tüm `posts` koleksiyonlarındaki `comments` alt koleksiyonlarını hedefler)
     - Alanlar: `createdAt` (Artan)
@@ -165,6 +174,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-
-    
