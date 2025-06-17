@@ -60,8 +60,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Gerekli İndeksler:**
   - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için (`where("expiresAt", ">", now).orderBy("participantCount", "desc").orderBy("createdAt", "desc")` sorgusu için):
     - Koleksiyon: `chatRooms`
-    - Alanlar: `participantCount` (Azalan), `createdAt` (Azalan), `expiresAt` (Artan)
-    - _Not: Bu, Firestore'un hata mesajında önerdiği indekstir._
+    - Alanlar: `expiresAt` (Artan), `participantCount` (Azalan), `createdAt` (Azalan)
+    - _Not: Bu, Firestore'un hata mesajında önerdiği ve uygulamanın düzgün çalışması için **zorunlu** olan indekstir._
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
@@ -181,5 +181,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-```)
