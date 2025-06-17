@@ -16,7 +16,7 @@ import {
   Rss,
   // Additional icons for bottom nav or other features
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button'; // buttonVariants import edildi
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
@@ -41,7 +41,7 @@ import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
 import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
+
 
 interface FriendRequestForPopover {
   id: string;
@@ -380,8 +380,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             <Popover>
               <PopoverTrigger asChild>
-                 {/* Bu buton, "React.Children.only" hatasının kaynağı olabilecek orijinal basit yapıya geri döndürüldü. */}
-                <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "icon" }),
+                    "rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10 cursor-pointer flex items-center justify-center"
+                  )}
+                  aria-label="Arkadaşlık İstekleri"
+                >
                   <Bell className="h-5 w-5" />
                   {incomingRequests.length > 0 && (
                     <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
@@ -389,7 +396,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                       <span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span>
                     </span>
                   )}
-                </Button>
+                </div>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
                 <div className="p-3 border-b">
@@ -478,5 +485,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   );
 }
 
-
-    
