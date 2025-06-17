@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert } from "lucide-react";
+import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star } from "lucide-react"; // Star ikonu eklendi
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { addDays, format } from 'date-fns'; // format eklendi
+import { tr } from 'date-fns/locale'; // Türkçe lokalizasyon için
 
 export default function AdminUsersContent() {
   const [users, setUsers] = useState<UserData[]>([]);
@@ -34,7 +36,9 @@ export default function AdminUsersContent() {
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isEditRoleDialogOpen, setIsEditRoleDialogOpen] = useState(false);
   const [isEditDiamondsDialogOpen, setIsEditDiamondsDialogOpen] = useState(false);
+  const [isEditPremiumDialogOpen, setIsEditPremiumDialogOpen] = useState(false); // Yeni state
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
+  const [newPremiumStatus, setNewPremiumStatus] = useState<'none' | 'weekly' | 'monthly'>('none'); // Yeni state
   const [diamondAdjustment, setDiamondAdjustment] = useState<number>(0);
   const [processingAction, setProcessingAction] = useState(false);
 
@@ -86,6 +90,12 @@ export default function AdminUsersContent() {
     setIsEditDiamondsDialogOpen(true);
   };
 
+  const handleOpenEditPremiumDialog = (user: UserData) => {
+    setSelectedUser(user);
+    setNewPremiumStatus(user.premiumStatus || 'none');
+    setIsEditPremiumDialogOpen(true);
+  };
+
   const handleUpdateRole = async () => {
     if (!selectedUser || !newRole) return;
     setProcessingAction(true);
@@ -125,11 +135,48 @@ export default function AdminUsersContent() {
     }
   };
 
+  const handleUpdatePremiumStatus = async () => {
+    if (!selectedUser || !newPremiumStatus) return;
+    setProcessingAction(true);
+    try {
+      const userDocRef = doc(db, "users", selectedUser.uid);
+      let newExpiryDate: Timestamp | null = null;
+
+      if (newPremiumStatus === 'weekly') {
+        newExpiryDate = Timestamp.fromDate(addDays(new Date(), 7));
+      } else if (newPremiumStatus === 'monthly') {
+        newExpiryDate = Timestamp.fromDate(addDays(new Date(), 30));
+      }
+
+      await updateDoc(userDocRef, { 
+        premiumStatus: newPremiumStatus,
+        premiumExpiryDate: newExpiryDate 
+      });
+      
+      setUsers(prevUsers => prevUsers.map(u => 
+        u.uid === selectedUser.uid ? { ...u, premiumStatus: newPremiumStatus, premiumExpiryDate: newExpiryDate } : u
+      ));
+      toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının premium durumu güncellendi.` });
+      setIsEditPremiumDialogOpen(false);
+      setSelectedUser(null);
+    } catch (error) {
+      console.error("Error updating premium status:", error);
+      toast({ title: "Hata", description: "Kullanıcı premium durumu güncellenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
 
   const getAvatarFallbackText = (name?: string | null, email?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (email) return email.substring(0, 2).toUpperCase();
     return "PN";
+  };
+
+  const formatPremiumExpiry = (timestamp: Timestamp | null | undefined) => {
+    if (!timestamp) return "Yok";
+    return format(timestamp.toDate(), "dd MMM yyyy, HH:mm", { locale: tr });
   };
 
   if (adminUserData === undefined || adminUserData === null && loading) {
@@ -173,7 +220,7 @@ export default function AdminUsersContent() {
             <AdminUserCogIcon className="h-7 w-7 text-primary" />
             <CardTitle className="text-2xl font-headline">Kullanıcı Yönetimi</CardTitle>
           </div>
-          <CardDescription>Uygulamadaki tüm kullanıcıları görüntüleyin ve rollerini/elmaslarını yönetin.</CardDescription>
+          <CardDescription>Uygulamadaki tüm kullanıcıları görüntüleyin ve rollerini/elmaslarını/premium durumlarını yönetin.</CardDescription>
         </CardHeader>
         <CardContent>
           {users.length === 0 && !loading ? (
@@ -187,6 +234,8 @@ export default function AdminUsersContent() {
                   <TableHead>E-posta</TableHead>
                   <TableHead className="text-center">Elmas</TableHead>
                   <TableHead className="text-center">Rol</TableHead>
+                  <TableHead className="text-center">Premium</TableHead>
+                  <TableHead>Premium Bitiş</TableHead>
                   <TableHead>Kayıt Tarihi</TableHead>
                   <TableHead className="text-right">Eylemler</TableHead>
                 </TableRow>
@@ -212,6 +261,15 @@ export default function AdminUsersContent() {
                         {user.role === 'admin' ? 'Admin' : 'Kullanıcı'}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-center">
+                      <Badge 
+                        variant={user.premiumStatus && user.premiumStatus !== 'none' ? 'default' : 'outline'} 
+                        className={user.premiumStatus && user.premiumStatus !== 'none' ? 'bg-yellow-500 text-black dark:text-yellow-950' : ''}
+                      >
+                        {user.premiumStatus === 'weekly' ? 'Haftalık' : user.premiumStatus === 'monthly' ? 'Aylık' : 'Yok'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatPremiumExpiry(user.premiumExpiryDate)}</TableCell>
                     <TableCell>
                       {user.createdAt instanceof Timestamp 
                         ? user.createdAt.toDate().toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -223,6 +281,9 @@ export default function AdminUsersContent() {
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleOpenEditDiamondsDialog(user)} aria-label="Elmasları Düzenle" className="hover:text-yellow-500" disabled={processingAction}>
                         <Gem className="h-4 w-4" />
+                      </Button>
+                       <Button variant="ghost" size="icon" onClick={() => handleOpenEditPremiumDialog(user)} aria-label="Premium Durumunu Düzenle" className="hover:text-amber-500" disabled={processingAction}>
+                        <Star className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -304,6 +365,53 @@ export default function AdminUsersContent() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isEditPremiumDialogOpen} onOpenChange={setIsEditPremiumDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Kullanıcı Premium Durumunu Düzenle</DialogTitle>
+            {selectedUser && (
+              <DialogDescription>
+                {selectedUser.displayName || selectedUser.email || selectedUser.uid} kullanıcısının premium durumunu değiştirin.
+                Mevcut Durum: <span className="capitalize font-medium">{selectedUser.premiumStatus || 'Yok'}</span>.
+                {selectedUser.premiumExpiryDate && (
+                    <span> Bitiş: {formatPremiumExpiry(selectedUser.premiumExpiryDate)}</span>
+                )}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Label htmlFor="premium-status-select">Premium Durumu</Label>
+            <Select value={newPremiumStatus} onValueChange={(value) => setNewPremiumStatus(value as 'none' | 'weekly' | 'monthly')}>
+              <SelectTrigger id="premium-status-select">
+                <SelectValue placeholder="Premium Durumu Seçin" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Yok</SelectItem>
+                <SelectItem value="weekly">Haftalık Premium</SelectItem>
+                <SelectItem value="monthly">Aylık Premium</SelectItem>
+              </SelectContent>
+            </Select>
+            {newPremiumStatus !== 'none' && (
+                <p className="text-xs text-muted-foreground">
+                    Seçili premium {newPremiumStatus === 'weekly' ? '7 gün' : '30 gün'} sonra sona erecektir.
+                </p>
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={processingAction}>İptal</Button>
+            </DialogClose>
+            <Button onClick={handleUpdatePremiumStatus} disabled={processingAction}>
+              {processingAction && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Güncelle
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
+
+
+    

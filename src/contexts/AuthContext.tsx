@@ -38,6 +38,8 @@ export interface UserData {
   bio?: string;
   gender?: 'kadın' | 'erkek' | 'belirtilmemiş';
   privacySettings?: PrivacySettings;
+  premiumStatus?: 'none' | 'weekly' | 'monthly';
+  premiumExpiryDate?: Timestamp | null;
 }
 
 interface AuthContextType {
@@ -92,13 +94,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (docSnap.exists()) {
                 console.log(`[AuthContext] User document found for ${user.uid}. Data:`, docSnap.data());
                 const existingData = docSnap.data() as UserData;
-                const updatedData = {
+                const updatedData: UserData = {
                     ...existingData,
                     privacySettings: {
                         postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
                         activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
                         feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true,
                     },
+                    premiumStatus: existingData.premiumStatus ?? 'none',
+                    premiumExpiryDate: existingData.premiumExpiryDate ?? null,
                 };
                 setUserData(updatedData);
             } else {
@@ -118,6 +122,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         activeRoomsVisibleToFriendsOnly: false,
                         feedShowsEveryone: true, 
                     },
+                    premiumStatus: 'none',
+                    premiumExpiryDate: null,
                 };
 
                 try {
@@ -184,6 +190,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         activeRoomsVisibleToFriendsOnly: false,
         feedShowsEveryone: true, 
       },
+      premiumStatus: 'none',
+      premiumExpiryDate: null,
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
 
@@ -203,6 +211,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 activeRoomsVisibleToFriendsOnly: false,
                 feedShowsEveryone: true,
             },
+            premiumStatus: 'none',
+            premiumExpiryDate: null,
         };
         await setDoc(userDocRef, dataToSave);
         console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
@@ -289,7 +299,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
         console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
-        // Google users' photoURL will be used if available, otherwise null.
         await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
       } else {
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, docSnap.data());
@@ -301,11 +310,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
             activeRoomsVisibleToFriendsOnly: currentPrivacySettings.activeRoomsVisibleToFriendsOnly ?? false,
             feedShowsEveryone: currentPrivacySettings.feedShowsEveryone ?? true,
         };
+        updatesToFirestore.premiumStatus = firestoreData.premiumStatus ?? 'none';
+        updatesToFirestore.premiumExpiryDate = firestoreData.premiumExpiryDate ?? null;
+
 
         if (user.displayName && user.displayName !== firestoreData.displayName) {
             updatesToFirestore.displayName = user.displayName;
         }
-        // Update photoURL from Google if it's different, or if Firestore has none and Google has one.
         if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
             updatesToFirestore.photoURL = user.photoURL;
         } else if (!firestoreData.photoURL && user.photoURL) {
@@ -330,6 +341,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         ) {
             needsUpdate = true;
         }
+        if (updatesToFirestore.premiumStatus !== (firestoreData.premiumStatus ?? 'none')) needsUpdate = true;
+        // premiumExpiryDate is usually managed by grants, not by Google sign-in sync
 
         if (needsUpdate) {
             await updateDoc(userDocRef, updatesToFirestore);
@@ -399,12 +412,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
           firestoreUpdates.displayName = updates.displayName.trim();
       }
       
-      // Handle newPhotoURL (string or null)
       const currentPhotoURL = userData?.photoURL || auth.currentUser.photoURL || null;
       if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) {
           console.log("[AuthContext] Fotoğraf URL güncellemesi sağlandı:", updates.newPhotoURL);
-          authUpdates.photoURL = updates.newPhotoURL; // Can be string or null
-          firestoreUpdates.photoURL = updates.newPhotoURL; // Can be string or null
+          authUpdates.photoURL = updates.newPhotoURL; 
+          firestoreUpdates.photoURL = updates.newPhotoURL; 
       }
 
 
@@ -532,5 +544,7 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
+
+    
 
     

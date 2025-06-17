@@ -13,17 +13,24 @@ Kullanıcı profil bilgilerini saklar.
   - `photoURL`: (String, nullable) Kullanıcının profil fotoğrafının URL'si
   - `diamonds`: (Number) Kullanıcının uygulama içi para birimi bakiyesi (Varsayılan: 10)
   - `createdAt`: (Timestamp) Kullanıcı belgesinin oluşturulduğu zaman
-  - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin")
+  - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin") (Varsayılan: 'user')
   - `bio`: (String, nullable) Kullanıcının hakkında yazdığı kısa metin.
-  - `gender`: (String, nullable) Kullanıcının cinsiyeti (örneğin, "kadın", "erkek", "belirtilmemiş")
+  - `gender`: (String, nullable) Kullanıcının cinsiyeti (örneğin, "kadın", "erkek", "belirtilmemiş") (Varsayılan: 'belirtilmemiş')
   - `privacySettings`: (Map, nullable) Kullanıcının gizlilik ayarlarını saklar.
     - `postsVisibleToFriendsOnly`: (Boolean) `true` ise gönderiler sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
     - `activeRoomsVisibleToFriendsOnly`: (Boolean) `true` ise kullanıcının aktif odaları sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
     - `feedShowsEveryone`: (Boolean) `true` ise kullanıcının ana sayfa akışında herkesin gönderileri gösterilir, `false` ise sadece arkadaşlarının gönderileri gösterilir. (Varsayılan: `true`)
+  - `premiumStatus`: (String, nullable) Kullanıcının premium abonelik durumu ('none', 'weekly', 'monthly'). (Varsayılan: 'none')
+  - `premiumExpiryDate`: (Timestamp, nullable) Premium aboneliğin sona erme tarihi. (Varsayılan: `null`)
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`
     - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `addedAt` (Timestamp)
+- **Gerekli İndeksler:**
+  - Admin panelinde kullanıcıları kayıt tarihine göre listelemek için (`src/components/admin/sections/AdminUsersContent.tsx`):
+    - Koleksiyon: `users`
+    - Alanlar: `createdAt` (Azalan)
+
 
 ## `chatRooms`
 Oluşturulan sohbet odaları hakkında bilgi saklar.
@@ -207,3 +214,5 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+    
