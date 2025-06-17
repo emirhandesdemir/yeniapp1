@@ -166,6 +166,7 @@ export default function ChatRoomPage() {
             questionIntervalSeconds: settingsData.questionIntervalSeconds ?? 180
           });
         } else {
+          console.log("[GameSystem] Game config not found, using defaults.");
           setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 });
         }
       } catch (error) {
@@ -209,86 +210,140 @@ export default function ChatRoomPage() {
     return () => {
       if (countdownDisplayTimerRef.current) clearInterval(countdownDisplayTimerRef.current);
     };
-  }, [roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId, isCurrentUserParticipant, gameSettings?.isGameEnabled]);
+  }, [roomDetails?.nextGameQuestionTimestamp, roomDetails?.currentGameQuestionId]);
 
 
+const attemptToAskNewQuestion = useCallback(async () => {
+    if (
+      !isCurrentUserParticipant ||
+      !gameSettings?.isGameEnabled ||
+      !roomId ||
+      !roomDetails || 
+      roomDetails.currentGameQuestionId || 
+      availableGameQuestions.length === 0 
+    ) {
+      console.log("[GameSystem] Conditions not met to ask new question or no questions available.", {
+        isCurrentUserParticipant, 
+        gameEnabled: gameSettings?.isGameEnabled,
+        roomId,
+        hasRoomDetails: !!roomDetails,
+        currentQ: roomDetails?.currentGameQuestionId,
+        questionsLeft: availableGameQuestions.length
+      });
+      return;
+    }
+
+    try {
+      console.log("[GameSystem] Attempting to ask a new question for room:", roomId);
+      const roomDocRef = doc(db, "chatRooms", roomId);
+      const currentRoomSnap = await getDoc(roomDocRef); // Fetch fresh data
+      if (!currentRoomSnap.exists()) {
+        console.warn("[GameSystem] Room document disappeared while trying to ask question:", roomId);
+        return;
+      }
+      const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
+
+      if (currentRoomData.currentGameQuestionId) { // Re-check with fresh data
+        console.log("[GameSystem] Another question became active before this attempt for room:", roomId);
+        return;
+      }
+      
+      const randomIndex = Math.floor(Math.random() * availableGameQuestions.length);
+      const nextQuestion = availableGameQuestions[randomIndex];
+      const intervalSeconds = gameSettings?.questionIntervalSeconds ?? 180;
+      const newNextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), intervalSeconds));
+
+      const batch = writeBatch(db);
+      batch.update(roomDocRef, {
+        currentGameQuestionId: nextQuestion.id,
+        nextGameQuestionTimestamp: newNextGameQuestionTimestamp, // For the *next* cycle
+      });
+      
+      batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
+          text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${FIXED_GAME_REWARD} Elmas). Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`,
+          senderId: "system",
+          senderName: "Oyun Sistemi",
+          senderAvatar: null,
+          timestamp: serverTimestamp(),
+          isGameMessage: true,
+      });
+
+      await batch.commit();
+      console.log("[GameSystem] Successfully asked new question:", nextQuestion.id, "in room:", roomId);
+    } catch (error) {
+      console.error("[GameSystem] Error attempting to ask new question:", error);
+      toast({title: "Oyun Hatası", description: "Yeni soru hazırlanırken bir sorun oluştu.", variant: "destructive"});
+    }
+  }, [isCurrentUserParticipant, gameSettings, roomId, roomDetails, availableGameQuestions, toast]);
+
+
+  // Effect for the main game interval (checks every 5s if time for next question)
   useEffect(() => {
     if (gameQuestionIntervalTimerRef.current) {
       clearInterval(gameQuestionIntervalTimerRef.current);
+      gameQuestionIntervalTimerRef.current = null;
     }
 
-    const attemptToAskNewQuestion = async () => {
-      if (
-        !isCurrentUserParticipant ||
-        !gameSettings?.isGameEnabled ||
-        !roomId ||
-        !roomDetails || 
-        roomDetails.currentGameQuestionId || 
-        availableGameQuestions.length === 0 
-      ) {
-        return;
-      }
-
-      try {
-        const roomDocRef = doc(db, "chatRooms", roomId);
-        const currentRoomSnap = await getDoc(roomDocRef);
-        if (!currentRoomSnap.exists()) return;
-        const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
-
-        if (currentRoomData.currentGameQuestionId) {
-          return;
-        }
-        
-        const randomIndex = Math.floor(Math.random() * availableGameQuestions.length);
-        const nextQuestion = availableGameQuestions[randomIndex];
-        const newNextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds));
-
-        const batch = writeBatch(db);
-        batch.update(roomDocRef, {
-          currentGameQuestionId: nextQuestion.id,
-          nextGameQuestionTimestamp: newNextGameQuestionTimestamp,
-        });
-        
-        batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
-            text: `[OYUN] Yeni bir soru geldi! "${nextQuestion.text}" (Ödül: ${FIXED_GAME_REWARD} Elmas). Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`,
-            senderId: "system",
-            senderName: "Oyun Sistemi",
-            senderAvatar: null,
-            timestamp: serverTimestamp(),
-            isGameMessage: true,
-        });
-
-        await batch.commit();
-      } catch (error) {
-        console.error("[GameSystem] Error attempting to ask new question:", error);
-      }
-    };
-    
-
-    if (gameSettings?.isGameEnabled && isCurrentUserParticipant) {
+    if (gameSettings?.isGameEnabled && isCurrentUserParticipant && roomDetails) {
+        console.log("[GameSystem] Setting up 5s interval for room:", roomId, "Next Q Timestamp:", roomDetails.nextGameQuestionTimestamp?.toDate());
         gameQuestionIntervalTimerRef.current = setInterval(() => {
-            if (roomDetails?.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId) {
+            if (roomDetails.nextGameQuestionTimestamp && 
+                isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && 
+                !roomDetails.currentGameQuestionId) { // No question active, and time is past
+                console.log("[GameSystem] Interval: Time for next question. Current nextGameQuestionTimestamp:", roomDetails.nextGameQuestionTimestamp?.toDate());
                 attemptToAskNewQuestion();
             }
         }, 5000); 
+    } else {
+        console.log("[GameSystem] Not setting up 5s interval. Conditions:", {gameEnabled: gameSettings?.isGameEnabled, isParticipant: isCurrentUserParticipant, hasRoomDetails: !!roomDetails});
     }
 
-
     return () => {
-      if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current);
+      if (gameQuestionIntervalTimerRef.current) {
+        clearInterval(gameQuestionIntervalTimerRef.current);
+        gameQuestionIntervalTimerRef.current = null;
+        console.log("[GameSystem] Cleared 5s interval for room:", roomId);
+      }
     };
-  }, [gameSettings, isCurrentUserParticipant, roomId, roomDetails, availableGameQuestions, currentUser?.uid]);
+  }, [gameSettings, isCurrentUserParticipant, roomDetails, attemptToAskNewQuestion, roomId]);
+
+
+  // Proactive check for initial question if conditions are met on load/change
+  useEffect(() => {
+    if (
+      isCurrentUserParticipant &&
+      gameSettings?.isGameEnabled &&
+      roomDetails?.nextGameQuestionTimestamp &&
+      !roomDetails.currentGameQuestionId &&
+      availableGameQuestions.length > 0 &&
+      isPast(roomDetails.nextGameQuestionTimestamp.toDate())
+    ) {
+      console.log("[GameSystem] Proactive check: Time for initial/next question based on loaded details for room:", roomId);
+      attemptToAskNewQuestion();
+    }
+  }, [
+    isCurrentUserParticipant,
+    gameSettings,
+    roomDetails?.nextGameQuestionTimestamp, 
+    roomDetails?.currentGameQuestionId,    
+    availableGameQuestions,
+    attemptToAskNewQuestion,
+    roomId
+  ]);
+
 
   useEffect(() => {
     if (roomDetails?.currentGameQuestionId) {
       const question = HARDCODED_QUESTIONS.find(q => q.id === roomDetails.currentGameQuestionId);
       setActiveGameQuestion(question || null);
       setShowGameQuestionCard(!!question);
+      console.log("[GameSystem] Active game question set to:", question?.id, "for room:", roomId);
     } else {
       setActiveGameQuestion(null);
       setShowGameQuestionCard(false);
+       if (roomDetails) console.log("[GameSystem] No active game question for room:", roomId);
     }
-  }, [roomDetails?.currentGameQuestionId]);
+  }, [roomDetails?.currentGameQuestionId, roomId]);
 
 
   const handleCloseGameQuestionCard = () => {
@@ -355,7 +410,9 @@ export default function ChatRoomPage() {
       });
       batch.update(roomRef, { participantCount: increment(1) });
 
+      // Fallback: If room wasn't initialized with game settings (e.g. admin settings not available at room creation)
       if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId) {
+          console.log("[GameSystem] Initializing game settings on join for room:", roomId);
           batch.update(roomRef, {
               gameInitialized: true,
               nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)),
@@ -391,6 +448,7 @@ export default function ChatRoomPage() {
             const diffSeconds = Math.max(0, Math.floor((nextTime.getTime() - now.getTime()) / 1000));
             gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(diffSeconds)} sonra gelecek.`;
         } else if (typeof gameSettings.questionIntervalSeconds === 'number') {
+            // This case might be hit if room was created before gameConfig was available, and handleJoinRoom is setting it now.
             gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`;
         }
 
@@ -474,6 +532,7 @@ export default function ChatRoomPage() {
         };
         setRoomDetails(fetchedRoomDetails);
         document.title = `${fetchedRoomDetails.name} - Sohbet Küresi`;
+        console.log("[ChatRoomPage] Room details updated:", fetchedRoomDetails);
       } else {
         toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" });
         router.push("/chat");
@@ -511,15 +570,19 @@ export default function ChatRoomPage() {
         }
       });
       setActiveParticipants(fetchedParticipants);
-      setIsCurrentUserParticipant(currentUserIsStillParticipant);
-      if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
-        // Kullanıcı bir şekilde katılımcı listesinden çıkarıldı (örn: admin tarafından atıldı)
-        setIsCurrentUserParticipant(false); 
-        // Burada bir toast mesajı gösterilebilir veya /chat'e yönlendirilebilir.
+      
+      if (isCurrentUserParticipant !== currentUserIsStillParticipant) {
+        setIsCurrentUserParticipant(currentUserIsStillParticipant);
+        if (isCurrentUserParticipant && !currentUserIsStillParticipant && !isProcessingJoinLeave) {
+          // Kullanıcı bir şekilde katılımcı listesinden çıkarıldı (örn: admin tarafından atıldı)
+          toast({title: "Bilgi", description: "Odadan çıkarıldınız veya bağlantınız kesildi.", variant: "default"});
+          // Burada bir toast mesajı gösterilebilir veya /chat'e yönlendirilebilir.
+        }
       }
+
     });
     return () => unsubscribeParticipants();
-  }, [roomId, currentUser, userData, roomDetails, handleJoinRoom, isCurrentUserParticipant, isProcessingJoinLeave, isRoomFullError]);
+  }, [roomId, currentUser, userData, roomDetails, handleJoinRoom, isCurrentUserParticipant, isProcessingJoinLeave, isRoomFullError, toast]);
 
 
   useEffect(() => {
@@ -694,7 +757,12 @@ export default function ChatRoomPage() {
         await updateUserDiamonds((userData.diamonds || 0) + reward);
         
         const batch = writeBatch(db);
-        batch.update(roomDocRef, { currentGameQuestionId: null }); 
+        batch.update(roomDocRef, { 
+            currentGameQuestionId: null,
+            // Trigger next question cycle by setting nextGameQuestionTimestamp based on current time + interval
+            // This ensures the countdown for the *next* question starts immediately after a correct answer
+            nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds))
+        }); 
         batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
           text: `[OYUN] Tebrikler ${userData.displayName}! "${activeGameQuestion.text}" sorusuna doğru cevap verdin ve ${reward} elmas kazandın!`,
           senderId: "system",
@@ -1243,4 +1311,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
