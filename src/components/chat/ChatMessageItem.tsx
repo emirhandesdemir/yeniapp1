@@ -4,7 +4,7 @@ import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, Mic } from "lucide-react";
+import { Loader2, UserCircle, MessageSquare, Gamepad2 } from "lucide-react"; // Mic ikonu kaldırıldı
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 
@@ -18,7 +18,7 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
-  isVoiceStatusMessage?: boolean; 
+  // isVoiceStatusMessage kaldırıldı
 }
 
 interface ChatMessageItemProps {
@@ -56,13 +56,8 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   currentUserPhotoURL,
   currentUserDisplayName,
 }) => {
-  if (msg.isGameMessage || msg.isVoiceStatusMessage) {
-    let icon = <MessageSquare className="inline h-4 w-4 mr-1.5 text-blue-500" />;
-    if (msg.isGameMessage) {
-        icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
-    } else if (msg.isVoiceStatusMessage) {
-        icon = <Mic className="inline h-4 w-4 mr-1.5 text-green-500" />;
-    }
+  if (msg.isGameMessage) { // Sadece isGameMessage kontrol ediliyor
+    let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
 
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
@@ -154,4 +149,3 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
-

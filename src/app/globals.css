@@ -29,84 +29,82 @@ textarea {
   user-select: text;
 }
 
-
 @layer base {
   :root {
-    /* Light Theme - Enhanced for Clarity and Contrast, with Light Gray Background */
-    --background: 220 20% 97%;       /* Very Light Cool Gray */
-    --foreground: 220 20% 10%;       /* Dark Cool Gray (Good Contrast) */
-    --card: 0 0% 100%;               /* White Cards for contrast with gray background */
-    --card-foreground: 220 20% 10%;  /* Match foreground */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
-    --primary: 255 60% 55%;          /* Bright Purple/Blue (Original) */
-    --primary-foreground: 0 0% 100%; /* White */
-    --secondary: 220 15% 93%;        /* Slightly darker light Cool Gray - for secondary elements */
-    --secondary-foreground: 220 15% 25%; /* Darker text for secondary backgrounds */
-    --muted: 220 15% 88%;            /* Muted Cool Gray (darker than secondary) */
-    --muted-foreground: 220 15% 40%; /* Readable Muted Text (Darker) */
-    --accent: 330 80% 60%;           /* Bright Pink/Magenta (Original) */
-    --accent-foreground: 0 0% 100%;  /* White */
-    --destructive: 0 70% 55%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 15% 85%;           /* Softer, but visible border against light gray */
-    --input: 220 15% 90%;            /* Input border, slightly lighter than main border to blend with card/popover */
-    --ring: 255 60% 60%;
-    --chart-1: 255 60% 55%;
-    --chart-2: 330 80% 60%;
-    --chart-3: 190 70% 50%;
-    --chart-4: 280 60% 65%;
-    --chart-5: 40 90% 55%;
-    --radius: 0.75rem;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 10% 3.9%;
+    --radius: 0.5rem;
+    /* Chart colors - default to primary/secondary or specific values */
+    --chart-1: 240 5.9% 10%;
+    --chart-2: 240 4.8% 95.9%;
+    --chart-3: 300 5.9% 10%; /* Example different hue */
+    --chart-4: 180 4.8% 95.9%;/* Example different hue */
+    --chart-5: 60 5.9% 10%;  /* Example different hue */
 
-    /* Sidebar Light Theme */
-    --sidebar-background: 220 15% 98%; /* Very light, almost white, cool gray for sidebar */
-    --sidebar-foreground: 220 20% 15%;   /* Consistent dark text */
-    --sidebar-primary: 255 60% 55%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 330 80% 60%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 220 15% 92%;    /* Slightly lighter than main border */
-    --sidebar-ring: 255 60% 60%;
+    /* Sidebar - default to main theme values */
+    --sidebar-background: hsl(var(--background));
+    --sidebar-foreground: hsl(var(--foreground));
+    --sidebar-primary: hsl(var(--primary));
+    --sidebar-primary-foreground: hsl(var(--primary-foreground));
+    --sidebar-accent: hsl(var(--accent));
+    --sidebar-accent-foreground: hsl(var(--accent-foreground));
+    --sidebar-border: hsl(var(--border));
+    --sidebar-ring: hsl(var(--ring));
   }
 
   .dark {
-    /* Dark Theme - Litmatch Inspired (Deep Dark with Vibrant Accents) */
-    --background: 240 10% 4%; /* Very Dark Blue/Almost Black */
-    --foreground: 220 20% 90%; /* Light Cool Gray */
-    --card: 240 10% 8%; /* Slightly Lighter Dark Blue/Gray */
-    --card-foreground: 220 20% 90%;
-    --popover: 240 10% 6%; /* Darker Popover */
-    --popover-foreground: 220 20% 90%;
-    --primary: 265 80% 65%; /* Vibrant Purple */
-    --primary-foreground: 220 20% 95%; /* Very Light Gray */
-    --secondary: 240 10% 12%; /* Darker Gray */
-    --secondary-foreground: 220 20% 80%; /* Medium Cool Gray */
-    --muted: 240 10% 20%; /* Muted Dark Gray */
-    --muted-foreground: 220 20% 60%; /* Lighter Muted Gray */
-    --accent: 335 85% 60%; /* Vivid Pink/Magenta */
-    --accent-foreground: 240 10% 4%; /* Dark for high contrast on accent */
-    --destructive: 0 75% 58%; /* Stronger Red for Dark Mode */
-    --destructive-foreground: 220 20% 95%;
-    --border: 240 10% 15%; /* Subtle Dark Border */
-    --input: 240 10% 12%; /* Dark Input Border */
-    --ring: 265 80% 70%; /* Primary purple for ring */
-    --chart-1: 265 80% 65%;
-    --chart-2: 335 85% 60%;
-    --chart-3: 190 75% 55%; /* Brighter Teal/Cyan */
-    --chart-4: 280 70% 70%; /* Brighter Lavender */
-    --chart-5: 40 85% 60%; /* Brighter Orange */
-    --radius: 0.75rem;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 0 0% 98%;
+      /* Chart colors - default to primary/secondary or specific values for dark */
+    --chart-1: 0 0% 98%;
+    --chart-2: 240 3.7% 15.9%;
+    --chart-3: 300 0% 98%;
+    --chart-4: 180 3.7% 15.9%;
+    --chart-5: 60 0% 98%;
 
-    /* Sidebar Dark Theme */
-    --sidebar-background: 240 10% 6%; /* Slightly different from main card bg */
-    --sidebar-foreground: 220 20% 85%;
-    --sidebar-primary: 265 80% 65%;
-    --sidebar-primary-foreground: 220 20% 95%;
-    --sidebar-accent: 335 85% 60%;
-    --sidebar-accent-foreground: 240 10% 4%;
-    --sidebar-border: 240 10% 12%;
-    --sidebar-ring: 265 80% 70%;
+    /* Sidebar Dark Theme - default to main dark theme values */
+    --sidebar-background: hsl(var(--background));
+    --sidebar-foreground: hsl(var(--foreground));
+    --sidebar-primary: hsl(var(--primary));
+    --sidebar-primary-foreground: hsl(var(--primary-foreground));
+    --sidebar-accent: hsl(var(--accent));
+    --sidebar-accent-foreground: hsl(var(--accent-foreground));
+    --sidebar-border: hsl(var(--border));
+    --sidebar-ring: hsl(var(--ring));
   }
 }
 
@@ -117,10 +115,8 @@ textarea {
   body {
     @apply bg-background text-foreground;
   }
-  .dark body {
-    @apply bg-gradient-to-br from-[hsl(var(--background))] to-[hsl(var(--primary)/15)];
-  }
 }
+
 
 /* Custom scrollbar for modern look - adjusted for new theme */
 ::-webkit-scrollbar {
@@ -169,4 +165,3 @@ textarea {
   transform: translateY(-20px);
   transition: opacity 300ms, transform 300ms;
 }
-

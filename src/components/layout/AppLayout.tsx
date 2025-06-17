@@ -377,15 +377,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10" aria-label="Arkadaşlık İstekleri">
-                  <span className="flex items-center justify-center w-full h-full relative">
-                    <Bell className="h-5 w-5" />
-                    {incomingRequests.length > 0 && (
-                      <span className="absolute top-0 right-0 flex h-3 w-3 -mt-0.5 -mr-0.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span>
-                      </span>
-                    )}
-                  </span>
+                  <Bell className="h-5 w-5" />
+                  {incomingRequests.length > 0 && (
+                    <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
+                    </span>
+                  )}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
