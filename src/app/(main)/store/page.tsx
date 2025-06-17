@@ -103,7 +103,7 @@ export default function StorePage() { // DiamondStorePage -> StorePage
   const { toast } = useToast();
 
   useEffect(() => {
-    document.title = 'Mağaza - Sohbet Küresi';
+    document.title = 'Mağaza - HiweWalk';
   }, []);
 
   const handlePackageAction = (pkg: StorePackage) => {

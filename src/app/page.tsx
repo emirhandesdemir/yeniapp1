@@ -61,7 +61,7 @@ const buttonItemVariants = {
 };
 
 const SCROLL_HIDE_THRESHOLD = 100;
-const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1';
+const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk'; // Updated session key
 
 export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (ChatRoomFeedDisplayData & { feedItemType: 'room' });
 

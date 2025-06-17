@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Anasayfa - Sohbet Küresi',
-  description: 'Sohbet Küresi anasayfasına hoş geldiniz.',
+  title: 'Anasayfa - HiweWalk',
+  description: 'HiweWalk anasayfasına hoş geldiniz.',
 };
 
 export default function MainAppPagesLayout({ children }: { children: ReactNode }) {

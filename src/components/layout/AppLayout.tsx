@@ -361,7 +361,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const getAvatarFallback = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "SK";
+    return "HW";
   };
 
   const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/');
@@ -379,7 +379,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <Button asChild variant="ghost" size="icon" className="rounded-full text-primary dark:text-primary hover:bg-primary/10 -ml-2 sm:ml-0 p-0 h-auto">
             <Link href="/" aria-label="Anasayfa" className="flex items-center gap-2 p-2">
               <Flame className="h-7 w-7" />
-              <span className="text-xl font-headline hidden sm:inline">Sohbet Küresi</span>
+              <span className="text-xl font-headline hidden sm:inline">HiweWalk</span>
             </Link>
           </Button>
 
@@ -497,4 +497,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

@@ -39,14 +39,14 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
 ];
 
 const PREDEFINED_AVATARS = [
-  "https://placehold.co/128x128/ADD8E6/333333.png?text=SK1", // Light Blue
-  "https://placehold.co/128x128/7FFFD4/333333.png?text=SK2", // Aquamarine
-  "https://placehold.co/128x128/F0F8FF/333333.png?text=SK3", // Alice Blue
-  "https://placehold.co/128x128/FFB6C1/333333.png?text=SK4", // Light Pink
-  "https://placehold.co/128x128/90EE90/333333.png?text=SK5", // Light Green
-  "https://placehold.co/128x128/FFA07A/333333.png?text=SK6", // Light Salmon
-  "https://placehold.co/128x128/DDA0DD/333333.png?text=SK7", // Plum
-  "https://placehold.co/128x128/B0E0E6/333333.png?text=SK8", // Powder Blue
+  "https://placehold.co/128x128/ADD8E6/333333.png?text=HW1", // Light Blue
+  "https://placehold.co/128x128/7FFFD4/333333.png?text=HW2", // Aquamarine
+  "https://placehold.co/128x128/F0F8FF/333333.png?text=HW3", // Alice Blue
+  "https://placehold.co/128x128/FFB6C1/333333.png?text=HW4", // Light Pink
+  "https://placehold.co/128x128/90EE90/333333.png?text=HW5", // Light Green
+  "https://placehold.co/128x128/FFA07A/333333.png?text=HW6", // Light Salmon
+  "https://placehold.co/128x128/DDA0DD/333333.png?text=HW7", // Plum
+  "https://placehold.co/128x128/B0E0E6/333333.png?text=HW8", // Powder Blue
   null, // "Avatarı Kaldır" seçeneği için
 ];
 
@@ -67,7 +67,7 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    document.title = 'Profilim - Sohbet Küresi';
+    document.title = 'Profilim - HiweWalk';
     if (currentUser && userData) {
       setTempProfile({
         username: userData.displayName || currentUser.displayName || "",
@@ -209,7 +209,7 @@ export default function ProfilePage() {
     const nameToUse = isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName);
     if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "PN";
+    return "HW"; // HiweWalk için HW
   };
 
   if (isUserLoading && !currentUser && !userData) {

@@ -4,8 +4,8 @@ import LoginForm from "@/components/auth/LoginForm";
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Giriş Yap - Sohbet Küresi',
-  description: 'Sohbet Küresi hesabınıza giriş yapın.',
+  title: 'Giriş Yap - HiweWalk',
+  description: 'HiweWalk hesabınıza giriş yapın.',
 };
 
 export default function LoginPage() {

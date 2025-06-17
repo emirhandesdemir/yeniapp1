@@ -7,7 +7,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 
 export const metadata: Metadata = {
-  title: 'Sohbet Küresi',
+  title: 'HiweWalk',
   description: 'Arkadaşlarınızla sohbet edin ve yeni bağlantılar kurun.',
   manifest: '/manifest.json', // PWA için manifest dosyası eklendi
 };
@@ -24,10 +24,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         {/* PWA Meta Etiketleri */}
-        <meta name="application-name" content="Sohbet Küresi" />
+        <meta name="application-name" content="HiweWalk" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Sohbet Küresi" />
+        <meta name="apple-mobile-web-app-title" content="HiweWalk" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-config" content="/icons/browserconfig.xml" />

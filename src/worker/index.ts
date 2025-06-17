@@ -35,7 +35,7 @@ self.addEventListener('push', (event) => {
   console.log('[Service Worker] Push Received.');
   console.log(`[Service Worker] Push had this data: "${event.data?.text()}"`);
 
-  const title = 'Sohbet Küresi';
+  const title = 'HiweWalk';
   const options: NotificationOptions = { 
     body: event.data?.text() || 'Yeni bir mesajınız var!',
     icon: '/icons/icon-192x192.png', 

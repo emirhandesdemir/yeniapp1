@@ -71,7 +71,7 @@ export default function UserProfilePage() {
     const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
         setProfileUser({ uid: docSnap.id, ...docSnap.data() } as UserData);
-        document.title = `${docSnap.data().displayName || 'Kullanıcı'} Profili - Sohbet Küresi`;
+        document.title = `${docSnap.data().displayName || 'Kullanıcı'} Profili - HiweWalk`;
       } else {
         setProfileUser(null);
         toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });

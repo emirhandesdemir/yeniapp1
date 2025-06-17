@@ -123,7 +123,7 @@ export default function ChatRoomsPage() {
 
 
   useEffect(() => {
-    document.title = 'Sohbet Odaları - Sohbet Küresi';
+    document.title = 'Sohbet Odaları - HiweWalk';
     const currentTime = Timestamp.now();
     const q = query(
       collection(db, "chatRooms"),

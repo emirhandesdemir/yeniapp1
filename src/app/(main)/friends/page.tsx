@@ -54,7 +54,7 @@ export default function FriendsPage() {
   const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({}); 
 
   useEffect(() => {
-    document.title = 'Arkadaşlarım - Sohbet Küresi';
+    document.title = 'Arkadaşlarım - HiweWalk';
   }, []);
 
   useEffect(() => {
@@ -215,7 +215,7 @@ export default function FriendsPage() {
     const requestId = targetUser.outgoingRequestId;
     setActionLoading(requestId, true); 
     try {
-      await deleteFirestoreDoc(doc(db, "friendRequests", requestId));
+      await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
        setSearchResults(prev => prev.map(u => 
         u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u 

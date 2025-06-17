@@ -39,7 +39,7 @@ export default function DirectMessagesPage() {
   const [loadingConversations, setLoadingConversations] = useState(true);
 
   useEffect(() => {
-    document.title = 'Direkt Mesajlar - Sohbet Küresi';
+    document.title = 'Direkt Mesajlar - HiweWalk';
   }, []);
 
   useEffect(() => {

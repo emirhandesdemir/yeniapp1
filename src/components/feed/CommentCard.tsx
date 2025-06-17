@@ -35,7 +35,7 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "PN";
+    return "HW"; // HiweWalk için HW
   };
 
   const formattedDate = comment.createdAt

@@ -97,7 +97,7 @@ export default function PostCard({ post }: PostCardProps) {
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "SK";
+    return "HW"; // HiweWalk için HW
   };
 
   const formattedDate = (timestamp?: Timestamp) => {

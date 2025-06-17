@@ -505,7 +505,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           <Flame className="h-20 w-20 text-primary animate-pulse mx-auto" />
         </div>
         <h1 className="text-4xl font-headline font-bold text-primary mb-2">
-          Sohbet Küresi
+          HiweWalk
         </h1>
         <p className="text-xl text-muted-foreground">
           Hazırlanıyor...

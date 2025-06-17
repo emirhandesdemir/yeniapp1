@@ -78,7 +78,7 @@ export default function CommentForm({ postId, onCommentAdded }: CommentFormProps
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "SK";
+    return "HW"; // HiweWalk için HW
   };
 
   const remainingChars = MAX_COMMENT_LENGTH - content.length;

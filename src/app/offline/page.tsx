@@ -9,7 +9,7 @@ import { useEffect } from "react";
 
 export default function OfflinePage() {
   useEffect(() => {
-    document.title = "Çevrimdışı - Sohbet Küresi";
+    document.title = "Çevrimdışı - HiweWalk";
   }, []);
 
   return (

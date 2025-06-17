@@ -132,7 +132,7 @@ export default function CreatePostForm() {
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "SK";
+    return "HW"; // HiweWalk için HW
   };
 
   const remainingChars = MAX_POST_LENGTH - content.length;

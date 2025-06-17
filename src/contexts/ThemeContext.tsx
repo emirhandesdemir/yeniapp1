@@ -31,7 +31,7 @@ export function useTheme() {
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
-  storageKey = 'sohbet-kuresi-theme',
+  storageKey = 'hiwewalk-theme', // Updated storage key
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<ThemeSetting>(() => {
     if (typeof window !== 'undefined') {

@@ -18,7 +18,7 @@ interface OnboardingStep {
 const steps: OnboardingStep[] = [
   {
     icon: <Rocket className="h-12 w-12 sm:h-16 sm:w-16" />,
-    title: "Sohbet Küresi'ne Hoş Geldin!",
+    title: "HiweWalk'e Hoş Geldin!",
     description: "Yeni bağlantılar kurmaya ve harika sohbetlere katılmaya hazır mısın? Hadi, sana etrafı gezdirelim!",
     bgColorClass: "bg-gradient-to-br from-primary to-accent",
     textColorClass: "text-primary-foreground",
@@ -54,13 +54,13 @@ const steps: OnboardingStep[] = [
   {
     icon: <Sparkles className="h-12 w-12 sm:h-16 sm:w-16" />,
     title: "Hazırsın!",
-    description: "Artık Sohbet Küresi'ni keşfetmeye hazırsın. İyi eğlenceler ve harika sohbetler dileriz!",
+    description: "Artık HiweWalk'i keşfetmeye hazırsın. İyi eğlenceler ve harika sohbetler dileriz!",
     bgColorClass: "bg-gradient-to-br from-gray-700 via-gray-800 to-black",
     textColorClass: "text-white",
   },
 ];
 
-const STORAGE_KEY = 'onboardingCompleted_v1';
+const STORAGE_KEY = 'onboardingCompleted_v1_hiwewalk'; // Storage key updated
 
 interface WelcomeOnboardingProps {
   isOpen: boolean;
