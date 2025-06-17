@@ -3,10 +3,10 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
-import { Timestamp } from "firebase/firestore";
+import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal } from "lucide-react"; 
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2 } from "lucide-react"; 
 import { Button } from "@/components/ui/button"; 
 import { useAuth } from "@/contexts/AuthContext"; 
 import {
@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/dropdown-menu"; 
 import { useToast } from "@/hooks/use-toast"; 
 import { db } from "@/lib/firebase"; 
-import { doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment } from "firebase/firestore"; 
-import { useState } from "react"; 
+import { useState, useEffect } from "react"; 
+import CommentForm from "./CommentForm";
+import CommentCard, { type CommentData } from "./CommentCard";
 
 export interface Post {
   id: string;
@@ -40,6 +41,44 @@ export default function PostCard({ post }: PostCardProps) {
   const { currentUser, userData } = useAuth();
   const { toast } = useToast();
   const [isLiking, setIsLiking] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<CommentData[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [localCommentCount, setLocalCommentCount] = useState(post.commentCount);
+
+  useEffect(() => {
+    setLocalCommentCount(post.commentCount);
+  }, [post.commentCount]);
+
+  useEffect(() => {
+    if (showComments && post.id) {
+      setLoadingComments(true);
+      const commentsQuery = query(
+        collection(db, `posts/${post.id}/comments`),
+        orderBy('createdAt', 'asc')
+      );
+      const unsubscribe = onSnapshot(
+        commentsQuery,
+        (snapshot) => {
+          const fetchedComments: CommentData[] = [];
+          snapshot.forEach((doc) => {
+            fetchedComments.push({ id: doc.id, ...doc.data() } as CommentData);
+          });
+          setComments(fetchedComments);
+          setLoadingComments(false);
+        },
+        (error) => {
+          console.error('Error fetching comments:', error);
+          toast({ title: 'Hata', description: 'Yorumlar yüklenirken bir sorun oluştu.', variant: 'destructive' });
+          setLoadingComments(false);
+        }
+      );
+      return () => unsubscribe();
+    } else {
+      setComments([]); 
+    }
+  }, [showComments, post.id, toast]);
+
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
@@ -60,7 +99,6 @@ export default function PostCard({ post }: PostCardProps) {
     try {
       await deleteDoc(doc(db, "posts", post.id));
       toast({ title: "Başarılı", description: "Gönderi silindi." });
-      // Note: UI'dan kaldırma işlemi FeedList tarafından yönetilecek (onSnapshot sayesinde)
     } catch (error) {
       console.error("Error deleting post:", error);
       toast({ title: "Hata", description: "Gönderi silinirken bir sorun oluştu.", variant: "destructive" });
@@ -79,25 +117,35 @@ export default function PostCard({ post }: PostCardProps) {
 
     try {
       if (hasLiked) {
-        // Unlike
         await updateDoc(postRef, {
           likeCount: increment(-1),
           likedBy: arrayRemove(currentUser.uid)
         });
       } else {
-        // Like
         await updateDoc(postRef, {
           likeCount: increment(1),
           likedBy: arrayUnion(currentUser.uid)
         });
       }
-      // UI güncellemesi onSnapshot ile FeedList tarafından yapılacak.
     } catch (error) {
       console.error("Error liking/unliking post:", error);
       toast({ title: "Hata", description: "Beğeni işlemi sırasında bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsLiking(false);
     }
+  };
+  
+  // Callbacks for CommentForm and CommentCard to update local count
+  const handleCommentAdded = () => {
+    // Firestore's increment will update post.commentCount, which should trigger a re-render.
+    // If FeedList doesn't re-render PostCard with new post prop, this local update is a fallback.
+    // However, onSnapshot on FeedList for posts would be better.
+    // For now, we directly update the display. A parent component re-render would sync it.
+    setLocalCommentCount(prev => prev + 1);
+  };
+
+  const handleCommentDeleted = () => {
+    setLocalCommentCount(prev => Math.max(0, prev - 1));
   };
 
   return (
@@ -136,13 +184,18 @@ export default function PostCard({ post }: PostCardProps) {
         </p>
       </CardContent>
       <CardFooter className="p-4 pt-2 flex justify-start gap-2 sm:gap-4 border-t">
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary px-2" onClick={() => toast({title: "Yakında!", description:"Yorum yapma özelliği yakında eklenecek."})}>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="text-muted-foreground hover:text-primary px-2" 
+          onClick={() => setShowComments(!showComments)}
+        >
           <MessageCircle className="h-4 w-4 mr-1.5" />
-          <span className="text-xs">{post.commentCount}</span>
+          <span className="text-xs">{localCommentCount}</span> {/* Display localCommentCount */}
+          {showComments ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
         </Button>
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-green-500 px-2" onClick={() => toast({title: "Yakında!", description:"Yeniden paylaşma özelliği yakında eklenecek."})}>
           <Repeat className="h-4 w-4 mr-1.5" />
-          {/* <span className="text-xs">0</span>  Retweet count eklenebilir */}
         </Button>
         <Button variant="ghost" size="sm" className={`px-2 ${hasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'}`} onClick={handleLikePost} disabled={isLiking || !currentUser}>
           <Heart className={`h-4 w-4 mr-1.5 ${hasLiked ? 'fill-current' : ''}`} />
@@ -152,6 +205,33 @@ export default function PostCard({ post }: PostCardProps) {
           <Share className="h-4 w-4" />
         </Button>
       </CardFooter>
+
+      {showComments && (
+        <div className="p-4 border-t bg-card/50 dark:bg-background/30 rounded-b-xl">
+          <CommentForm postId={post.id} onCommentAdded={handleCommentAdded} />
+          {loadingComments && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <p className="ml-2 text-xs text-muted-foreground">Yorumlar yükleniyor...</p>
+            </div>
+          )}
+          {!loadingComments && comments.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-3">Henüz yorum yok. İlk yorumu sen yap!</p>
+          )}
+          {!loadingComments && comments.length > 0 && (
+            <div className="space-y-3 mt-4">
+              {comments.map((comment) => (
+                <CommentCard 
+                  key={comment.id} 
+                  comment={comment} 
+                  postId={post.id} 
+                  onCommentDeleted={handleCommentDeleted}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

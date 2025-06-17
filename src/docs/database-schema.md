@@ -105,12 +105,24 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - `content`: (String) Gönderinin metin içeriği (Max 280 karakter)
   - `createdAt`: (Timestamp) Gönderinin oluşturulduğu zaman
   - `likeCount`: (Number) Beğeni sayısı (Varsayılan: 0)
-  - `commentCount`: (Number) Yorum sayısı (Varsayılan: 0) - Gelecek özellik
+  - `commentCount`: (Number) Yorum sayısı (Varsayılan: 0)
   - `likedBy`: (Array<String>) Gönderiyi beğenen kullanıcıların UID listesi
+- **Alt Koleksiyonlar:**
+  - `comments`: Gönderiye yapılan yorumları saklar.
+    - **Yol:** `/posts/{postId}/comments/{commentId}`
+    - **Alanlar:**
+      - `userId`: (String) Yorumu yapan kullanıcının UID'si
+      - `username`: (String) Yorumu yapan kullanıcının görünen adı
+      - `userAvatar`: (String, nullable) Yorumu yapan kullanıcının avatar URL'si
+      - `content`: (String) Yorumun metin içeriği
+      - `createdAt`: (Timestamp) Yorumun oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Akış sayfasında gönderileri sıralamak için (`src/app/(main)/feed/page.tsx` veya `src/components/feed/FeedList.tsx`):
+  - Akış sayfasında gönderileri sıralamak için (`src/app/page.tsx`):
     - Koleksiyon: `posts`
     - Alanlar: `createdAt` (Azalan)
+  - Bir gönderinin yorumlarını sıralamak için (`src/components/feed/PostCard.tsx`):
+    - Koleksiyon Grubu: `comments` (Tüm `posts` koleksiyonlarındaki `comments` alt koleksiyonlarını hedefler)
+    - Alanlar: `createdAt` (Artan) - Bu, genellikle belirli bir `postId` için sorgulandığından, Firestore bu basit sıralamayı destekleyebilir veya özel indeks gerekebilir. Şimdilik basit sorgu varsayıyoruz.
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.
