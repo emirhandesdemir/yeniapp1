@@ -35,12 +35,10 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#6A47D1" />
         <meta name="msapplication-tap-highlight" content="no" />
         <meta name="theme-color" content="#FFFFFF" /> {/* Light theme-color */}
-        
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192x192.png" /> {/* iOS için daha büyük ikon */}
         <link rel="apple-touch-icon" sizes="167x167" href="/icons/icon-167x167.png" />
-
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
         <link rel="manifest" href="/manifest.json" />
@@ -51,7 +49,6 @@ export default function RootLayout({
         {/* Farklı ekran boyutları için bunları ekleyebilirsiniz */}
         {/* <link rel="apple-touch-startup-image" href="/images/apple_splash_2048.png" sizes="2048x2732" /> */}
         {/* <link rel="apple-touch-startup-image" href="/images/apple_splash_1668.png" sizes="1668x2224" /> */}
-
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col">
         <ThemeProvider
