@@ -285,7 +285,9 @@ export default function DirectMessagePage() {
                         ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
                         : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl"
                     }`}>
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+                    <div className="allow-text-selection">
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+                    </div>
                     </div>
                     <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
                         {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}

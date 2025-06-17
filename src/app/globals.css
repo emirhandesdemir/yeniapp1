@@ -5,7 +5,30 @@
 
 body {
   font-family: 'Inter', Arial, Helvetica, sans-serif;
+  overscroll-behavior-y: contain; /* Prevents pull-to-refresh */
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* Internet Explorer/Edge */
+  user-select: none; /* Non-prefixed version, currently supported by Chrome, Opera, Edge */
 }
+
+/* Ensure form inputs and textareas remain selectable and editable */
+input,
+textarea {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Class to allow text selection on specific elements */
+.allow-text-selection {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 
 @layer base {
   :root {
