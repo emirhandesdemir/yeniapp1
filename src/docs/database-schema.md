@@ -50,6 +50,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - Ana sayfadaki akışta aktif odaları listelemek için (`src/app/page.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan), `createdAt` (Azalan)
+  - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
+    - Koleksiyon: `chatRooms`
+    - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -107,6 +110,8 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - `likeCount`: (Number) Beğeni sayısı (Varsayılan: 0)
   - `commentCount`: (Number) Yorum sayısı (Varsayılan: 0)
   - `likedBy`: (Array<String>) Gönderiyi beğenen kullanıcıların UID listesi
+  - `sharedRoomId`: (String, nullable) Paylaşılan sohbet odasının ID'si.
+  - `sharedRoomName`: (String, nullable) Paylaşılan sohbet odasının adı.
 - **Alt Koleksiyonlar:**
   - `comments`: Gönderiye yapılan yorumları saklar.
     - **Yol:** `/posts/{postId}/comments/{commentId}`

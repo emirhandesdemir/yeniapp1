@@ -6,20 +6,21 @@ import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2 } from "lucide-react"; 
-import { Button } from "@/components/ui/button"; 
-import { useAuth } from "@/contexts/AuthContext"; 
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"; 
-import { useToast } from "@/hooks/use-toast"; 
-import { db } from "@/lib/firebase"; 
-import { useState, useEffect } from "react"; 
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { useState, useEffect } from "react";
 import CommentForm from "./CommentForm";
 import CommentCard, { type CommentData } from "./CommentCard";
+import Link from "next/link";
 
 export interface Post {
   id: string;
@@ -31,6 +32,8 @@ export interface Post {
   likeCount: number;
   commentCount: number;
   likedBy: string[];
+  sharedRoomId?: string;
+  sharedRoomName?: string;
 }
 
 interface PostCardProps {
@@ -75,7 +78,7 @@ export default function PostCard({ post }: PostCardProps) {
       );
       return () => unsubscribe();
     } else {
-      setComments([]); 
+      setComments([]);
     }
   }, [showComments, post.id, toast]);
 
@@ -134,13 +137,8 @@ export default function PostCard({ post }: PostCardProps) {
       setIsLiking(false);
     }
   };
-  
-  // Callbacks for CommentForm and CommentCard to update local count
+
   const handleCommentAdded = () => {
-    // Firestore's increment will update post.commentCount, which should trigger a re-render.
-    // If FeedList doesn't re-render PostCard with new post prop, this local update is a fallback.
-    // However, onSnapshot on FeedList for posts would be better.
-    // For now, we directly update the display. A parent component re-render would sync it.
     setLocalCommentCount(prev => prev + 1);
   };
 
@@ -182,16 +180,29 @@ export default function PostCard({ post }: PostCardProps) {
         <p className="text-sm text-foreground/90 whitespace-pre-wrap break-words">
           {post.content}
         </p>
+        {post.sharedRoomId && post.sharedRoomName && (
+          <div className="mt-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
+            <p className="text-xs text-primary/80 mb-1.5">
+              Bu gönderide bir sohbet odası paylaşıldı:
+            </p>
+            <Button asChild variant="outline" size="sm" className="w-full border-primary text-primary hover:bg-primary/20 hover:text-primary">
+              <Link href={`/chat/${post.sharedRoomId}`}>
+                <LogIn className="mr-2 h-4 w-4" />
+                Katıl: {post.sharedRoomName}
+              </Link>
+            </Button>
+          </div>
+        )}
       </CardContent>
       <CardFooter className="p-4 pt-2 flex justify-start gap-2 sm:gap-4 border-t">
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="text-muted-foreground hover:text-primary px-2" 
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-primary px-2"
           onClick={() => setShowComments(!showComments)}
         >
           <MessageCircle className="h-4 w-4 mr-1.5" />
-          <span className="text-xs">{localCommentCount}</span> {/* Display localCommentCount */}
+          <span className="text-xs">{localCommentCount}</span>
           {showComments ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
         </Button>
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-green-500 px-2" onClick={() => toast({title: "Yakında!", description:"Yeniden paylaşma özelliği yakında eklenecek."})}>
@@ -221,10 +232,10 @@ export default function PostCard({ post }: PostCardProps) {
           {!loadingComments && comments.length > 0 && (
             <div className="space-y-3 mt-4">
               {comments.map((comment) => (
-                <CommentCard 
-                  key={comment.id} 
-                  comment={comment} 
-                  postId={post.id} 
+                <CommentCard
+                  key={comment.id}
+                  comment={comment}
+                  postId={post.id}
                   onCommentDeleted={handleCommentDeleted}
                 />
               ))}
