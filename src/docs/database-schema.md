@@ -50,10 +50,13 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları (`expiresAt` > şimdi) listelemek ve katılımcı sayısına, ardından oluşturulma tarihine göre sıralamak için:
     - Koleksiyon: `chatRooms`
     - Alanlar: `participantCount` (Azalan), `createdAt` (Azalan), `expiresAt` (Artan)
-    - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresini de içerir. Firestore bu sorgu için yukarıdaki alanları ve belirtilen sıralamayı kullanan bir indeks talep edecektir._
+    - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresini de içerir._
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan), `__name__` (Artan veya Azalan, Firestore'un önerisine göre)
+  - Admin panelinde süresi dolmuş odaları toplu silmek için (`src/components/admin/sections/AdminChatRoomsContent.tsx`):
+    - Koleksiyon: `chatRooms`
+    - Alanlar: `expiresAt` (Artan)
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -145,5 +148,18 @@ Genel uygulama ayarlarını saklar.
 - **Alanlar (`gameConfig` için):**
   - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı.
   - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
+
+## `gameQuestions`
+Sohbet odası quiz oyunu için soruları saklar.
+- **Yol:** `/gameQuestions/{questionId}`
+- **Alanlar:**
+  - `text`: (String) Sorunun metni.
+  - `answer`: (String) Sorunun cevabı (küçük/büyük harf duyarsız karşılaştırılmalı).
+  - `hint`: (String) Soru için ipucu.
+  - `createdAt`: (Timestamp) Sorunun eklendiği zaman.
+- **Gerekli İndeksler:**
+  - Admin panelinde soruları listelemek ve en son ekleneni üste almak için (`src/components/admin/sections/AdminGameSettingsContent.tsx`):
+    - Koleksiyon: `gameQuestions`
+    - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
