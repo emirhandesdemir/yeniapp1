@@ -58,19 +58,23 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `data`: (Object) SDP (offer/answer) veya ICE adayı verisi
       - `createdAt`: (Timestamp) Sinyalin oluşturulduğu zaman
 - **Gerekli İndeksler:**
-  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için:
+  - Ana sayfadaki akışta (`src/app/page.tsx`) ve sohbet odaları listeleme sayfasında (`src/app/(main)/chat/page.tsx`) aktif odaları listelemek ve sıralamak için (`where("expiresAt", ">", now).orderBy("participantCount", "desc").orderBy("createdAt", "desc")` sorgusu için):
     - Koleksiyon: `chatRooms`
     - Alanlar: `participantCount` (Azalan), `createdAt` (Azalan), `expiresAt` (Artan)
-    - _Not: Bu sorgu `where("expiresAt", ">", currentTime)` filtresini de içerir._
+    - _Not: Bu, Firestore'un hata mesajında önerdiği indekstir._
   - Bir kullanıcının oluşturduğu aktif odaları listelemek için (`src/components/feed/CreatePostForm.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
   - Admin panelinde süresi dolmuş odaları toplu silmek için (`src/components/admin/sections/AdminChatRoomsContent.tsx`):
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan)
+  - Admin panelinde tüm odaları oluşturulma tarihine göre listelemek için (`src/components/admin/sections/AdminChatRoomsContent.tsx`):
+    - Koleksiyon: `chatRooms`
+    - Alanlar: `createdAt` (Azalan)
   - WebRTC sinyalleşme mesajlarını almak için (`src/app/(main)/chat/[roomId]/page.tsx`):
-    - Koleksiyon: `voiceSignaling` (belirli bir `chatRooms/{roomId}` altında)
+    - Koleksiyon Grubu: `voiceSignaling` (belirli bir `chatRooms/{roomId}` altındaki `voiceSignaling` koleksiyonunu hedefler)
     - Alanlar: `toUid` (Artan), `createdAt` (Artan)
+
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -177,3 +181,5 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+```)
