@@ -839,7 +839,7 @@ const attemptToAskNewQuestion = useCallback(async () => {
                 key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId}
                 onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId}
                 popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus}
-                relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={onAcceptFriendRequestPopover}
+                relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
                 onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction}
                 onViewProfileAction={handleViewProfileAction}
                 getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
