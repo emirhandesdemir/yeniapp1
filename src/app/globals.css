@@ -31,32 +31,32 @@ textarea {
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
+    --background: 0 0% 98%; /* Slightly off-white for better contrast with vibrant colors */
+    --foreground: 240 10% 3.9%; /* Standard dark gray for text */
+    --card: 0 0% 100%; /* White cards to make vibrant elements pop */
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --primary: 221 83% 53%; /* Vibrant Blue */
+    --primary-foreground: 0 0% 100%; /* White for high contrast on vibrant blue */
+    --secondary: 220 25% 92%; /* Lighter, subtly saturated blue-gray */
+    --secondary-foreground: 220 25% 25%; /* Darker blue-gray text for secondary */
+    --muted: 240 5% 96%; /* Standard light muted */
+    --muted-foreground: 240 4% 46%; /* Standard muted text */
+    --accent: 160 70% 45%; /* Vibrant Teal/Green */
+    --accent-foreground: 0 0% 100%; /* White for high contrast */
+    --destructive: 0 80% 60%; /* Vibrant Red */
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
-    --radius: 0.5rem;
-    /* Chart colors - default to primary/secondary or specific values */
-    --chart-1: 240 5.9% 10%;
-    --chart-2: 240 4.8% 95.9%;
-    --chart-3: 300 5.9% 10%; /* Example different hue */
-    --chart-4: 180 4.8% 95.9%;/* Example different hue */
-    --chart-5: 60 5.9% 10%;  /* Example different hue */
+    --border: 240 6% 90%; /* Standard light border */
+    --input: 240 6% 90%;  /* Standard light input */
+    --ring: 221 83% 53%; /* Primary color for rings */
+
+    /* Vibrant Chart colors */
+    --chart-1: hsl(var(--primary));
+    --chart-2: hsl(var(--accent));
+    --chart-3: 350 85% 60%; /* Vibrant Pink/Magenta */
+    --chart-4: 45 90% 55%;  /* Vibrant Orange/Yellow */
+    --chart-5: 280 75% 60%; /* Vibrant Purple */
 
     /* Sidebar - default to main theme values */
     --sidebar-background: hsl(var(--background));
@@ -70,31 +70,32 @@ textarea {
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
+    --background: 240 10% 10%; /* Darker background for a modern feel */
+    --foreground: 0 0% 98%; /* Light text for readability */
+    --card: 240 8% 15%; /* Slightly lighter dark for cards */
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
+    --popover: 240 8% 15%;
     --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --primary: 221 90% 65%; /* Brighter Vibrant Blue for dark mode */
+    --primary-foreground: 221 20% 15%; /* Darker blue for text on bright blue button */
+    --secondary: 220 15% 25%; /* Darker, less saturated blue-gray for dark secondary */
+    --secondary-foreground: 220 15% 85%; /* Lighter blue-gray text for dark secondary */
+    --muted: 240 4% 16%; /* Standard dark muted */
+    --muted-foreground: 240 5% 65%; /* Standard dark muted text */
+    --accent: 160 75% 55%; /* Brighter Vibrant Teal/Green for dark mode */
+    --accent-foreground: 160 20% 10%; /* Darker teal for text on bright teal button */
+    --destructive: 0 75% 60%; /* Brighter Vibrant Red for dark mode */
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 0 0% 98%;
-      /* Chart colors - default to primary/secondary or specific values for dark */
-    --chart-1: 0 0% 98%;
-    --chart-2: 240 3.7% 15.9%;
-    --chart-3: 300 0% 98%;
-    --chart-4: 180 3.7% 15.9%;
-    --chart-5: 60 0% 98%;
+    --border: 240 4% 20%; /* Slightly more visible border in dark mode */
+    --input: 240 4% 20%;  /* Slightly more visible input in dark mode */
+    --ring: 221 90% 70%; /* Brighter primary for rings in dark mode */
+
+    /* Vibrant Chart colors for dark mode */
+    --chart-1: hsl(var(--primary));
+    --chart-2: hsl(var(--accent));
+    --chart-3: 350 90% 70%; /* Brighter Vibrant Pink/Magenta */
+    --chart-4: 45 95% 65%;  /* Brighter Vibrant Orange/Yellow */
+    --chart-5: 280 80% 70%; /* Brighter Vibrant Purple */
 
     /* Sidebar Dark Theme - default to main dark theme values */
     --sidebar-background: hsl(var(--background));
