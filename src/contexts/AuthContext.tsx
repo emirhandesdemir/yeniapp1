@@ -337,45 +337,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", { displayName: updates.displayName, photoFileName: updates.photoFile?.name, bio: updates.bio });
+    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", { displayName: updates.displayName, photoFileProvided: !!updates.photoFile, bio: updates.bio });
     
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
-    let newCloudinaryUrl: string | null = null; // Değişiklik: newLocalPhotoPath -> newCloudinaryUrl
 
     try {
-      if (updates.photoFile) {
-        console.log("[AuthContext] Photo file provided, sending to API upload:", updates.photoFile.name);
-        const formData = new FormData();
-        formData.append('photoFile', updates.photoFile);
-
-        const response = await fetch('/api/upload/route', { // API rotası düzeltildi (sonundaki .ts kaldırıldı)
-          method: 'POST',
-          body: formData,
+      if (updates.photoFile instanceof File) {
+        // The Cloudinary upload system was reverted. 
+        // New photo uploads via this API route are currently not supported.
+        // We can inform the user or simply skip the photo upload part.
+        // For now, we'll skip and only update other profile info if provided.
+        console.warn("[AuthContext] Photo file provided, but upload system is not configured. Skipping photo upload.");
+        toast({
+          title: "Bilgi",
+          description: "Yeni fotoğraf yükleme özelliği şu anda devre dışı. Diğer profil bilgileriniz (varsa) güncellenecektir.",
+          variant: "default",
         });
-
-        if (!response.ok) {
-          let errorMessage = `API Yükleme hatası: ${response.status}`;
-          try {
-              const errorData = await response.json();
-              errorMessage = errorData.error || errorData.message || errorMessage;
-          } catch (e) {
-             const errorText = await response.text().catch(() => "Okunamayan API hata yanıtı");
-             console.error("API'den gelen JSON olmayan hata yanıtı:", errorText.substring(0, 500));
-             errorMessage = errorText || errorMessage;
-          }
-          throw new Error(errorMessage);
-        }
-        const result = await response.json();
-        newCloudinaryUrl = result.url; // Değişiklik: result.filePath -> result.url
-        console.log("[AuthContext] Yeni Cloudinary fotoğraf URL'si API'den alındı:", newCloudinaryUrl);
-        authUpdates.photoURL = newCloudinaryUrl; 
-        firestoreUpdates.photoURL = newCloudinaryUrl; 
       } else if (updates.photoFile === null) { 
-            console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi.");
-            authUpdates.photoURL = null; 
-            firestoreUpdates.photoURL = null; 
+        console.log("[AuthContext] Kullanıcı profil fotoğrafını kaldırmayı istedi.");
+        authUpdates.photoURL = null; 
+        firestoreUpdates.photoURL = null; 
       }
 
       const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
@@ -396,13 +379,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           firestoreUpdates.bio = updates.bio.trim();
       }
 
-
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         console.log("[AuthContext] Profile uygulanacak gerçek bir değişiklik yok.");
-        toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
+        // Do not show "no changes" toast if a photo upload was attempted but skipped.
+        if (!(updates.photoFile instanceof File)) {
+            toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
+        }
         setIsUserLoading(false);
         return true;
       }
