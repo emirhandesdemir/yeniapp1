@@ -77,7 +77,7 @@ const withPWA = withPWAInit({
   runtimeCaching: customRuntimeCaching,
   buildExcludes: [/middleware-manifest\.json$/], 
   fallbacks: { 
-    // document: '/offline', // Eğer bir /offline sayfanız varsa
+    document: '/offline', // Çevrimdışı yedek sayfası eklendi
   },
   swSrc: 'src/worker/index.ts', // Özel service worker dosyasının yolu
   swDest: 'public/sw.js', // Derlenmiş service worker'ın çıkış yolu
