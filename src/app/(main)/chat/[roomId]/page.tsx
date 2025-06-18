@@ -225,7 +225,7 @@ export default function ChatRoomPage() {
     if (pc) {
       pc.getSenders().forEach(sender => {
         if (sender.track) {
-          sender.track.stop();
+          // sender.track.stop(); // Yerel paylaşılan track'i burada durdurma, sadece PC'den kaldır.
           try {
             pc.removeTrack(sender);
             console.log(`[WebRTC] Track/Sender removed for ${targetUid}`);
@@ -355,8 +355,6 @@ export default function ChatRoomPage() {
         if (signal.type === 'offer') {
             if (pc.signalingState !== "stable" && pc.signalingState !== "have-remote-offer") {
                 console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition or race.`);
-                // Potansiyel glare çözümü (basit): Eğer local offer varsa ve remote offer geliyorsa, kendi offer'ımızı iptal edip remote'u kabul edebiliriz.
-                // Ancak bu karmaşıktır ve genellikle kütüphaneler daha iyi çözer. Şimdilik logluyoruz.
             }
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
             console.log(`[WebRTC] Remote description (offer) set for ${fromUid}. Creating answer.`);
@@ -381,13 +379,12 @@ export default function ChatRoomPage() {
                 }
             } else {
                 console.warn(`[WebRTC] Received candidate from ${fromUid} but remote description not set or candidate is null. Buffering or ignoring.`);
-                // Adayları bir süre bufferlayıp remoteDescription set edildikten sonra eklemeyi deneyebilirsiniz.
             }
         }
     } catch (error) {
         console.error(`[WebRTC] Error handling signal from ${fromUid} (${signal.type}):`, error);
         toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
-        negotiatingRef.current[fromUid] = false; // Hata durumunda bayrağı sıfırla
+        negotiatingRef.current[fromUid] = false; 
     }
   }, [createPeerConnection, sendSignalMessage, toast]);
 
@@ -451,7 +448,7 @@ export default function ChatRoomPage() {
         unsubscribe();
       }
     };
-  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef]); // isCurrentUserInVoiceChatRef.current yerine isCurrentUserInVoiceChatRef kullandım
+  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef]);
 
 
   const handleJoinVoiceChat = useCallback(async () => {
@@ -467,10 +464,12 @@ export default function ChatRoomPage() {
     }
     setIsProcessingVoiceJoinLeave(true);
     try {
+      console.log("[WebRTC] Attempting to get user media (audio).");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      console.log("[WebRTC] Got user media stream:", stream);
       localStreamRef.current = stream;
       setIsCurrentUserInVoiceChat(true); 
-      isCurrentUserInVoiceChatRef.current = true; // Ref'i de güncelle
+      isCurrentUserInVoiceChatRef.current = true;
 
       await setDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), {
         uid: currentUser.uid,
@@ -491,20 +490,20 @@ export default function ChatRoomPage() {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          const pc = createPeerConnection(participantData.id, true); 
-          // onnegotiationneeded tetiklenmeli ve offer göndermeli.
+          createPeerConnection(participantData.id, true); // isInitiator = true
         }
       });
 
     } catch (error: any) {
-      console.error("Error joining voice chat / getting media:", error);
+      console.error("[WebRTC] Error joining voice chat / getting media:", error);
       toast({ title: "Hata", description: `Sesli sohbete katılırken bir sorun oluştu: ${error.message || 'Medya erişimi reddedildi.'}`, variant: "destructive" });
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
+        console.log("[WebRTC] Local stream stopped due to join error.");
       }
       setIsCurrentUserInVoiceChat(false); 
-      isCurrentUserInVoiceChatRef.current = false; // Ref'i de güncelle
+      isCurrentUserInVoiceChatRef.current = false;
       setSelfMuted(false);
       try { 
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -516,7 +515,7 @@ export default function ChatRoomPage() {
             await batch.commit();
         }
       } catch (cleanupError) {
-        console.error("Error cleaning up voice participant on join failure:", cleanupError);
+        console.error("[WebRTC] Error cleaning up voice participant on join failure:", cleanupError);
       }
     } finally {
       setIsProcessingVoiceJoinLeave(false);
@@ -524,7 +523,10 @@ export default function ChatRoomPage() {
   }, [currentUser, userData, roomId, roomDetails, toast, createPeerConnection]);
 
   const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
-    if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) return Promise.resolve();
+    if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) {
+      console.log("[WebRTC] handleLeaveVoiceChat called but conditions not met. CurrentUser:", !!currentUser, "RoomID:", roomId, "InVoiceChat:", isCurrentUserInVoiceChatRef.current);
+      return Promise.resolve();
+    }
     if (!isPageUnload) setIsProcessingVoiceJoinLeave(true);
     
     console.log("[WebRTC] Leaving voice chat...");
@@ -533,13 +535,18 @@ export default function ChatRoomPage() {
     });
 
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach(track => {
+        console.log(`[WebRTC] Stopping local track: ${track.kind} - ${track.label}`);
+        track.stop();
+      });
       localStreamRef.current = null;
-      console.log("[WebRTC] Local stream stopped.");
+      console.log("[WebRTC] Local stream stopped and nulled.");
+    } else {
+        console.log("[WebRTC] localStreamRef was already null when trying to leave voice chat.");
     }
 
     setIsCurrentUserInVoiceChat(false);
-    isCurrentUserInVoiceChatRef.current = false; // Ref'i de güncelle
+    isCurrentUserInVoiceChatRef.current = false; 
 
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -555,12 +562,15 @@ export default function ChatRoomPage() {
       const roomDocSnap = await getDoc(roomRef);
       if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
         batch.update(roomRef, { voiceParticipantCount: increment(-1) });
+      } else if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) === 0) {
+        console.warn("[WebRTC] Voice participant count is already 0 in Firestore. Not decrementing.");
       }
       
       await batch.commit();
       if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" });
+      console.log("[WebRTC] Successfully left voice chat (Firestore updated).");
     } catch (error) {
-      console.error("Error leaving voice chat (Firestore):", error);
+      console.error("[WebRTC] Error leaving voice chat (Firestore):", error);
       if (!isPageUnload) toast({ title: "Hata", description: "Sesli sohbetten ayrılırken bir sorun oluştu.", variant: "destructive" });
     } finally {
       if (!isPageUnload) setIsProcessingVoiceJoinLeave(false);
@@ -580,27 +590,27 @@ export default function ChatRoomPage() {
         const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
 
         if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
-            console.warn("[WebRTC] Current user thought they were in call, but not found in Firestore. Forcing local leave.");
+            console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}`);
             toast({ title: "Bağlantı Kesildi", description: "Sesli sohbetten çıkarıldınız veya bağlantınızda bir sorun oluştu.", variant: "destructive" });
-            handleLeaveVoiceChat(true); 
+            handleLeaveVoiceChat(true); // Attempt to force leave without UI processing state
             return; 
         }
         
         if (isCurrentUserInVoiceChatRef.current && localStreamRef.current) {
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
-                    console.log(`[WebRTC] New participant ${p.displayName || p.id} detected. Initiating connection.`);
-                    const newPc = createPeerConnection(p.id, true); 
+                    console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Initiating connection.`);
+                    createPeerConnection(p.id, true); // isInitiator = true
                 }
             });
             Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
                 if (!newVoiceParticipantsData.find(p => p.id === existingPeerId)) {
-                    console.log(`[WebRTC] Participant ${existingPeerId} detected as left. Cleaning up connection.`);
+                    console.log(`[WebRTC Voice Listener] Participant ${existingPeerId} detected as left. Cleaning up connection.`);
                     cleanupPeerConnection(existingPeerId);
                 }
             });
         }
-    }, (error) => { console.error("Error fetching voice participants:", error); toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" }); });
+    }, (error) => { console.error("[WebRTC] Error fetching voice participants:", error); toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" }); });
     
     return () => unsubscribeVoice();
   }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave]);
@@ -1145,6 +1155,8 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
+    
 
     
 
