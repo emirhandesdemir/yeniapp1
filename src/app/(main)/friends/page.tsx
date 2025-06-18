@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing } from "lucide-react";
+import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone } from "lucide-react"; // Phone ikonu eklendi
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import {
@@ -23,11 +23,13 @@ import {
   writeBatch,
   getDoc,
   limit,
-  getDocs
+  getDocs,
+  setDoc
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { generateDmChatId } from "@/lib/utils"; 
+import { useRouter } from "next/navigation";
 
 
 interface Friend extends UserData {
@@ -44,6 +46,7 @@ interface SearchResultUser extends UserData {
 export default function FriendsPage() {
   const { currentUser, userData, isUserLoading: isAuthLoading } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
 
   const [myFriends, setMyFriends] = useState<Friend[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -270,6 +273,38 @@ export default function FriendsPage() {
     }
   };
 
+  const handleInitiateCall = async (targetFriend: Friend) => {
+    if (!currentUser || !userData || !targetFriend.uid) {
+      toast({ title: "Hata", description: "Arama başlatılamadı. Kullanıcı bilgileri eksik.", variant: "destructive" });
+      return;
+    }
+    setActionLoading(`call-${targetFriend.uid}`, true);
+    const callId = doc(collection(db, "directCalls")).id; // Generate a new call ID
+
+    try {
+      const callDocRef = doc(db, "directCalls", callId);
+      await setDoc(callDocRef, {
+        callId: callId,
+        callerId: currentUser.uid,
+        callerName: userData.displayName,
+        callerAvatar: userData.photoURL,
+        calleeId: targetFriend.uid,
+        calleeName: targetFriend.displayName,
+        calleeAvatar: targetFriend.photoURL,
+        status: "initiating",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Arama Başlatılıyor...", description: `${targetFriend.displayName} aranıyor.` });
+      router.push(`/call/${callId}`);
+    } catch (error) {
+      console.error("Error initiating call:", error);
+      toast({ title: "Arama Hatası", description: "Arama başlatılırken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setActionLoading(`call-${targetFriend.uid}`, false);
+    }
+  };
+
   const getAvatarFallback = (name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "??";
   };
@@ -331,6 +366,16 @@ export default function FriendsPage() {
                         </div>
                       </Link>
                       <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 sm:h-9 sm:w-9 text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                            onClick={() => handleInitiateCall(friend)}
+                            disabled={performingAction[`call-${friend.uid}`]}
+                            aria-label="Sesli Ara"
+                        >
+                            {performingAction[`call-${friend.uid}`] ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin"/> : <Phone className="h-4 w-4 sm:h-5 sm:w-5" />}
+                        </Button>
                         <Button asChild variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-primary hover:text-primary/80">
                           <Link href={`/dm/${generateDmChatId(currentUser.uid, friend.uid)}`} aria-label="Mesaj Gönder">
                              <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -443,3 +488,6 @@ export default function FriendsPage() {
     </div>
   );
 }
+
+
+    

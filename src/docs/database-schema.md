@@ -73,6 +73,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
     - **Yol:** `/chatRooms/{roomId}/webrtcSignals/{userId}/signals/{signalId}`
     - **Alanlar:**
       - `type`: (String) 'offer', 'answer', veya 'candidate'
+      - `from`: (String) Sinyali gönderen kullanıcının UID'si
       - `sdp`: (String, isteğe bağlı) Offer veya Answer için SDP.
       - `candidate`: (Object, isteğe bağlı) ICE adayı nesnesi.
       - `signalTimestamp`: (Timestamp) Sinyalin Firestore'a yazıldığı zaman.
@@ -118,6 +119,36 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Gerekli İndeksler:**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
     - *Sorgu:* `src/app/(main)/direct-messages/page.tsx`
+
+## `directCalls`
+Birebir sesli/görüntülü çağrı oturumlarını yönetir.
+- **Yol:** `/directCalls/{callId}`
+- **Alanlar:**
+  - `callId`: (String) Benzersiz çağrı ID'si. (Doküman ID'si de olabilir)
+  - `callerId`: (String) Çağrıyı başlatan kullanıcının UID'si.
+  - `callerName`: (String, nullable) Çağrıyı başlatanın adı.
+  - `callerAvatar`: (String, nullable) Çağrıyı başlatanın avatarı.
+  - `calleeId`: (String) Çağrıyı alan kullanıcının UID'si.
+  - `calleeName`: (String, nullable) Çağrıyı alanın adı.
+  - `calleeAvatar`: (String, nullable) Çağrıyı alanın avatarı.
+  - `status`: (String) Çağrının durumu: `initiating` (başlatılıyor), `ringing` (çalıyor), `active` (aktif), `rejected` (reddedildi), `ended` (sonlandırıldı), `missed` (cevapsız), `failed` (başarısız).
+  - `offerSdp`: (String, nullable) Arayanın SDP offer'ı.
+  - `answerSdp`: (String, nullable) Arananın SDP answer'ı.
+  - `createdAt`: (Timestamp) Çağrının oluşturulma zamanı.
+  - `updatedAt`: (Timestamp) Çağrının son güncellenme zamanı.
+  - `endedReason`: (String, nullable) Çağrı sonlandıysa nedeni (örn: 'caller_hung_up', 'callee_hung_up', 'connection_failed', 'no_answer').
+- **Alt Koleksiyonlar:**
+  - `callerIceCandidates`: Arayanın ICE adaylarını saklar.
+    - **Yol:** `/directCalls/{callId}/callerIceCandidates/{candidateId}`
+    - **Alanlar:** `candidate` (Object - RTCIceCandidateInit formatında)
+  - `calleeIceCandidates`: Arananın ICE adaylarını saklar.
+    - **Yol:** `/directCalls/{callId}/calleeIceCandidates/{candidateId}`
+    - **Alanlar:** `candidate` (Object - RTCIceCandidateInit formatında)
+- **Gerekli İndeksler:**
+  - Kullanıcının aktif gelen çağrılarını dinlemek için (`src/components/layout/AppLayout.tsx`):
+    - Koleksiyon: `directCalls`
+    - Alanlar: `calleeId` (Artan), `status` (Artan), `createdAt` (Azalan)
+
 
 ## `friendRequests`
 Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
@@ -213,3 +244,5 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+    

@@ -15,7 +15,9 @@ import {
   UserRound,
   Flame,
   Rss,
-  // Additional icons for bottom nav or other features
+  Phone,
+  PhoneIncoming as PhoneIncomingIcon,
+  XCircle as CloseIcon,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -36,6 +38,7 @@ import {
   writeBatch,
   getDoc,
   orderBy,
+  updateDoc, // updateDoc eklendi
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
@@ -43,7 +46,7 @@ import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification, type InAppNotificationData } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeUserToPush } from '@/lib/notificationUtils';
-
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"; // Dialog importları eklendi
 
 interface FriendRequestForPopover {
   id: string;
@@ -59,6 +62,13 @@ interface BottomNavItemType {
   label: string;
   icon: React.ElementType;
   activeIcon?: React.ElementType;
+}
+
+interface IncomingCallInfo {
+  callId: string;
+  callerId: string;
+  callerName: string | null;
+  callerAvatar: string | null;
 }
 
 const bottomNavItems: BottomNavItemType[] = [
@@ -105,6 +115,7 @@ const pageTransition = {
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
   const { toast } = useToast();
   const { showNotification: showInAppNotification } = useInAppNotification();
@@ -118,6 +129,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
+  
+  const [activeIncomingCall, setActiveIncomingCall] = useState<IncomingCallInfo | null>(null);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+
 
   useEffect(() => {
     setIsClient(true);
@@ -354,6 +369,100 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     };
   }, [isClient, currentUser, userData, showInAppNotification]);
 
+  // Listen for incoming calls
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    const callsQuery = query(
+      collection(db, "directCalls"),
+      where("calleeId", "==", currentUser.uid),
+      where("status", "in", ["initiating", "ringing"]), // Listen for both
+      orderBy("createdAt", "desc") 
+    );
+
+    const unsubscribeCalls = onSnapshot(callsQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        const callDoc = snapshot.docs[0]; // Get the most recent incoming call
+        const callData = callDoc.data();
+        
+        // Avoid showing modal if call is already being handled or was just rejected/missed by this user
+        if (activeIncomingCall?.callId === callDoc.id && isCallModalOpen) return;
+        if (pathname.startsWith(`/call/${callDoc.id}`)) return;
+
+
+        if (callData.status === "initiating") {
+            // Update status to ringing if we are the callee and it's just initiating
+            updateDoc(doc(db, "directCalls", callDoc.id), { status: "ringing", updatedAt: serverTimestamp() })
+              .then(() => {
+                 console.log(`[AppLayout] Call ${callDoc.id} status updated to ringing.`);
+                 setActiveIncomingCall({
+                    callId: callDoc.id,
+                    callerId: callData.callerId,
+                    callerName: callData.callerName,
+                    callerAvatar: callData.callerAvatar,
+                  });
+                  setIsCallModalOpen(true);
+              })
+              .catch(err => console.error("Error updating call status to ringing:", err));
+        } else if (callData.status === "ringing") {
+             setActiveIncomingCall({
+                callId: callDoc.id,
+                callerId: callData.callerId,
+                callerName: callData.callerName,
+                callerAvatar: callData.callerAvatar,
+              });
+             setIsCallModalOpen(true);
+        }
+      } else {
+        // No active incoming calls, ensure modal is closed
+        if (isCallModalOpen) {
+            setIsCallModalOpen(false);
+            setActiveIncomingCall(null);
+        }
+      }
+    }, (error) => {
+      console.error("Error listening for incoming calls:", error);
+      toast({ title: "Çağrı Hatası", description: "Gelen çağrılar dinlenirken bir sorun oluştu.", variant: "destructive" });
+    });
+
+    return () => unsubscribeCalls();
+  }, [currentUser?.uid, toast, activeIncomingCall, isCallModalOpen, pathname]);
+
+
+  const handleAcceptCall = async () => {
+    if (!activeIncomingCall) return;
+    setIsCallModalOpen(false);
+    // Status update to 'active' will be handled by CallPage once connection established
+    // Or we can set it to 'callee_accepting' here
+    try {
+        // await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), { status: "active", updatedAt: serverTimestamp() }); // Status is now 'ringing'
+        router.push(`/call/${activeIncomingCall.callId}`);
+        setActiveIncomingCall(null);
+    } catch (error) {
+        toast({ title: "Hata", description: "Çağrı kabul edilirken bir sorun oluştu.", variant: "destructive"});
+        console.error("Error accepting call:", error);
+        setActiveIncomingCall(null);
+    }
+  };
+
+  const handleRejectCall = async () => {
+    if (!activeIncomingCall) return;
+    try {
+      await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), { 
+        status: "rejected", 
+        updatedAt: serverTimestamp(),
+        endedReason: "callee_rejected",
+    });
+      toast({ title: "Çağrı Reddedildi", description: `${activeIncomingCall.callerName || 'Arayan kişi'} çağrısını reddettiniz.` });
+    } catch (error) {
+      toast({ title: "Hata", description: "Çağrı reddedilirken bir sorun oluştu.", variant: "destructive" });
+      console.error("Error rejecting call:", error);
+    } finally {
+        setIsCallModalOpen(false);
+        setActiveIncomingCall(null);
+    }
+  };
+
 
 
   const setActionLoading = (id: string, isLoading: boolean) => {
@@ -411,7 +520,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return "HW";
   };
 
-  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/');
+  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/');
   const mainContentClasses = cn(
     "flex-1 overflow-auto bg-background",
     isChatPage
@@ -529,6 +638,38 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
 
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
+      
+      {isClient && activeIncomingCall && (
+          <Dialog open={isCallModalOpen} onOpenChange={(isOpen) => {
+              if (!isOpen && activeIncomingCall) { // Only act if closing a valid call modal
+                  handleRejectCall(); // Assume closing modal means rejecting if not accepted
+              }
+              setIsCallModalOpen(isOpen);
+              if (!isOpen) setActiveIncomingCall(null);
+          }}>
+          <DialogContent className="sm:max-w-md p-0 overflow-hidden shadow-2xl border-primary" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogHeader className="bg-gradient-to-br from-primary to-accent text-primary-foreground p-6 text-center items-center">
+                <Avatar className="h-20 w-20 mb-3 border-2 border-primary-foreground/50">
+                    <AvatarImage src={activeIncomingCall.callerAvatar || "https://placehold.co/80x80.png"} data-ai-hint="caller avatar modal"/>
+                    <AvatarFallback className="text-3xl bg-primary-foreground/20 text-primary-foreground">{getAvatarFallback(activeIncomingCall.callerName)}</AvatarFallback>
+                </Avatar>
+              <DialogTitle className="text-2xl font-bold">{activeIncomingCall.callerName || "Bilinmeyen Kullanıcı"}</DialogTitle>
+              <DialogDescription className="text-primary-foreground/80 text-base">
+                sizi arıyor...
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-row gap-3 p-6 bg-card">
+              <Button onClick={handleRejectCall} variant="destructive" className="flex-1 h-12 text-base">
+                <PhoneOff className="mr-2 h-5 w-5"/> Reddet
+              </Button>
+              <Button onClick={handleAcceptCall} className="flex-1 h-12 text-base bg-green-500 hover:bg-green-600 text-white">
+                <Phone className="mr-2 h-5 w-5"/> Kabul Et
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
 
       {!isChatPage && isClient && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
@@ -541,3 +682,5 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   );
 }
 
+
+    
