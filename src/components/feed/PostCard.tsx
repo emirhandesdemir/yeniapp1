@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon } from "lucide-react";
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -21,6 +21,7 @@ import { useState, useEffect } from "react";
 import CommentForm from "./CommentForm";
 import CommentCard, { type CommentData } from "./CommentCard";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 export interface Post {
   id: string;
@@ -217,7 +218,7 @@ export default function PostCard({ post }: PostCardProps) {
   };
 
   const renderOriginalPostContent = (originalPost: Partial<Post>) => (
-    <Card className="mt-2 mb-1 p-3 border-border/70 bg-muted/30 dark:bg-muted/20 shadow-inner">
+    <Card className="mt-2 mb-1 p-3 border-border/50 bg-muted/40 dark:bg-muted/25 shadow-inner rounded-lg">
       <CardHeader className="flex flex-row items-start gap-2.5 p-0 pb-2">
         <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0">
             <Avatar className="h-8 w-8">
@@ -233,12 +234,12 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <p className="text-sm font-medium text-foreground/90 whitespace-pre-wrap break-words">
+        <p className="text-sm font-medium text-foreground/90 whitespace-pre-wrap break-words allow-text-selection">
           {originalPost.content}
         </p>
         {originalPost.sharedRoomId && originalPost.sharedRoomName && (
-          <div className="mt-2 pt-2 border-t border-border/50">
-            <Button asChild variant="outline" size="xs" className="w-full border-primary/30 text-primary/80 hover:bg-primary/10 hover:text-primary/90">
+          <div className="mt-2 pt-2 border-t border-border/30">
+            <Button asChild variant="outline" size="xs" className="w-full border-primary/30 text-primary/80 hover:bg-primary/10 hover:text-primary/90 text-xs h-7">
               <Link href={`/chat/${originalPost.sharedRoomId}`}>
                 <LogIn className="mr-1.5 h-3.5 w-3.5" />
                 Katıl: {originalPost.sharedRoomName}
@@ -252,8 +253,8 @@ export default function PostCard({ post }: PostCardProps) {
 
 
   return (
-    <Card className="shadow-md hover:shadow-lg transition-shadow duration-200 rounded-xl">
-      <CardHeader className="flex flex-row items-start gap-3 p-3 pb-2"> {/* p-4 to p-3 */}
+    <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl bg-card/80 backdrop-blur-sm border border-border/30">
+      <CardHeader className="flex flex-row items-start gap-3 p-3 pb-2">
         <Link href={`/profile/${post.userId}`} className="flex-shrink-0">
             <Avatar className="h-10 w-10">
             <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
@@ -277,7 +278,7 @@ export default function PostCard({ post }: PostCardProps) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={handleDeletePost} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                    Gönderiyi Sil
+                    <Trash2 className="mr-2 h-4 w-4" /> Gönderiyi Sil
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -285,7 +286,7 @@ export default function PostCard({ post }: PostCardProps) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-3 pt-1 pb-3"> {/* p-4 to p-3 */}
+      <CardContent className="p-3 pt-1 pb-3">
         {post.isRepost ? (
           <>
             <p className="text-sm text-muted-foreground mb-1.5">
@@ -305,56 +306,56 @@ export default function PostCard({ post }: PostCardProps) {
             })}
           </>
         ) : (
-          <p className="text-base font-semibold text-foreground whitespace-pre-wrap break-words">
+          <p className="text-sm text-foreground/95 whitespace-pre-wrap break-words allow-text-selection">
             {post.content}
           </p>
         )}
 
         {!post.isRepost && post.sharedRoomId && post.sharedRoomName && (
-          <div className="mt-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
+          <div className="mt-3 p-2.5 bg-primary/5 dark:bg-primary/10 rounded-lg border border-primary/20">
             <p className="text-xs text-primary/80 mb-1.5">
               Bu gönderide bir sohbet odası paylaşıldı:
             </p>
-            <Button asChild variant="outline" size="sm" className="w-full border-primary text-primary hover:bg-primary/20 hover:text-primary">
+            <Button asChild variant="outline" size="sm" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary h-8 text-xs">
               <Link href={`/chat/${post.sharedRoomId}`}>
-                <LogIn className="mr-2 h-4 w-4" />
+                <LogIn className="mr-2 h-3.5 w-3.5" />
                 Katıl: {post.sharedRoomName}
               </Link>
             </Button>
           </div>
         )}
       </CardContent>
-      <CardFooter className="p-3 pt-2 flex justify-start gap-2 sm:gap-4 border-t"> {/* p-4 to p-3 */}
+      <CardFooter className="p-3 pt-2 flex justify-start gap-1 sm:gap-2 border-t border-border/30">
         <Button
           variant="ghost"
           size="sm"
-          className="text-muted-foreground hover:text-primary px-2"
+          className="text-muted-foreground hover:text-primary px-2 py-1.5"
           onClick={() => setShowComments(!showComments)}
         >
           <MessageCircle className="h-4 w-4 mr-1.5" />
           <span className="text-xs">{localCommentCount}</span>
-          {showComments ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+          {showComments ? <ChevronUp className="h-3.5 w-3.5 ml-1" /> : <ChevronDown className="h-3.5 w-3.5 ml-1" />}
         </Button>
         <Button 
             variant="ghost" 
             size="sm" 
-            className="text-muted-foreground hover:text-green-500 px-2" 
+            className="text-muted-foreground hover:text-green-500 px-2 py-1.5" 
             onClick={handleRepost} 
             disabled={isReposting || !currentUser}
         >
           {isReposting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Repeat className="h-4 w-4 mr-1.5" />}
         </Button>
-        <Button variant="ghost" size="sm" className={`px-2 ${hasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'}`} onClick={handleLikePost} disabled={isLiking || !currentUser}>
+        <Button variant="ghost" size="sm" className={cn("px-2 py-1.5", hasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500')} onClick={handleLikePost} disabled={isLiking || !currentUser}>
           <Heart className={`h-4 w-4 mr-1.5 ${hasLiked ? 'fill-current' : ''}`} />
           <span className="text-xs">{post.likeCount}</span>
         </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-blue-500 px-2 ml-auto" onClick={() => toast({title: "Yakında!", description:"Paylaşma özelliği yakında eklenecek."})}>
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-blue-500 px-2 py-1.5 ml-auto" onClick={() => toast({title: "Yakında!", description:"Paylaşma özelliği yakında eklenecek."})}>
           <Share className="h-4 w-4" />
         </Button>
       </CardFooter>
 
       {showComments && (
-        <div className="p-3 border-t bg-card/50 dark:bg-background/30 rounded-b-xl"> {/* p-4 to p-3 */}
+        <div className="p-3 border-t border-border/30 bg-card/60 dark:bg-background/40 rounded-b-xl">
           <CommentForm postId={post.id} onCommentAdded={handleCommentAdded} />
           {loadingComments && (
             <div className="flex items-center justify-center py-4">

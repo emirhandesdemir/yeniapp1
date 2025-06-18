@@ -16,6 +16,7 @@ import RoomInFeedCard, { type ChatRoomFeedDisplayData } from "@/components/feed/
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, Timestamp, where, limit, getDocs } from "firebase/firestore";
 import { isPast } from 'date-fns';
+import { Separator } from '@/components/ui/separator';
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
@@ -253,7 +254,7 @@ export default function HomePage() {
 
     return (
       <AppLayout>
-        <div className="space-y-6">
+        <div className="mx-auto max-w-2xl w-full space-y-5">
           <AnimatePresence>
             {isWelcomeCardVisible && (
               <motion.div
@@ -263,7 +264,7 @@ export default function HomePage() {
                 animate="visible"
                 exit="exit"
               >
-                <Card className="shadow-lg bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl relative">
+                <Card className="shadow-md bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl relative">
                    <Button
                     variant="ghost"
                     size="icon"
@@ -349,7 +350,7 @@ export default function HomePage() {
 
           {!isLoadingFeed && combinedFeedItems.length === 0 && (
              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                <Card className="text-center py-10 sm:py-12 bg-card border border-border/20 rounded-xl shadow-md">
+                <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
                     <CardHeader className="pb-2">
                         <Users className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
                         <CardTitle className="text-xl sm:text-2xl font-semibold text-primary-foreground/90">
