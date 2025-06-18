@@ -99,7 +99,8 @@ interface WebRTCSignal {
   type: 'offer' | 'answer' | 'candidate';
   sdp?: string;
   candidate?: RTCIceCandidateInit;
-  signalTimestamp?: Timestamp; 
+  signalTimestamp?: Timestamp;
+  from?: string; // Sinyali gönderenin UID'si
 }
 
 
@@ -190,7 +191,7 @@ export default function ChatRoomPage() {
   const remoteStreamsRef = useRef<{ [key: string]: MediaStream }>({});
   const [activeRemoteStreams, setActiveRemoteStreams] = useState<{ [key: string]: MediaStream }>({});
   const lastProcessedSignalTimestampRef = useRef<Timestamp | null>(null);
-  const negotiatingRef = useRef<{ [key: string]: boolean }>({}); // Anlaşma bayrağı
+  const negotiatingRef = useRef<{ [key: string]: boolean }>({});
 
   const lastMessageTimesRef = useRef<number[]>([]);
   
@@ -207,8 +208,12 @@ export default function ChatRoomPage() {
     if (!currentUser || !roomId) return;
     console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type);
     try {
-      const signalWithTimestamp = { ...signal, signalTimestamp: serverTimestamp() };
-      await addDoc(collection(db, `chatRooms/${roomId}/webrtcSignals/${toUid}/signals`), signalWithTimestamp);
+      const signalWithTimestampAndSender: WebRTCSignal = {
+        ...signal,
+        from: currentUser.uid, // Gönderen bilgisini ekle
+        signalTimestamp: serverTimestamp() as Timestamp,
+      };
+      await addDoc(collection(db, `chatRooms/${roomId}/webrtcSignals/${toUid}/signals`), signalWithTimestampAndSender);
     } catch (error) {
       console.error(`[WebRTC] Error sending signal to ${toUid}:`, error);
       toast({ title: "Sinyal Hatası", description: "Sinyal gönderilemedi.", variant: "destructive" });
@@ -247,7 +252,7 @@ export default function ChatRoomPage() {
       delete newStreams[targetUid];
       return newStreams;
     });
-    negotiatingRef.current[targetUid] = false; // Anlaşma bayrağını sıfırla
+    negotiatingRef.current[targetUid] = false;
   }, []);
 
   const createPeerConnection = useCallback((targetUid: string, isInitiator: boolean): RTCPeerConnection => {
@@ -285,10 +290,9 @@ export default function ChatRoomPage() {
     
     pc.onsignalingstatechange = () => {
       console.log(`[WebRTC] Signaling state for ${targetUid}: ${pc.signalingState}`);
-      // Anlaşma tamamlandığında negotiatingRef'i sıfırla (offer/answer sonrası)
       if (pc.signalingState === 'stable' && negotiatingRef.current[targetUid]) {
-         // Bu, offer/answer tamamlandığında da olabilir.
-         // Ancak setRemoteDescription sonrası daha doğru.
+        // negotiationRef, handleIncomingSignal içinde 'answer' alındığında veya
+        // onnegotiationneeded içinde offer gönderildikten sonra (hata durumunda da) false yapılır.
       }
     };
 
@@ -301,22 +305,21 @@ export default function ChatRoomPage() {
       try {
         if (pc.signalingState === 'stable') {
           negotiatingRef.current[targetUid] = true;
-          console.log(`[WebRTC] Creating offer for ${targetUid}`);
+          console.log(`[WebRTC] Creating offer for ${targetUid} due to onnegotiationneeded.`);
           const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
+          await pc.setLocalDescription(offer); // Bu satırda hata alınıyordu ("m-lines")
           sendSignalMessage(targetUid, { type: 'offer', sdp: pc.localDescription!.sdp });
         } else {
            console.log(`[WebRTC] Negotiation needed for ${targetUid} but signaling state is ${pc.signalingState}. Skipping offer creation.`);
         }
       } catch (error) {
         console.error(`[WebRTC] Error in onnegotiationneeded for ${targetUid}:`, error);
-        toast({ title: "WebRTC Hatası", description: `Bağlantı anlaşması sırasında hata (${targetUid}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
-        negotiatingRef.current[targetUid] = false; // Hata durumunda bayrağı sıfırla
-      } 
-      // finally bloğu buraya taşındı, çünkü offer gönderildikten sonra hemen false yapılmamalı, answer beklenmeli.
-      // Şimdilik offer gönderildikten sonra false yapıyoruz, cevap gelince de yapacağız.
-      // Ancak en doğru yer, offer/answer döngüsü tamamlandığında.
-      // Bu, `handleIncomingSignal` içinde `answer` alındığında yapılabilir.
+        toast({ title: "WebRTC Anlaşma Hatası", description: `Bağlantı anlaşması (onnegotiationneeded) sırasında hata (${targetUid}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
+      } finally {
+        // Offer gönderildikten sonra veya hata durumunda bayrağı sıfırla.
+        // Cevap (answer) gelince tekrar sıfırlanacak ama offer gönderme döngüsünün bittiğini belirtmek için burada da önemli.
+        negotiatingRef.current[targetUid] = false;
+      }
     };
     
     if (localStreamRef.current) {
@@ -341,7 +344,7 @@ export default function ChatRoomPage() {
     console.log(`[WebRTC] Received signal from ${fromUid}:`, signal.type);
     let pc = peerConnectionsRef.current[fromUid];
 
-    if (!pc && (signal.type === 'offer')) { // Sadece offer için yeni PC oluştur, answer/candidate için değil
+    if (!pc && (signal.type === 'offer')) {
         console.log(`[WebRTC] No PC for ${fromUid}, creating one as non-initiator for offer.`);
         pc = createPeerConnection(fromUid, false);
     } else if (!pc) {
@@ -352,25 +355,26 @@ export default function ChatRoomPage() {
     try {
         if (signal.type === 'offer') {
             if (pc.signalingState !== "stable" && pc.signalingState !== "have-remote-offer") {
-                // Gerekirse bir uyarı logu eklenebilir, ama devam ediyoruz.
+                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might lead to issues if not handled carefully (e.g., glare).`);
             }
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             sendSignalMessage(fromUid, { type: 'answer', sdp: pc.localDescription!.sdp });
-            negotiatingRef.current[fromUid] = false; // Offer'a cevap verildi, bu yöndeki anlaşma bitti sayılabilir
+            negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'answer') {
             if (pc.signalingState !== 'have-local-offer') {
-                // console.warn(`[WebRTC] Received answer from ${fromUid} but signaling state is ${pc.signalingState}. Expected 'have-local-offer'.`);
+                 console.warn(`[WebRTC] Received answer from ${fromUid} but signaling state is ${pc.signalingState}. Expected 'have-local-offer'.`);
             }
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
-            negotiatingRef.current[fromUid] = false; // Cevap alındı, anlaşma tamamlandı
+            negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'candidate') {
             if (pc.remoteDescription && signal.candidate) { 
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
                 } catch (e) {
-                     console.warn(`[WebRTC] Error adding ICE candidate for ${fromUid}:`, e);
+                     console.warn(`[WebRTC] Error adding ICE candidate for ${fromUid}:`, e, "Candidate:", signal.candidate);
+                     // Bu hatayı toast ile göstermek yerine konsolda tutmak daha iyi olabilir, çok sık gelebilir.
                 }
             } else {
                 console.warn(`[WebRTC] Received candidate from ${fromUid} but remote description not set or candidate is null. Buffering or ignoring.`);
@@ -378,105 +382,56 @@ export default function ChatRoomPage() {
         }
     } catch (error) {
         console.error(`[WebRTC] Error handling signal from ${fromUid} (${signal.type}):`, error);
-        toast({ title: "WebRTC Sinyal Hatası", description: `Sinyal işlenirken hata (${fromUid}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
-        negotiatingRef.current[fromUid] = false; // Hata durumunda bayrağı sıfırla
+        toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
+        negotiatingRef.current[fromUid] = false;
     }
   }, [createPeerConnection, sendSignalMessage, toast]);
 
-  // Firestore Signal Listener
   useEffect(() => {
     if (!currentUser || !roomId) {
         return;
     }
-
     let unsubscribe: Unsubscribe | null = null;
-
     const setupListener = () => {
-        if (unsubscribe) unsubscribe(); // Önceki dinleyiciyi temizle
-
+        if (unsubscribe) unsubscribe();
         console.log(`[WebRTC] Setting up signal listener for ${currentUser.uid} in room ${roomId}. Last processed timestamp:`, lastProcessedSignalTimestampRef.current);
-
         let q = query(
-        collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`),
-        orderBy("signalTimestamp", "asc")
+          collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`),
+          orderBy("signalTimestamp", "asc")
         );
-
         if (lastProcessedSignalTimestampRef.current) {
-        q = query(q, where("signalTimestamp", ">", lastProcessedSignalTimestampRef.current));
+          q = query(q, where("signalTimestamp", ">", lastProcessedSignalTimestampRef.current));
         }
-
         unsubscribe = onSnapshot(q, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
+          snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
-            const signalData = change.doc.data() as WebRTCSignal;
-            // Sinyalin parent dökümanının ID'si, sinyali gönderen kullanıcının UID'si olmalı.
-            // Ancak Firestore yapısında signals/{currentUser.uid}/signals/{signalId}
-            // olduğu için parent.parent!.id ile karşı tarafın UID'sini alamayız.
-            // Sinyalin KİMDEN geldiği Firestore'da açıkça belirtilmiyorsa bu sorun yaratır.
-            // Şu anki yapıda sinyal, alıcının UID'si altındaki bir koleksiyona yazılıyor.
-            // Bu yüzden `fromUid`'yi bu şekilde alamayız.
-            // Bu mantığı düzeltmek için sinyali gönderirken "fromUid" alanı eklemek daha iyi olur.
-            // Şimdilik, bu yapının sinyalin kimden geldiğini belirtmediğini varsayarak devam edeceğiz
-            // ve bu durumun düzeltilmesi gerektiğini not alacağız.
-            // Geçici olarak, sinyalin geldiği "yol" üzerinden değil, sinyalin içeriğinden `fromUid` bekleyeceğiz.
-            // VEYA sinyal yolunu değiştirerek /chatRooms/{roomId}/signals/{signalDocId} yapıp,
-            // signalDoc içinde toUid, fromUid, data tutulabilir.
-            // Mevcut sinyal yapısı: /chatRooms/{roomId}/webrtcSignals/{toUid}/signals/{signalId}
-            // Bu durumda, kimden geldiğini bilemeyiz. Bu büyük bir sorun.
-            // **GEÇİCİ DÜZELTME: SİNYALİN KİMDEN GELDİĞİNİ BİLEMEDİĞİMİZ İÇİN BU KISIM DÜZGÜN ÇALIŞMAZ.**
-            // **Sinyal gönderirken `fromUid` eklenmeli veya sinyal yapısı değiştirilmeli.**
-            // Bu kısım, sinyallerin tüm katılımcılara yayınlandığı ve her istemcinin kendine ait olmayanları
-            // işlediği bir modelde daha mantıklı olurdu.
-            // Şu anki Firestore yapısı gereği, `signals` koleksiyonu `/webrtcSignals/${currentUser.uid}/` altında.
-            // Bu, currentUser'a gönderilen sinyalleri içerir. `fromUid`'nin sinyal verisinin içinde olması GEREKİR.
-            // Onu eklediğimizi varsayıyorum.
-
-            // Eğer signalData içinde fromUid yoksa, bu mantık çöker.
-            // Bunu sendSignalMessage içinde düzeltmemiz gerekebilir.
-            // ŞİMDİLİK, fromUid'yi sinyal verisinden almaya çalışalım.
-            // const fromUid = signalData.from; // Eğer sinyal verisinde böyle bir alan varsa.
-            // Bu demo için, sinyalin geldiği döküman ID'sinin parent'ının parent'ının ID'sinin
-            // fromUid olduğunu varsaymak YANLIŞ olur, çünkü bu toUid'dir.
-            // Bu, PeerJS'e geçerken basitleşecek bir konuydu ama manuelde düzgün ele alınmalı.
-
-            // Şu anki Firestore kuralına göre sinyaller `toUid` klasörüne yazılıyor.
-            // `fromUid`'yi sinyal verisine eklemediysek, bu mantık eksik.
-            // `sendSignalMessage` içine `from: currentUser.uid` eklememiz GEREKİR.
-            // Bunu `sendSignalMessage` içinde eklemiş olalım.
-            
-            const senderOfSignal = (signalData as any).from; // Sinyal verisinde 'from' alanı olduğunu varsayıyoruz.
-            if (!senderOfSignal) {
-                console.warn("[WebRTC] Signal received without a 'from' field. Cannot process.", signalData);
-                return;
+              const signalData = change.doc.data() as WebRTCSignal;
+              const senderOfSignal = signalData.from; 
+              if (!senderOfSignal) {
+                  console.warn("[WebRTC] Signal received without a 'from' field. Cannot process.", signalData);
+                  return;
+              }
+              const signalId = change.doc.id;
+              if (senderOfSignal === currentUser.uid) {
+                  console.log(`[WebRTC] Ignoring own signal: ${signalId}`);
+                  return;
+              }
+              if (!isCurrentUserInVoiceChatRef.current) {
+                  console.log(`[WebRTC] User not in voice chat, ignoring signal from ${senderOfSignal}`);
+                  return;
+              }
+              console.log(`[WebRTC] New signal doc received: ${signalId} from: ${senderOfSignal}, type: ${signalData.type}`);
+              handleIncomingSignal(signalData, senderOfSignal);
+              if (signalData.signalTimestamp) {
+                  lastProcessedSignalTimestampRef.current = signalData.signalTimestamp;
+              }
             }
-
-            const signalId = change.doc.id;
-
-            if (senderOfSignal === currentUser.uid) { // Kendi sinyallerimizi işleme
-                console.log(`[WebRTC] Ignoring own signal: ${signalId}`);
-                return;
-            }
-            
-            // Kullanıcı sesli sohbette değilse sinyalleri işleme
-            if (!isCurrentUserInVoiceChatRef.current) {
-                console.log(`[WebRTC] User not in voice chat, ignoring signal from ${senderOfSignal}`);
-                return;
-            }
-
-            console.log(`[WebRTC] New signal doc received: ${signalId} from: ${senderOfSignal}, type: ${signalData.type}`);
-            handleIncomingSignal(signalData, senderOfSignal);
-            if (signalData.signalTimestamp) {
-                lastProcessedSignalTimestampRef.current = signalData.signalTimestamp;
-            }
-            }
-        });
+          });
         }, (error) => {
-        console.error("[WebRTC] Error in signal listener:", error);
-        toast({ title: "Sinyal Dinleme Hatası", description: "Diğer kullanıcılardan sinyal alınırken hata.", variant: "destructive" });
+          console.error("[WebRTC] Error in signal listener:", error);
+          toast({ title: "Sinyal Dinleme Hatası", description: "Diğer kullanıcılardan sinyal alınırken hata.", variant: "destructive" });
         });
-    }
-    
-    // Sadece kullanıcı sesli sohbetteyse dinleyiciyi kur.
+    };
     if (isCurrentUserInVoiceChatRef.current) {
         setupListener();
     } else {
@@ -486,14 +441,13 @@ export default function ChatRoomPage() {
             unsubscribe = null;
         }
     }
-
     return () => {
       if (unsubscribe) {
         console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} on component unmount or re-run.`);
         unsubscribe();
       }
     };
-  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef.current]); // isCurrentUserInVoiceChatRef.current eklendi
+  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef.current]);
 
 
   const handleJoinVoiceChat = useCallback(async () => {
@@ -532,7 +486,9 @@ export default function ChatRoomPage() {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          createPeerConnection(participantData.id, true); 
+          // initiatePeerConnection(participantData.id, true); // Eski metod, createPeerConnection ve onnegotiationneeded'e güvenir
+          const pc = createPeerConnection(participantData.id, true); // PC oluşturulur, track'ler eklenir
+          // onnegotiationneeded tetiklenmeli ve offer göndermeli.
         }
       });
 
@@ -570,9 +526,6 @@ export default function ChatRoomPage() {
     Object.keys(peerConnectionsRef.current).forEach(peerUid => {
       cleanupPeerConnection(peerUid);
     });
-    // peerConnectionsRef.current = {}; // cleanupPeerConnection içinde siliniyor zaten
-    // remoteStreamsRef.current = {}; // cleanupPeerConnection içinde siliniyor zaten
-    // setActiveRemoteStreams({}); // cleanupPeerConnection içinde siliniyor zaten
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -580,7 +533,7 @@ export default function ChatRoomPage() {
       console.log("[WebRTC] Local stream stopped.");
     }
 
-    setIsCurrentUserInVoiceChat(false); // Bu, sinyal dinleyicisinin de devre dışı kalmasını tetikler
+    setIsCurrentUserInVoiceChat(false);
 
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -631,7 +584,8 @@ export default function ChatRoomPage() {
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                     console.log(`[WebRTC] New participant ${p.displayName || p.id} detected. Initiating connection.`);
-                    createPeerConnection(p.id, true);
+                    const newPc = createPeerConnection(p.id, true); // PC oluşturulur, track'ler eklenir
+                    // onnegotiationneeded tetiklenip offer göndermeli
                 }
             });
             Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
@@ -1187,4 +1141,4 @@ export default function ChatRoomPage() {
   );
 }
 
-        
+    
