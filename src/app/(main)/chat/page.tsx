@@ -53,10 +53,10 @@ interface GameSettings {
   questionIntervalSeconds: number;
 }
 
-const ROOM_CREATION_COST = 1;
+const ROOM_CREATION_COST = 1; // Güncellendi: 1 elmas
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
-const PREMIUM_USER_ROOM_CAPACITY = 50;
+const PREMIUM_USER_ROOM_CAPACITY = 50; // Premium kullanıcılar için kapasite
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
