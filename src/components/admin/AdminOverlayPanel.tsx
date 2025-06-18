@@ -19,7 +19,6 @@ export default function AdminOverlayPanel() {
   const [activeTab, setActiveTab] = useState("dashboard");
 
   useEffect(() => {
-    // Prevent body scroll when overlay is open
     if (isAdminPanelOpen) {
       document.body.style.overflow = 'hidden';
     } else {
@@ -59,7 +58,8 @@ export default function AdminOverlayPanel() {
             <div className="p-1.5 bg-primary/10 rounded-md">
               <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             </div>
-            <h2 className="text-lg sm:text-xl font-semibold text-primary-foreground/90">Yönetim Paneli</h2>
+            {/* Admin Paneli başlık rengi düzeltildi */}
+            <h2 className="text-lg sm:text-xl font-semibold text-foreground">Yönetim Paneli</h2>
           </div>
           <Button variant="ghost" size="icon" onClick={() => setIsAdminPanelOpen(false)} className="text-muted-foreground hover:text-foreground h-8 w-8 sm:h-9 sm:w-9">
             <X className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -71,7 +71,7 @@ export default function AdminOverlayPanel() {
           <Tabs defaultValue="dashboard" value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col sm:flex-row gap-2 sm:gap-3">
             <TabsList className={cn(
                 "flex flex-row sm:flex-col sm:h-full justify-start p-1.5 sm:p-2 bg-muted/50 rounded-md sm:w-48 md:w-56 shrink-0",
-                "overflow-x-auto sm:overflow-x-hidden sm:overflow-y-auto" // Yatayda scroll mobilde, dikeyde PC'de
+                "overflow-x-auto sm:overflow-x-hidden sm:overflow-y-auto"
             )}>
               {adminSections.map(section => (
                 <TabsTrigger 
@@ -90,7 +90,7 @@ export default function AdminOverlayPanel() {
                 <TabsContent 
                   key={section.value} 
                   value={section.value} 
-                  className="flex-1 h-full overflow-auto focus-visible:ring-0 focus-visible:ring-offset-0 bg-background/40 p-2.5 sm:p-4 rounded-md border border-border/30 mt-0" // mt-0 eklendi
+                  className="flex-1 h-full overflow-auto focus-visible:ring-0 focus-visible:ring-offset-0 bg-background/40 p-2.5 sm:p-4 rounded-md border border-border/30 mt-0"
                 >
                   {activeTab === section.value && section.component}
                 </TabsContent>

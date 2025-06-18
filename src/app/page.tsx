@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, XCircle } from "lucide-react";
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target } from "lucide-react"; // XCircle kaldırıldı, Target eklendi
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -41,7 +41,7 @@ const cardVariants = {
   }
 };
 
-const itemVariants = { // Welcome card content animation
+const itemVariants = { 
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
 };
@@ -67,7 +67,7 @@ const feedItemEntryVariants = {
     opacity: 1,
     y: 0,
     transition: {
-      delay: i * 0.07, // Stagger delay for each item
+      delay: i * 0.07, 
       duration: 0.4,
       ease: "easeOut",
     },
@@ -113,7 +113,6 @@ export default function HomePage() {
     const handleScroll = () => {
       if (window.scrollY > SCROLL_HIDE_THRESHOLD && isWelcomeCardVisible) {
         setIsWelcomeCardVisible(false);
-        // sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true'); // Optionally persist scroll-hide too
       }
     };
 
@@ -130,7 +129,6 @@ export default function HomePage() {
     }
   }, [currentUser, authLoading, router]);
 
-  // Fetch all posts
   useEffect(() => {
     setLoadingPosts(true);
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
@@ -148,7 +146,6 @@ export default function HomePage() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch active rooms
   useEffect(() => {
     setLoadingRooms(true);
     const now = Timestamp.now();
@@ -183,7 +180,6 @@ export default function HomePage() {
     return () => unsubscribeRooms();
   }, []);
 
-  // Fetch friends if feed is set to "friends only"
   useEffect(() => {
     if (currentUser && userData?.privacySettings?.feedShowsEveryone === false) {
       setLoadingFriends(true);
@@ -204,7 +200,6 @@ export default function HomePage() {
   }, [currentUser, userData?.privacySettings?.feedShowsEveryone]);
 
 
-  // Combine and filter feed items
   useEffect(() => {
     const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true; 
 
@@ -264,61 +259,47 @@ export default function HomePage() {
                 animate="visible"
                 exit="exit"
               >
-                <Card className="shadow-md bg-gradient-to-br from-primary/15 via-accent/5 to-primary/15 border-primary/20 overflow-hidden rounded-xl relative">
-                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-1 right-1 h-7 w-7 text-muted-foreground/70 hover:text-foreground hover:bg-transparent/10 z-10"
-                    onClick={() => {
-                      setIsWelcomeCardVisible(false);
-                      if (typeof window !== 'undefined') {
-                        sessionStorage.setItem(WELCOME_CARD_SESSION_KEY, 'true');
-                      }
-                    }}
-                    aria-label="Hoş geldin kartını kapat"
-                  >
-                    <XCircle className="h-4 w-4"/>
-                  </Button>
-                  <CardHeader className="p-3 sm:p-4">
+                <Card className="shadow-lg bg-card border border-border/30 rounded-xl overflow-hidden">
+                  <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-primary/80 to-accent/80 dark:from-primary/70 dark:to-accent/70">
                     <motion.div
-                      className="flex justify-between items-start mb-1 sm:mb-2"
+                      className="flex items-center gap-3"
                       variants={itemVariants}
                     >
+                      <Target className="h-7 w-7 text-primary-foreground" />
                       <div>
-                        <CardTitle className="text-md sm:text-lg font-semibold text-primary-foreground/90">
-                          Hoş Geldin, {greetingName}!
+                        <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground">
+                          Merhaba, {greetingName}!
                         </CardTitle>
-                        <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                          Yeni bağlantılar kur veya sohbetlere katıl.
+                        <CardDescription className="text-xs sm:text-sm text-primary-foreground/80 mt-0.5">
+                          Topluluğa hoş geldin. Yeni keşifler seni bekliyor!
                         </CardDescription>
                       </div>
-                      <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-accent opacity-70" />
                     </motion.div>
                   </CardHeader>
-                  <CardContent className="p-3 sm:p-4 pt-0">
+                  <CardContent className="p-4 sm:p-5">
                     <motion.div
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 sm:mb-2.5"
+                      className="flex items-center gap-2 text-sm text-muted-foreground mb-3 sm:mb-4"
                       variants={itemVariants}
                     >
-                      <Gem className="h-3.5 w-3.5 text-yellow-400" />
-                      <span className="font-medium">Elmasların: {userData?.diamonds ?? 0}</span>
+                      <Gem className="h-4 w-4 text-yellow-500 dark:text-yellow-400" />
+                      <span className="font-medium text-foreground">Elmasların: {userData?.diamonds ?? 0}</span>
                     </motion.div>
                     <motion.div
-                      className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2"
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3"
                       variants={buttonsContainerVariants}
                     >
                       <motion.div variants={buttonItemVariants}>
-                        <Button asChild size="sm" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-md py-1.5 sm:py-2 text-xs">
+                        <Button asChild size="sm" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-md py-2 text-xs sm:text-sm">
                           <Link href="/chat">
-                            <Compass className="mr-1.5 h-3.5 sm:h-4 sm:w-4" />
-                            Odalara Göz At
+                            <Compass className="mr-1.5 h-4 sm:h-4" />
+                            Odaları Keşfet
                           </Link>
                         </Button>
                       </motion.div>
                       <motion.div variants={buttonItemVariants}>
-                        <Button asChild size="sm" variant="outline" className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-1.5 sm:py-2 text-xs">
+                        <Button asChild size="sm" variant="outline" className="w-full border-primary/60 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-2 text-xs sm:text-sm">
                           <Link href="/chat">
-                            <PlusCircle className="mr-1.5 h-3.5 sm:h-4 sm:w-4" />
+                            <PlusCircle className="mr-1.5 h-4 sm:h-4" />
                             Yeni Oda Oluştur
                           </Link>
                         </Button>
@@ -353,7 +334,7 @@ export default function HomePage() {
                 <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
                     <CardHeader className="pb-2">
                         <Users className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
-                        <CardTitle className="text-xl sm:text-2xl font-semibold text-primary-foreground/90">
+                        <CardTitle className="text-xl sm:text-2xl font-semibold text-foreground">
                         {(userData?.privacySettings?.feedShowsEveryone === false) 
                             ? "Arkadaş Akışın Henüz Boş!" 
                             : "Akışta Henüz Bir Şey Yok!"}

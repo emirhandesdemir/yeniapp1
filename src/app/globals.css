@@ -37,25 +37,25 @@ textarea {
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 215 80% 50%; /* Vibrant Blue - Was 221 83% 53% */
+    --primary: 215 80% 50%; /* Vibrant Blue */
     --primary-foreground: 0 0% 100%; /* White for high contrast */
     --secondary: 220 25% 92%; /* Lighter, subtly saturated blue-gray */
     --secondary-foreground: 220 25% 25%; /* Darker blue-gray text */
     --muted: 240 5% 96%;
     --muted-foreground: 240 4% 46%;
-    --accent: 30 85% 52%; /* Vibrant Orange - Was 160 70% 45% (Teal/Green) */
-    --accent-foreground: 0 0% 100%; /* White for high contrast */
+    --accent: 0 75% 55%; /* Vibrant Red (Replaced Orange) */
+    --accent-foreground: 0 0% 100%; /* White for high contrast on Red */
     --destructive: 0 80% 60%; /* Vibrant Red */
     --destructive-foreground: 0 0% 98%;
     --border: 240 6% 90%;
     --input: 240 6% 90%;
-    --ring: 215 80% 55%; /* Matches new primary - Was 221 83% 53% */
+    --ring: 215 80% 55%; /* Matches new primary */
 
     --radius: 1rem;
 
     /* Vibrant Chart colors for light theme */
-    --chart-1: hsl(var(--primary)); /* Uses new primary: Vibrant Blue */
-    --chart-2: hsl(var(--accent));  /* Uses new accent: Vibrant Orange */
+    --chart-1: hsl(var(--primary));
+    --chart-2: hsl(var(--accent));  /* Uses new accent: Vibrant Red */
     --chart-3: 330 75% 60%; /* Vibrant Pink */
     --chart-4: 190 70% 50%;  /* Vibrant Cyan/Teal */
     --chart-5: 270 75% 60%; /* Vibrant Purple */
@@ -71,31 +71,31 @@ textarea {
   }
 
   .dark {
-    --background: 240 6% 14%; /* Brighter Dark Background - Was 240 10% 10% */
+    --background: 240 6% 14%; /* Brighter Dark Background */
     --foreground: 0 0% 98%;
-    --card: 240 5% 18%; /* Brighter Dark Card - Was 240 8% 15% */
+    --card: 240 5% 18%; /* Brighter Dark Card */
     --card-foreground: 0 0% 98%;
-    --popover: 240 5% 18%; /* Was 240 8% 15% */
+    --popover: 240 5% 18%;
     --popover-foreground: 0 0% 98%;
-    --primary: 215 85% 60%; /* Vibrant Blue (darker theme variant) - Was 221 90% 65% */
+    --primary: 215 85% 60%; /* Vibrant Blue (darker theme variant) */
     --primary-foreground: 215 20% 10%; /* Darker blue for text on bright blue button */
     --secondary: 220 15% 25%;
     --secondary-foreground: 220 15% 85%;
-    --muted: 240 4% 19%; /* Brighter Dark Muted - Was 240 4% 16% */
+    --muted: 240 4% 19%; /* Brighter Dark Muted */
     --muted-foreground: 240 5% 65%;
-    --accent: 30 90% 55%; /* Vibrant Orange (darker theme variant) - Was 160 75% 55% (Teal/Green) */
-    --accent-foreground: 30 30% 10%; /* Darker orange for text on orange button */
+    --accent: 0 80% 60%; /* Brighter Vibrant Red (Replaced Orange) */
+    --accent-foreground: 0 0% 100%; /* White for high contrast on Red */
     --destructive: 0 75% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 22%; /* Slightly more visible border - Was 240 4% 20% */
-    --input: 240 4% 22%;  /* Slightly more visible input - Was 240 4% 20% */
-    --ring: 215 85% 65%; /* Matches new primary - Was 221 90% 70% */
+    --border: 240 4% 22%; /* Slightly more visible border */
+    --input: 240 4% 22%;  /* Slightly more visible input */
+    --ring: 215 85% 65%; /* Matches new primary */
 
     --radius: 1rem;
 
     /* Vibrant Chart colors for dark theme */
-    --chart-1: hsl(var(--primary)); /* Uses new primary: Vibrant Blue */
-    --chart-2: hsl(var(--accent));  /* Uses new accent: Vibrant Orange */
+    --chart-1: hsl(var(--primary));
+    --chart-2: hsl(var(--accent));  /* Uses new accent: Vibrant Red */
     --chart-3: 330 80% 65%; /* Brighter Vibrant Pink */
     --chart-4: 190 75% 55%;  /* Brighter Vibrant Cyan/Teal */
     --chart-5: 270 80% 65%; /* Brighter Vibrant Purple */
@@ -168,6 +168,3 @@ textarea {
   transform: translateY(-20px);
   transition: opacity 300ms, transform 300ms;
 }
-
-
-    

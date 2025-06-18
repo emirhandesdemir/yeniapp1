@@ -3,11 +3,11 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, Mic } from "lucide-react"; // Mic eklendi
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, Mic, SearchCode } from "lucide-react"; // SearchCode eklendi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore"; // limit ve getDocs eklendi
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
@@ -27,7 +27,7 @@ import { addMinutes, isPast, addSeconds } from 'date-fns';
 import { Badge } from "@/components/ui/badge";
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Avatar importları eklendi
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface ChatRoomVoiceParticipantPreview {
   uid: string;
@@ -45,10 +45,10 @@ interface ChatRoom {
   expiresAt: Timestamp;
   participantCount?: number;
   maxParticipants: number;
-  voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[]; // Yeni alan
+  voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[];
 }
 
-interface GameSettings { // Oyun ayarları için interface
+interface GameSettings {
   isGameEnabled: boolean;
   questionIntervalSeconds: number;
 }
@@ -56,10 +56,10 @@ interface GameSettings { // Oyun ayarları için interface
 const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
-const MAX_VOICE_PREVIEWS_ON_CARD = 4; // Kartta gösterilecek maksimum avatar sayısı
+const MAX_VOICE_PREVIEWS_ON_CARD = 4;
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
-const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1';
+const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk'; // Anahtar güncellendi
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
@@ -95,7 +95,7 @@ export default function ChatRoomsPage() {
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
   const [now, setNow] = useState(new Date()); 
-  const [gameSettings, setGameSettings] = useState<GameSettings | null>(null); // Oyun ayarları state'i
+  const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
 
   const [isRoomsInfoCardVisible, setIsRoomsInfoCardVisible] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -127,7 +127,6 @@ export default function ChatRoomsPage() {
     };
   }, [isRoomsInfoCardVisible]);
 
-  // Oyun ayarlarını çek
   useEffect(() => {
     const fetchGameSettings = async () => {
       try {
@@ -140,7 +139,7 @@ export default function ChatRoomsPage() {
         }
       } catch (error) {
         console.error("Error fetching game settings for room creation:", error);
-        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); // Fallback
+        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 });
       }
     };
     fetchGameSettings();
@@ -163,7 +162,6 @@ export default function ChatRoomsPage() {
         const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
           
-          // Fetch voice participant previews
           let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
           try {
             const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
@@ -258,13 +256,12 @@ export default function ChatRoomsPage() {
       participantCount: 0,
       voiceParticipantCount: 0,
       maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
-      gameInitialized: false, // Varsayılan olarak false
+      gameInitialized: false, 
       currentGameQuestionId: null,
       nextGameQuestionTimestamp: null,
       currentGameAnswerDeadline: null,
     };
 
-    // Eğer genel oyun ayarları etkinse, yeni oda için oyun alanlarını başlat
     if (gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && gameSettings.questionIntervalSeconds >= 30) {
       roomDataToCreate.gameInitialized = true;
       roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds));
@@ -381,24 +378,29 @@ export default function ChatRoomsPage() {
             animate="visible"
             exit="exit"
           >
-            <Card className="shadow-md bg-gradient-to-br from-primary/10 via-card to-accent/5 dark:from-primary/15 dark:via-card dark:to-accent/10 border-primary/15 overflow-hidden rounded-xl">
-              <CardHeader className="p-4 pt-3 pb-2">
+            <Card className="shadow-lg bg-card border border-border/30 rounded-xl overflow-hidden">
+              <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-secondary/70 to-muted/70 dark:from-secondary/50 dark:to-muted/50">
                 <motion.div
-                  className="flex justify-between items-start mb-2"
+                  className="flex items-center gap-3"
+                  variants={itemVariants}
                 >
-                  <div className="flex items-center gap-2">
-                    <Compass className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-md font-semibold text-primary-foreground/90">
+                  <SearchCode className="h-7 w-7 text-primary" />
+                  <div>
+                    <CardTitle className="text-lg sm:text-xl font-semibold text-foreground">
                       Sohbet Odalarını Keşfet!
                     </CardTitle>
+                    <CardDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                      Farklı konularda sohbetlere katıl, yeni insanlarla tanış veya kendi odanı oluşturup arkadaşlarını davet et. Her oda yeni bir macera!
+                    </CardDescription>
                   </div>
                 </motion.div>
               </CardHeader>
-              <CardContent className="p-4 pt-0">
+              <CardContent className="p-4 sm:p-5 pt-3">
                 <motion.p
-                  className="text-xs text-muted-foreground"
+                  className="text-sm text-muted-foreground"
+                  variants={itemVariants}
                 >
-                  Farklı konularda sohbetlere katıl, yeni insanlarla tanış veya kendi odanı oluşturup arkadaşlarını davet et. Her oda yeni bir macera!
+                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı {ROOM_CREATION_COST} elmas karşılığında oluşturabilirsiniz.
                 </motion.p>
               </CardContent>
             </Card>
@@ -408,7 +410,7 @@ export default function ChatRoomsPage() {
 
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-headline font-semibold">Sohbet Odaları</h1>
+          <h1 className="text-3xl font-headline font-semibold text-foreground">Sohbet Odaları</h1>
           <p className="text-muted-foreground">İlgi alanlarınıza uygun odalara katılın veya kendi odanızı oluşturun.</p>
         </div>
         <Dialog open={isCreateModalOpen} onOpenChange={(isOpen) => {
@@ -464,12 +466,12 @@ export default function ChatRoomsPage() {
                 </div>
 
                 {!hasEnoughDiamonds && currentUser && (
-                  <Card className="mt-4 border-orange-500/50 bg-orange-500/10 p-4">
+                  <Card className="mt-4 border-destructive/50 bg-destructive/10 p-4">
                     <CardHeader className="p-0 mb-2">
-                      <CardTitle className="text-base text-orange-700 dark:text-orange-400">Elmasların Yetersiz!</CardTitle>
+                      <CardTitle className="text-base text-destructive-foreground dark:text-destructive">Elmasların Yetersiz!</CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
-                      <p className="text-xs text-orange-600 dark:text-orange-300 mb-3">
+                      <p className="text-xs text-destructive-foreground/80 dark:text-destructive/90 mb-3">
                         Oda oluşturmak için {ROOM_CREATION_COST} elmasa ihtiyacın var. Sohbet odalarındaki oyunlara katılarak elmas kazanabilir veya aşağıdaki seçenekleri değerlendirebilirsin:
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2">
@@ -518,7 +520,7 @@ export default function ChatRoomsPage() {
         <Card className="col-span-full text-center py-10 sm:py-16 bg-card border border-border/20 rounded-xl shadow-lg">
             <CardHeader>
                 <MessageSquare className="mx-auto h-16 w-16 sm:h-20 sm:w-20 text-primary/70 mb-4" />
-                <CardTitle className="text-2xl sm:text-3xl font-semibold text-primary-foreground/90">Vuhu! Yeni Ufuklar Sizi Bekliyor!</CardTitle>
+                <CardTitle className="text-2xl sm:text-3xl font-semibold text-foreground">Vuhu! Yeni Ufuklar Sizi Bekliyor!</CardTitle>
             </CardHeader>
             <CardContent>
                 <p className="text-muted-foreground text-base sm:text-lg max-w-md mx-auto">
@@ -544,11 +546,11 @@ export default function ChatRoomsPage() {
           {chatRooms.map((room) => (
             <Card
               key={room.id}
-              className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl bg-card border border-border/20 hover:border-primary/40 dark:border-border/10 dark:hover:border-primary/50 group"
+              className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl bg-card border border-border/30 hover:border-primary/50 dark:border-border/20 dark:hover:border-primary/60 group"
             >
               <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
                 <CardTitle
-                  className="text-lg sm:text-xl font-bold text-primary-foreground/90 group-hover:text-primary transition-colors truncate pr-10"
+                  className="text-lg sm:text-xl font-bold text-foreground group-hover:text-primary transition-colors truncate pr-10"
                   title={room.name}
                 >
                   {room.name}
@@ -586,9 +588,8 @@ export default function ChatRoomsPage() {
                     <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
                   </Badge>
                 </div>
-                 {/* Sesli sohbet katılımcı önizlemeleri */}
                 {room.voiceParticipantPreviews && room.voiceParticipantPreviews.length > 0 && (
-                  <div className="mt-2.5 pt-2.5 border-t border-border/50">
+                  <div className="mt-2.5 pt-2.5 border-t border-border/20">
                     <div className="flex items-center gap-1.5 mb-1.5">
                         <Mic className="h-3.5 w-3.5 text-green-500"/>
                         <span className="text-xs font-medium text-muted-foreground">Sesli Sohbette:</span>
@@ -607,7 +608,7 @@ export default function ChatRoomsPage() {
                   Oluşturan: <span className="font-medium text-muted-foreground/90">{room.creatorName}</span>
                 </p>
               </CardContent>
-              <CardFooter className="p-3 sm:p-4 border-t bg-secondary/20 dark:bg-card/40 mt-auto">
+              <CardFooter className="p-3 sm:p-4 border-t bg-muted/20 dark:bg-card/30 mt-auto">
                 <Button
                   asChild
                   className="w-full bg-primary hover:bg-primary/80 text-primary-foreground text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105"
