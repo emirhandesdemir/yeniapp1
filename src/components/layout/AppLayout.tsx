@@ -56,7 +56,7 @@ interface FriendRequestForPopover {
 }
 
 interface BottomNavItemType {
-  href: string;
+  href: (uid?: string) => string; // href can now be a function
   label: string;
   icon: React.ElementType;
   activeIcon?: React.ElementType;
@@ -70,15 +70,16 @@ interface IncomingCallInfo {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
-  { href: '/chat', label: 'Odalar', icon: MessageSquare, activeIcon: MessageSquare },
-  { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
+  { href: () => '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
+  { href: () => '/chat', label: 'Odalar', icon: MessageSquare, activeIcon: MessageSquare },
+  { href: (uid) => uid ? `/profile/${uid}` : '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
 
-function BottomNavItem({ item, isActive }: { item: BottomNavItemType, isActive: boolean }) {
+function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItemType, isActive: boolean, currentUserUid?: string }) {
   const IconComponent = isActive && item.activeIcon ? item.activeIcon : item.icon;
+  const finalHref = item.href(currentUserUid);
   return (
-    <Link href={item.href} className="flex flex-col items-center justify-center gap-1 flex-1 px-2 py-2.5">
+    <Link href={finalHref} className="flex flex-col items-center justify-center gap-1 flex-1 px-2 py-2.5">
       <IconComponent className={cn("h-6 w-6", isActive ? "text-primary" : "text-muted-foreground")} />
       <span className={cn("text-xs", isActive ? "text-primary font-medium" : "text-muted-foreground")}>{item.label}</span>
     </Link>
@@ -510,8 +511,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const mainContentClasses = cn(
     "flex-1 overflow-auto bg-background",
     isChatPage
-      ? "p-0" // No padding for chat pages
-      : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]" // Standard padding for others
+      ? "p-0" 
+      : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]"
   );
 
   return (
@@ -660,7 +661,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {!isChatPage && isClient && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-top z-30">
           {bottomNavItems.map((item) => (
-            <BottomNavItem key={item.href} item={item} isActive={pathname === item.href} />
+            <BottomNavItem 
+                key={item.label} 
+                item={item} 
+                isActive={item.label === 'Profil' ? pathname.startsWith('/profile') : pathname === item.href(currentUser?.uid)} 
+                currentUserUid={currentUser?.uid}
+            />
           ))}
         </nav>
       )}

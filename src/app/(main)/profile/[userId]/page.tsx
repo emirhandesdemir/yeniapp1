@@ -7,9 +7,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star } from "lucide-react"; // Star eklendi
-import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings } from "lucide-react";
+import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import {
@@ -20,7 +20,7 @@ import {
   where,
   orderBy,
   limit,
-  onSnapshot, 
+  onSnapshot,
   addDoc,
   deleteDoc as deleteFirestoreDoc,
   serverTimestamp,
@@ -73,7 +73,6 @@ export default function UserProfilePage() {
             const docSnap = await getDoc(userDocRef);
             if (docSnap.exists()) {
                 const fetchedUser = { uid: docSnap.id, ...docSnap.data() } as UserData;
-                // isPremium alanını dinamik olarak ayarla
                 fetchedUser.isPremium = checkUserPremium(fetchedUser);
                 setProfileUser(fetchedUser);
                 document.title = `${fetchedUser.displayName || 'Kullanıcı'} Profili - HiweWalk`;
@@ -221,7 +220,7 @@ export default function UserProfilePage() {
         fromUserId: currentUser.uid,
         fromUsername: currentUserData.displayName,
         fromAvatarUrl: currentUserData.photoURL,
-        fromUserIsPremium: currentUserIsPremium, // Eklendi
+        fromUserIsPremium: currentUserIsPremium,
         toUserId: profileUser.uid,
         toUsername: profileUser.displayName,
         toAvatarUrl: profileUser.photoURL,
@@ -341,35 +340,34 @@ export default function UserProfilePage() {
     );
   }
   
-  const renderActionButton = () => {
-    if (isOwnProfile) return null;
-    if (!currentUser || !currentUserData) return <Button disabled>Giriş Yapın</Button>;
+  const renderFriendshipActionButton = () => {
+    if (isOwnProfile || !currentUser || !currentUserData) return null;
 
     switch (friendshipStatus) {
       case "friends":
         return (
-          <div className="flex gap-2">
-            <Button onClick={handleDmAction} disabled={performingAction} className="bg-green-500 hover:bg-green-600 text-white">
+          <div className="flex flex-col sm:flex-row gap-2 w-full">
+            <Button onClick={handleDmAction} disabled={performingAction} className="bg-green-500 hover:bg-green-600 text-white flex-1">
               <MessageSquare className="mr-2 h-4 w-4" /> DM Gönder
             </Button>
-            <Button variant="outline" onClick={handleRemoveFriend} disabled={performingAction} className="text-destructive border-destructive hover:bg-destructive/10">
+            <Button variant="outline" onClick={handleRemoveFriend} disabled={performingAction} className="text-destructive border-destructive hover:bg-destructive/10 flex-1">
               <Trash2 className="mr-2 h-4 w-4" /> Arkadaşlıktan Çıkar
             </Button>
           </div>
         );
       case "request_sent":
-        return <Button variant="outline" onClick={handleCancelOutgoingRequest} disabled={performingAction}>İstek Gönderildi (İptal Et)</Button>;
+        return <Button variant="outline" onClick={handleCancelOutgoingRequest} disabled={performingAction} className="w-full">İstek Gönderildi (İptal Et)</Button>;
       case "request_received":
         return (
-            <div className="flex gap-2">
-                <Button onClick={handleAcceptFriendRequest} disabled={performingAction} className="bg-blue-500 hover:bg-blue-600 text-white">
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+                <Button onClick={handleAcceptFriendRequest} disabled={performingAction} className="bg-blue-500 hover:bg-blue-600 text-white flex-1">
                     <UserCheck className="mr-2 h-4 w-4" /> İsteği Kabul Et
                 </Button>
-                 <Button variant="ghost" onClick={() => { toast({title:"Yakında", description:"Reddetme özelliği eklenecek."})}} disabled={performingAction}>Reddet</Button>
+                 <Button variant="ghost" onClick={() => { toast({title:"Yakında", description:"Reddetme özelliği eklenecek."})}} disabled={performingAction} className="flex-1">Reddet</Button>
             </div>
         );
       case "none":
-        return <Button onClick={handleSendFriendRequest} disabled={performingAction}><UserPlus className="mr-2 h-4 w-4" /> Arkadaş Ekle</Button>;
+        return <Button onClick={handleSendFriendRequest} disabled={performingAction} className="w-full"><UserPlus className="mr-2 h-4 w-4" /> Arkadaş Ekle</Button>;
       default:
         return null;
     }
@@ -408,16 +406,23 @@ export default function UserProfilePage() {
             {profileUser.displayName || "Kullanıcı Adı Yok"}
           </CardTitle>
           <CardDescription className="text-foreground/80">{profileUser.email}</CardDescription>
-          {!isOwnProfile && currentUser && (
-             <div className="mt-4">
-                {performingAction ? <Loader2 className="h-6 w-6 animate-spin text-primary"/> : renderActionButton()}
+          
+          {isOwnProfile && (
+             <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full max-w-xs">
+                <Button asChild variant="outline" className="flex-1">
+                  <Link href="/profile/edit"><Edit3 className="mr-2 h-4 w-4" />Profili Düzenle</Link>
+                </Button>
+                <Button asChild variant="outline" className="flex-1">
+                  <Link href="/profile"><Settings className="mr-2 h-4 w-4" />Ayarlar</Link>
+                </Button>
             </div>
           )}
-           {isOwnProfile && (
-            <Button asChild variant="outline" size="sm" className="mt-4">
-              <Link href="/profile">Profilini Düzenle</Link>
-            </Button>
+          {!isOwnProfile && currentUser && (
+             <div className="mt-4 w-full max-w-xs">
+                {performingAction ? <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto"/> : renderFriendshipActionButton()}
+            </div>
           )}
+
         </CardHeader>
         <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 text-center">
            <h3 className="text-lg font-semibold text-foreground/90 mb-1">Hakkında</h3>
@@ -507,5 +512,3 @@ export default function UserProfilePage() {
     </div>
   );
 }
-
-    
