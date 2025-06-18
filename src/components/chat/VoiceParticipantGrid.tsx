@@ -53,8 +53,8 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = ({
     >
       <Avatar className={cn(
         avatarSizeClass,
-        "mb-1 border-2",
-        participant.isSpeaking ? 'border-green-500 shadow-lg' : 'border-transparent'
+        "mb-1 border-2 transition-all duration-150",
+        participant.isSpeaking ? 'border-green-500 shadow-lg scale-105 ring-2 ring-green-500/50 ring-offset-2 ring-offset-card' : 'border-transparent'
       )}>
         <AvatarImage src={participant.photoURL || `https://placehold.co/96x96.png`} data-ai-hint="voice chat user large" />
         <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
@@ -126,9 +126,26 @@ const VoiceParticipantGrid: React.FC<{
   }
 
   // Litmatch-style participant distribution
-  const hostParticipant = participants.length > 0 ? participants[0] : null;
-  const secondRowParticipants = participants.slice(1, 3); // Max 2
-  const thirdRowParticipants = participants.slice(3, 7);  // Max 4 (total 1+2+4 = 7 for maxSlots=7)
+  // Prioritize the room creator for the host slot if they are in the voice chat
+  let hostParticipant: ActiveVoiceParticipantData | null = null;
+  let remainingParticipants = [...participants];
+
+  if (roomCreatorId) {
+    const creatorIndex = remainingParticipants.findIndex(p => p.id === roomCreatorId);
+    if (creatorIndex !== -1) {
+      hostParticipant = remainingParticipants[creatorIndex];
+      remainingParticipants.splice(creatorIndex, 1);
+    }
+  }
+
+  // If room creator is not in voice or not defined, pick the first participant as host
+  if (!hostParticipant && remainingParticipants.length > 0) {
+    hostParticipant = remainingParticipants.shift() || null;
+  }
+
+
+  const secondRowParticipants = remainingParticipants.slice(0, 2); // Max 2
+  const thirdRowParticipants = remainingParticipants.slice(2, 6);  // Max 4 (total 1+2+4 = 7 for maxSlots=7)
 
   return (
     <div className="flex flex-col items-center gap-2 sm:gap-3 py-2 w-full">
@@ -140,10 +157,10 @@ const VoiceParticipantGrid: React.FC<{
             isCurrentUser={hostParticipant.id === currentUserUid}
             isRoomCreatorViewing={isCurrentUserRoomCreator}
             isParticipantTheRoomCreator={hostParticipant.id === roomCreatorId}
-            onAdminKick={() => onAdminKickUser(hostParticipant.id)}
-            onAdminToggleMute={() => onAdminToggleMuteUser(hostParticipant.id, hostParticipant.isMutedByAdmin)}
+            onAdminKick={() => onAdminKickUser(hostParticipant!.id)}
+            onAdminToggleMute={() => onAdminToggleMuteUser(hostParticipant!.id, hostParticipant!.isMutedByAdmin)}
             getAvatarFallbackText={getAvatarFallbackText}
-            onClick={() => onSlotClick(hostParticipant.id)}
+            onClick={() => onSlotClick(hostParticipant!.id)}
             isHostSlot={true}
           />
         </div>
@@ -191,3 +208,4 @@ const VoiceParticipantGrid: React.FC<{
 };
 
 export default VoiceParticipantGrid;
+
