@@ -1,12 +1,13 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search } from "lucide-react";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot, Timestamp, doc, getDoc } from "firebase/firestore";
@@ -27,9 +28,8 @@ interface DirectMessageConversation {
   lastMessageTimestamp: Timestamp | null;
   lastMessageText?: string;
   lastMessageSenderId?: string;
-  // For display purposes, not stored directly in DM doc but fetched/derived
   otherParticipant?: UserData; 
-  unreadCount?: number; // Future feature
+  unreadCount?: number; 
 }
 
 export default function DirectMessagesPage() {
@@ -37,6 +37,7 @@ export default function DirectMessagesPage() {
   const { toast } = useToast();
   const [conversations, setConversations] = useState<DirectMessageConversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     document.title = 'Direkt Mesajlar - HiweWalk';
@@ -64,23 +65,21 @@ export default function DirectMessagesPage() {
 
       const convPromises = snapshot.docs.map(async (docSnapshot) => {
         const data = docSnapshot.data() as DirectMessageConversation;
-        data.id = docSnapshot.id; // dmChatId
+        data.id = docSnapshot.id; 
         
         const otherUid = data.participantUids.find(uid => uid !== currentUser.uid);
         let otherParticipantData: UserData | undefined;
 
         if (otherUid && data.participantInfo && data.participantInfo[otherUid]) {
-          // Use info from participantInfo first
             otherParticipantData = {
                 uid: otherUid,
                 displayName: data.participantInfo[otherUid].displayName,
                 photoURL: data.participantInfo[otherUid].photoURL,
-                email: null, // Not typically stored in participantInfo
-                diamonds: 0, // Not typically stored in participantInfo
-                createdAt: Timestamp.now(), // Placeholder, not critical for display
+                email: null, 
+                diamonds: 0, 
+                createdAt: Timestamp.now(), 
             };
         } else if (otherUid) {
-            // Fallback to fetching from users collection if participantInfo is incomplete
             try {
                 const userDocRef = doc(db, "users", otherUid);
                 const userSnap = await getDoc(userDocRef);
@@ -118,6 +117,15 @@ export default function DirectMessagesPage() {
     return name ? name.substring(0, 2).toUpperCase() : "PN";
   };
 
+  const filteredConversations = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return conversations;
+    }
+    return conversations.filter(conv => 
+      conv.otherParticipant?.displayName?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [conversations, searchTerm]);
+
   if (isAuthLoading && !currentUser) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -145,11 +153,23 @@ export default function DirectMessagesPage() {
     <div className="space-y-6">
       <Card className="shadow-lg">
         <CardHeader>
-          <div className="flex items-center gap-3">
-            <SendHorizontal className="h-7 w-7 text-primary" />
-            <CardTitle className="text-2xl sm:text-3xl font-headline">Direkt Mesajlar</CardTitle>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+                <SendHorizontal className="h-7 w-7 text-primary" />
+                <CardTitle className="text-2xl sm:text-3xl font-headline">Direkt Mesajlar</CardTitle>
+            </div>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Sohbet ara..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 h-9"
+              />
+            </div>
           </div>
-          <CardDescription>Arkadaşlarınızla özel olarak yaptığınız sohbetler.</CardDescription>
+          <CardDescription className="pt-2">Arkadaşlarınızla özel olarak yaptığınız sohbetler.</CardDescription>
         </CardHeader>
         <CardContent>
           {loadingConversations ? (
@@ -157,7 +177,7 @@ export default function DirectMessagesPage() {
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
               <p className="ml-3 text-muted-foreground">Mesajlar yükleniyor...</p>
             </div>
-          ) : conversations.length === 0 ? (
+          ) : conversations.length === 0 ? ( // Ana liste boşsa her zaman bu mesajı göster
             <div className="text-center py-10">
               <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
               <p className="text-lg font-medium text-muted-foreground">Henüz direkt mesajınız yok.</p>
@@ -165,11 +185,19 @@ export default function DirectMessagesPage() {
                 <Link href="/friends" className="text-primary hover:underline">Arkadaşlar</Link> sayfasından bir arkadaşınıza mesaj göndererek sohbet başlatın.
               </p>
             </div>
-          ) : (
+          ) : searchTerm && filteredConversations.length === 0 ? ( // Arama var ama sonuç yoksa bu mesajı göster
+            <div className="text-center py-10">
+              <Search className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
+              <p className="text-lg font-medium text-muted-foreground">Arama sonucu bulunamadı.</p>
+              <p className="text-sm text-muted-foreground">
+                Farklı bir anahtar kelimeyle tekrar deneyin.
+              </p>
+            </div>
+          ) : ( // Filtrelenmiş veya tüm sohbetleri listele
             <ul className="space-y-3">
-              {conversations.map(conv => {
+              {filteredConversations.map(conv => {
                 const otherParticipant = conv.otherParticipant;
-                if (!otherParticipant) return null; // Should be filtered out already
+                if (!otherParticipant) return null; 
 
                 const lastMessagePrefix = conv.lastMessageSenderId === currentUser?.uid ? "Siz: " : "";
 
@@ -210,6 +238,3 @@ export default function DirectMessagesPage() {
     </div>
   );
 }
-
-
-    
