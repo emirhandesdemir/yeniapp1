@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"; // Card still used for structure
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -217,8 +217,8 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   }, []);
 
   const renderOriginalPostContent = useCallback((originalPost: Partial<Post>) => (
-    <Card className="mt-2 mb-1 p-3 border-border/50 bg-muted/40 dark:bg-muted/25 shadow-inner rounded-lg">
-      <CardHeader className="flex flex-row items-start gap-2.5 p-0 pb-2">
+    <div className="mt-2 mb-1 p-3 border border-border/30 bg-muted/20 dark:bg-muted/15 shadow-inner rounded-lg">
+      <header className="flex flex-row items-start gap-2.5 pb-2">
         <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0">
             <Avatar className="h-8 w-8">
             <AvatarImage src={originalPost.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
@@ -231,8 +231,8 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
             </Link>
           <p className="text-[10px] text-muted-foreground/70">{formattedDate(originalPost.createdAt)}</p>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
+      </header>
+      <div>
         <p className="text-sm font-medium text-foreground/90 whitespace-pre-wrap break-words allow-text-selection">
           {originalPost.content}
         </p>
@@ -246,14 +246,14 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
             </Button>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   ), [getAvatarFallbackText, formattedDate]);
 
 
   return (
-    <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl bg-card/80 backdrop-blur-sm border border-border/30">
-      <CardHeader className="flex flex-row items-start gap-3 p-3 pb-2">
+    <div className="bg-card/70 dark:bg-card/50 backdrop-blur-sm rounded-xl shadow-sm overflow-hidden">
+      <header className="flex flex-row items-start gap-3 p-3 pb-2">
         <Link href={`/profile/${post.userId}`} className="flex-shrink-0">
             <Avatar className="h-10 w-10">
             <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
@@ -284,8 +284,8 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
             )}
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="p-3 pt-1 pb-3">
+      </header>
+      <div className="p-3 pt-1 pb-3">
         {post.isRepost ? (
           <>
             <p className="text-sm text-muted-foreground mb-1.5">
@@ -323,8 +323,8 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
             </Button>
           </div>
         )}
-      </CardContent>
-      <CardFooter className="p-3 pt-2 flex justify-start gap-1 sm:gap-2 border-t border-border/30">
+      </div>
+      <footer className="p-3 pt-2 flex justify-start gap-1 sm:gap-2 border-t border-border/20">
         <Button
           variant="ghost"
           size="sm"
@@ -351,10 +351,10 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-blue-500 px-2 py-1.5 ml-auto" onClick={() => toast({title: "Yakında!", description:"Paylaşma özelliği yakında eklenecek."})}>
           <Share className="h-4 w-4" />
         </Button>
-      </CardFooter>
+      </footer>
 
       {showComments && (
-        <div className="p-3 border-t border-border/30 bg-card/60 dark:bg-background/40 rounded-b-xl">
+        <div className="p-3 border-t border-border/20 bg-card/50 dark:bg-background/30 rounded-b-xl">
           <CommentForm postId={post.id} onCommentAdded={handleCommentAdded} />
           {loadingComments && (
             <div className="flex items-center justify-center py-4">
@@ -379,7 +379,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
           )}
         </div>
       )}
-    </Card>
+    </div>
   );
 });
 PostCard.displayName = 'PostCard';

@@ -3,12 +3,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target } from "lucide-react"; // XCircle kaldırıldı, Target eklendi
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
@@ -86,6 +87,7 @@ export default function HomePage() {
   const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
 
   const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true);
+  const [isCreatePostDialogOpen, setIsCreatePostDialogOpen] = useState(false);
 
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [activeRooms, setActiveRooms] = useState<ChatRoomFeedDisplayData[]>([]);
@@ -260,17 +262,17 @@ export default function HomePage() {
                 exit="exit"
               >
                 <Card className="shadow-lg bg-card border border-border/30 rounded-xl overflow-hidden">
-                  <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-primary/80 to-accent/80 dark:from-primary/70 dark:to-accent/70">
+                  <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-primary/10 via-card to-red-500/10 dark:from-primary/15 dark:via-card dark:to-red-500/15">
                     <motion.div
                       className="flex items-center gap-3"
                       variants={itemVariants}
                     >
-                      <Target className="h-7 w-7 text-primary-foreground" />
+                      <Target className="h-7 w-7 text-primary" />
                       <div>
-                        <CardTitle className="text-lg sm:text-xl font-semibold text-primary-foreground">
+                        <CardTitle className="text-lg sm:text-xl font-semibold text-foreground">
                           Merhaba, {greetingName}!
                         </CardTitle>
-                        <CardDescription className="text-xs sm:text-sm text-primary-foreground/80 mt-0.5">
+                        <CardDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                           Topluluğa hoş geldin. Yeni keşifler seni bekliyor!
                         </CardDescription>
                       </div>
@@ -311,9 +313,29 @@ export default function HomePage() {
             )}
           </AnimatePresence>
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: isWelcomeCardVisible ? 0.3 : 0.1, duration: 0.5 }}>
-            <CreatePostForm />
-          </motion.div>
+          <Dialog open={isCreatePostDialogOpen} onOpenChange={setIsCreatePostDialogOpen}>
+            <DialogTrigger asChild>
+               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: isWelcomeCardVisible ? 0.3 : 0.1, duration: 0.5 }}>
+                <Button 
+                    variant="outline" 
+                    className="w-full py-6 text-lg bg-card hover:bg-muted/80 border-2 border-dashed border-primary/40 hover:border-primary/70 text-primary/80 hover:text-primary shadow-sm"
+                >
+                    <Edit className="mr-2 h-5 w-5"/> Bir şeyler paylaş...
+                </Button>
+               </motion.div>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg p-0">
+              <DialogHeader className="p-6 pb-0">
+                <DialogTitle>Yeni Gönderi Oluştur</DialogTitle>
+                <DialogDescription>
+                  Düşüncelerini toplulukla paylaş.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="p-6 pt-4">
+                <CreatePostForm onPostCreated={() => setIsCreatePostDialogOpen(false)} />
+              </div>
+            </DialogContent>
+          </Dialog>
 
 
           {isLoadingFeed && (

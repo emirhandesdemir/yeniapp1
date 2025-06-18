@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -28,6 +28,13 @@ import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId } from "@/lib/utils"; 
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface DirectMessage {
   id: string;
@@ -66,10 +73,10 @@ export default function DirectMessagePage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 
-  const getAvatarFallbackText = (name?: string | null) => {
+  const getAvatarFallbackText = useCallback((name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     return "PN";
-  };
+  }, []);
 
   useEffect(() => {
     if (!chatId || !currentUser?.uid) return;
@@ -151,18 +158,18 @@ export default function DirectMessagePage() {
   }, []);
 
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     if (scrollAreaRef.current) {
       const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
       if (viewport) {
         viewport.scrollTop = viewport.scrollHeight;
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
 
   const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -225,6 +232,30 @@ export default function DirectMessagePage() {
     }
   };
 
+  const handleVideoCall = useCallback(() => {
+    toast({
+      title: "Görüntülü Arama (Yakında)",
+      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} ile görüntülü arama özelliği yakında eklenecektir.`,
+    });
+  }, [dmPartnerDetails, toast]);
+
+  const handleReportUser = useCallback(() => {
+    toast({
+      title: "Kullanıcıyı Şikayet Et (Yakında)",
+      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} şikayet etme özelliği yakında eklenecektir.`,
+      variant: "default"
+    });
+  }, [dmPartnerDetails, toast]);
+
+  const handleBlockUser = useCallback(() => {
+    toast({
+      title: "Kullanıcıyı Engelle (Yakında)",
+      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} engelleme özelliği yakında eklenecektir.`,
+      variant: "destructive"
+    });
+  }, [dmPartnerDetails, toast]);
+
+
   if (loadingDmPartner || !dmPartnerDetails || isUserLoading) {
     return (
       <div className="flex flex-1 items-center justify-center h-screen">
@@ -244,17 +275,39 @@ export default function DirectMessagePage() {
                 <span className="sr-only">Geri</span>
             </Link>
             </Button>
-            <Link href={`/profile/${dmPartnerDetails.uid}`}>
+            <Link href={`/profile/${dmPartnerDetails.uid}`} className="flex items-center gap-2 min-w-0">
                 <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
                     <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
                     <AvatarFallback>{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
                 </Avatar>
+                <div className="flex-1 min-w-0">
+                    <h2 className="text-sm sm:text-base font-semibold text-primary-foreground/90 truncate hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                </div>
             </Link>
-            <div className="flex-1 min-w-0">
-                <Link href={`/profile/${dmPartnerDetails.uid}`}>
-                    <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
-                </Link>
-            </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 text-muted-foreground hover:text-primary">
+            <Video className="h-5 w-5" />
+            <span className="sr-only">Görüntülü Ara</span>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-primary">
+                <MoreVertical className="h-5 w-5" />
+                <span className="sr-only">Daha Fazla Seçenek</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleReportUser}>
+                <ShieldAlert className="mr-2 h-4 w-4 text-orange-500" />
+                Kullanıcıyı Şikayet Et
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleBlockUser} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                <Ban className="mr-2 h-4 w-4" />
+                Kullanıcıyı Engelle
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 

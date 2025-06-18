@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,7 +29,11 @@ interface ShareableRoom {
   name: string;
 }
 
-export default function CreatePostForm() {
+interface CreatePostFormProps {
+  onPostCreated?: () => void; // Optional callback
+}
+
+export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { currentUser, userData } = useAuth();
@@ -40,32 +44,35 @@ export default function CreatePostForm() {
   const [selectedRoom, setSelectedRoom] = useState<ShareableRoom | null>(null);
   const [isRoomSelectorOpen, setIsRoomSelectorOpen] = useState(false);
 
-  useEffect(() => {
-    const fetchUserActiveRooms = async () => {
-      if (!currentUser || !isRoomSelectorOpen) return;
-      setLoadingUserRooms(true);
-      try {
-        const q = query(
-          collection(db, "chatRooms"),
-          where("creatorId", "==", currentUser.uid),
-          where("expiresAt", ">", Timestamp.now())
-        );
-        const querySnapshot = await getDocs(q);
-        const rooms: ShareableRoom[] = [];
-        querySnapshot.forEach((doc) => {
-          rooms.push({ id: doc.id, name: doc.data().name });
-        });
-        setUserActiveRooms(rooms);
-      } catch (error) {
-        console.error("Error fetching user's active rooms:", error);
-        toast({ title: "Hata", description: "Aktif odalarınız yüklenirken bir sorun oluştu.", variant: "destructive" });
-      } finally {
-        setLoadingUserRooms(false);
-      }
-    };
-
-    fetchUserActiveRooms();
+  const fetchUserActiveRooms = useCallback(async () => {
+    if (!currentUser || !isRoomSelectorOpen) return;
+    setLoadingUserRooms(true);
+    try {
+      const q = query(
+        collection(db, "chatRooms"),
+        where("creatorId", "==", currentUser.uid),
+        where("expiresAt", ">", Timestamp.now())
+      );
+      const querySnapshot = await getDocs(q);
+      const rooms: ShareableRoom[] = [];
+      querySnapshot.forEach((doc) => {
+        rooms.push({ id: doc.id, name: doc.data().name });
+      });
+      setUserActiveRooms(rooms);
+    } catch (error) {
+      console.error("Error fetching user's active rooms:", error);
+      toast({ title: "Hata", description: "Aktif odalarınız yüklenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setLoadingUserRooms(false);
+    }
   }, [currentUser, isRoomSelectorOpen, toast]);
+
+  useEffect(() => {
+    if (isRoomSelectorOpen) {
+      fetchUserActiveRooms();
+    }
+  }, [isRoomSelectorOpen, fetchUserActiveRooms]);
+
 
   const handleSelectRoom = (room: ShareableRoom) => {
     setSelectedRoom(room);
@@ -118,6 +125,9 @@ export default function CreatePostForm() {
       setContent("");
       setSelectedRoom(null);
       toast({ title: "Başarılı", description: "Gönderiniz paylaşıldı!" });
+      if (onPostCreated) {
+        onPostCreated();
+      }
     } catch (error) {
       console.error("Error creating post:", error);
       toast({
@@ -138,106 +148,104 @@ export default function CreatePostForm() {
   const remainingChars = MAX_POST_LENGTH - content.length;
 
   return (
-    <div className="p-4 rounded-lg bg-card/60 dark:bg-card/40 border border-border/30 backdrop-blur-sm shadow-sm">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="flex items-start space-x-3">
-          <Avatar className="h-10 w-10 mt-1 flex-shrink-0">
-            <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
-            <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
-          </Avatar>
-          <Textarea
-            placeholder="Ne düşünüyorsun, HiweWalk'er?"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={3}
-            maxLength={MAX_POST_LENGTH}
-            className="flex-1 resize-none bg-background/70 dark:bg-background/50 border-border/50 focus:border-primary"
-            disabled={isSubmitting || !currentUser}
-          />
-        </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex items-start space-x-3">
+        <Avatar className="h-10 w-10 mt-1 flex-shrink-0">
+          <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
+          <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
+        </Avatar>
+        <Textarea
+          placeholder="Ne düşünüyorsun, HiweWalk'er?"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={4} // Slightly taller for dialog
+          maxLength={MAX_POST_LENGTH}
+          className="flex-1 resize-none bg-background focus:border-primary text-sm"
+          disabled={isSubmitting || !currentUser}
+        />
+      </div>
 
-        {selectedRoom && (
-          <div className="p-2 bg-primary/5 dark:bg-primary/10 rounded-md flex items-center justify-between text-sm border border-primary/20">
-            <div className="flex items-center gap-2 text-primary/90 dark:text-primary/80">
-              <LinkIcon className="h-4 w-4" />
-              <span className="font-medium truncate" title={selectedRoom.name}>Paylaşılacak Oda: {selectedRoom.name}</span>
-            </div>
-            <Button type="button" variant="ghost" size="icon" onClick={handleClearSelectedRoom} className="h-6 w-6 text-muted-foreground hover:text-destructive">
-              <XCircle className="h-4 w-4" />
-            </Button>
+      {selectedRoom && (
+        <div className="p-2 bg-primary/5 dark:bg-primary/10 rounded-md flex items-center justify-between text-sm border border-primary/20">
+          <div className="flex items-center gap-2 text-primary/90 dark:text-primary/80">
+            <LinkIcon className="h-4 w-4" />
+            <span className="font-medium truncate" title={selectedRoom.name}>Paylaşılacak Oda: {selectedRoom.name}</span>
           </div>
-        )}
-
-        <div className="flex justify-between items-center pt-1">
-          <div className="flex items-center gap-2">
-              <Dialog open={isRoomSelectorOpen} onOpenChange={setIsRoomSelectorOpen}>
-              <DialogTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" disabled={isSubmitting || !currentUser} className="text-muted-foreground hover:text-primary">
-                      <MessageSquarePlus className="mr-1.5 h-4 w-4" />
-                      Oda Paylaş
-                  </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                  <DialogTitle>Aktif Odanı Paylaş</DialogTitle>
-                  <DialogDescription>
-                      Gönderine eklemek için oluşturduğun aktif bir sohbet odası seç.
-                  </DialogDescription>
-                  </DialogHeader>
-                  {loadingUserRooms ? (
-                  <div className="flex justify-center items-center h-20">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                  ) : userActiveRooms.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">Paylaşılacak aktif odanız bulunmuyor.</p>
-                  ) : (
-                  <div className="space-y-1 max-h-60 overflow-y-auto py-2 pr-2 -mr-2">
-                      {userActiveRooms.map(room => (
-                      <Button
-                          key={room.id}
-                          variant="ghost"
-                          className="w-full justify-start text-left h-auto py-1.5 px-2"
-                          onClick={() => handleSelectRoom(room)}
-                      >
-                          <List className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0"/> 
-                          <span className="truncate">{room.name}</span>
-                      </Button>
-                      ))}
-                  </div>
-                  )}
-                  <DialogFooter className="mt-4">
-                      <DialogClose asChild>
-                          <Button type="button" variant="outline">Kapat</Button>
-                      </DialogClose>
-                  </DialogFooter>
-              </DialogContent>
-              </Dialog>
-
-              <p className={cn(
-                "text-xs",
-                remainingChars < 0 ? "text-destructive font-medium" : 
-                remainingChars < 20 ? "text-orange-500" : 
-                "text-muted-foreground"
-              )}>
-              {remainingChars}
-              </p>
-          </div>
-          <Button 
-            type="submit" 
-            disabled={isSubmitting || !content.trim() || !currentUser || remainingChars < 0}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            size="sm"
-          >
-            {isSubmitting ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="mr-1.5 h-4 w-4" />
-            )}
-            Paylaş
+          <Button type="button" variant="ghost" size="icon" onClick={handleClearSelectedRoom} className="h-6 w-6 text-muted-foreground hover:text-destructive">
+            <XCircle className="h-4 w-4" />
           </Button>
         </div>
-      </form>
-    </div>
+      )}
+
+      <div className="flex justify-between items-center pt-1">
+        <div className="flex items-center gap-2">
+            <Dialog open={isRoomSelectorOpen} onOpenChange={setIsRoomSelectorOpen}>
+            <DialogTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" disabled={isSubmitting || !currentUser} className="text-muted-foreground hover:text-primary">
+                    <MessageSquarePlus className="mr-1.5 h-4 w-4" />
+                    Oda Paylaş
+                </Button>
+            </DialogTrigger>
+            {/* Nested Dialog for room selection - ensure it's styled and positioned correctly relative to parent if needed */}
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                <DialogTitle>Aktif Odanı Paylaş</DialogTitle>
+                <DialogDescription>
+                    Gönderine eklemek için oluşturduğun aktif bir sohbet odası seç.
+                </DialogDescription>
+                </DialogHeader>
+                {loadingUserRooms ? (
+                <div className="flex justify-center items-center h-20">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+                ) : userActiveRooms.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Paylaşılacak aktif odanız bulunmuyor.</p>
+                ) : (
+                <div className="space-y-1 max-h-60 overflow-y-auto py-2 pr-2 -mr-2">
+                    {userActiveRooms.map(room => (
+                    <Button
+                        key={room.id}
+                        variant="ghost"
+                        className="w-full justify-start text-left h-auto py-1.5 px-2"
+                        onClick={() => handleSelectRoom(room)}
+                    >
+                        <List className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0"/> 
+                        <span className="truncate">{room.name}</span>
+                    </Button>
+                    ))}
+                </div>
+                )}
+                <DialogFooter className="mt-4">
+                    <DialogClose asChild>
+                        <Button type="button" variant="outline">Kapat</Button>
+                    </DialogClose>
+                </DialogFooter>
+            </DialogContent>
+            </Dialog>
+
+            <p className={cn(
+              "text-xs",
+              remainingChars < 0 ? "text-destructive font-medium" : 
+              remainingChars < 20 ? "text-orange-500" : 
+              "text-muted-foreground"
+            )}>
+            {remainingChars}
+            </p>
+        </div>
+        <Button 
+          type="submit" 
+          disabled={isSubmitting || !content.trim() || !currentUser || remainingChars < 0}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+          size="sm"
+        >
+          {isSubmitting ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="mr-1.5 h-4 w-4" />
+          )}
+          Paylaş
+        </Button>
+      </div>
+    </form>
   );
 }
-
