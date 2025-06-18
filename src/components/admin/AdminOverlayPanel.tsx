@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot } from 'lucide-react'; // Bot ikonu eklendi
+import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Dinamik olarak yüklenecek admin bölüm içerikleri
@@ -13,7 +13,7 @@ import AdminDashboardContent from '@/components/admin/sections/AdminDashboardCon
 import AdminUsersContent from '@/components/admin/sections/AdminUsersContent';
 import AdminChatRoomsContent from '@/components/admin/sections/AdminChatRoomsContent';
 import AdminGameSettingsContent from '@/components/admin/sections/AdminGameSettingsContent';
-import AdminProjectAssistantContent from '@/components/admin/sections/AdminProjectAssistantContent'; // Yeni import
+import AdminProjectAssistantContent from '@/components/admin/sections/AdminProjectAssistantContent';
 
 export default function AdminOverlayPanel() {
   const { isAdminPanelOpen, setIsAdminPanelOpen, userData } = useAuth();
@@ -28,7 +28,7 @@ export default function AdminOverlayPanel() {
     { value: "users", label: "Kullanıcılar", icon: Users, component: <AdminUsersContent /> },
     { value: "chat-rooms", label: "Sohbet Odaları", icon: ListChecks, component: <AdminChatRoomsContent /> },
     { value: "game-settings", label: "Oyun Ayarları", icon: GameSettingsIcon, component: <AdminGameSettingsContent /> },
-    { value: "project-assistant", label: "Proje Asistanı", icon: Bot, component: <AdminProjectAssistantContent /> }, // Yeni sekme
+    { value: "project-assistant", label: "Proje Asistanı", icon: Bot, component: <AdminProjectAssistantContent /> },
   ];
 
   return (

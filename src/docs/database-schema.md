@@ -227,8 +227,8 @@ Kullanıcıların paylaştığı gönderileri saklar.
 Genel uygulama ayarlarını saklar.
 - **Yol:** `/appSettings/gameConfig`
 - **Alanlar (`gameConfig` için):**
-  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı.
-  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık.
+  - `isGameEnabled`: (Boolean) Sohbet içi oyunun etkin olup olmadığı. (Varsayılan: `false`)
+  - `questionIntervalSeconds`: (Number) Yeni oyun soruları için saniye cinsinden aralık. (Varsayılan: `180`)
 
 ## `gameQuestions`
 Sohbet odası quiz oyunu için soruları saklar.

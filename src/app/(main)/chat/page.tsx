@@ -48,6 +48,11 @@ interface ChatRoom {
   voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[]; // Yeni alan
 }
 
+interface GameSettings { // Oyun ayarları için interface
+  isGameEnabled: boolean;
+  questionIntervalSeconds: number;
+}
+
 const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
@@ -90,6 +95,7 @@ export default function ChatRoomsPage() {
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
   const [now, setNow] = useState(new Date()); 
+  const [gameSettings, setGameSettings] = useState<GameSettings | null>(null); // Oyun ayarları state'i
 
   const [isRoomsInfoCardVisible, setIsRoomsInfoCardVisible] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -120,6 +126,25 @@ export default function ChatRoomsPage() {
       window.removeEventListener('scroll', handleScroll);
     };
   }, [isRoomsInfoCardVisible]);
+
+  // Oyun ayarlarını çek
+  useEffect(() => {
+    const fetchGameSettings = async () => {
+      try {
+        const settingsDocRef = doc(db, "appSettings", "gameConfig");
+        const docSnap = await getDoc(settingsDocRef);
+        if (docSnap.exists()) {
+          setGameSettings(docSnap.data() as GameSettings);
+        } else {
+          setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 });
+        }
+      } catch (error) {
+        console.error("Error fetching game settings for room creation:", error);
+        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); // Fallback
+      }
+    };
+    fetchGameSettings();
+  }, []);
 
 
   useEffect(() => {
@@ -214,16 +239,6 @@ export default function ChatRoomsPage() {
     }
     setIsCreatingRoom(true);
 
-    let gameConfigData: { isGameEnabled?: boolean; questionIntervalSeconds?: number } | null = null;
-    try {
-      const gameConfigDocRef = doc(db, "appSettings", "gameConfig");
-      const gameConfigSnap = await getDoc(gameConfigDocRef);
-      if (gameConfigSnap.exists()) {
-        gameConfigData = gameConfigSnap.data() as { isGameEnabled?: boolean; questionIntervalSeconds?: number };
-      }
-    } catch (configError) {
-      console.warn("[ChatPage] Error fetching game config during room creation:", configError);
-    }
 
     const imageUrl = "https://placehold.co/600x400.png";
     const imageHint = "community discussion";
@@ -241,21 +256,20 @@ export default function ChatRoomsPage() {
       image: imageUrl,
       imageAiHint: imageHint,
       participantCount: 0,
-      voiceParticipantCount: 0, // Sesli sohbet için başlangıç
+      voiceParticipantCount: 0,
       maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
+      gameInitialized: false, // Varsayılan olarak false
+      currentGameQuestionId: null,
+      nextGameQuestionTimestamp: null,
+      currentGameAnswerDeadline: null,
     };
 
-    if (gameConfigData?.isGameEnabled && typeof gameConfigData.questionIntervalSeconds === 'number' && gameConfigData.questionIntervalSeconds >= 30) {
+    // Eğer genel oyun ayarları etkinse, yeni oda için oyun alanlarını başlat
+    if (gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && gameSettings.questionIntervalSeconds >= 30) {
       roomDataToCreate.gameInitialized = true;
-      roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameConfigData.questionIntervalSeconds));
-      roomDataToCreate.currentGameQuestionId = null;
-      roomDataToCreate.currentGameAnswerDeadline = null;
-    } else {
-      roomDataToCreate.gameInitialized = false;
-      roomDataToCreate.nextGameQuestionTimestamp = null;
-      roomDataToCreate.currentGameQuestionId = null;
-      roomDataToCreate.currentGameAnswerDeadline = null;
+      roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds));
     }
+
 
     try {
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
