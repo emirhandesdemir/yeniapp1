@@ -8,7 +8,7 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings, Gem } from "lucide-react";
+import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings, Gem, Users } from "lucide-react"; // Added Users icon
 import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
@@ -98,39 +98,50 @@ export default function UserProfilePage() {
     }
 
     const checkStatus = async () => {
-      const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid);
-      const friendDocSnap = await getDoc(friendDocRef);
-      if (friendDocSnap.exists()) {
-        setFriendshipStatus("friends");
-        return;
-      }
+      setPerformingAction(true); // To prevent button clicks while status is being checked
+      try {
+        const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid);
+        const friendDocSnap = await getDoc(friendDocRef);
+        if (friendDocSnap.exists()) {
+          setFriendshipStatus("friends");
+          setPerformingAction(false);
+          return;
+        }
 
-      const outgoingReqQuery = query(
-        collection(db, "friendRequests"),
-        where("fromUserId", "==", currentUser.uid),
-        where("toUserId", "==", profileUser.uid),
-        where("status", "==", "pending")
-      );
-      const outgoingSnap = await getDocs(outgoingReqQuery);
-      if (!outgoingSnap.empty) {
-        setFriendshipStatus("request_sent");
-        setRelevantFriendRequest({ id: outgoingSnap.docs[0].id, ...outgoingSnap.docs[0].data() } as FriendRequest);
-        return;
-      }
+        const outgoingReqQuery = query(
+          collection(db, "friendRequests"),
+          where("fromUserId", "==", currentUser.uid),
+          where("toUserId", "==", profileUser.uid),
+          where("status", "==", "pending")
+        );
+        const outgoingSnap = await getDocs(outgoingReqQuery);
+        if (!outgoingSnap.empty) {
+          setFriendshipStatus("request_sent");
+          setRelevantFriendRequest({ id: outgoingSnap.docs[0].id, ...outgoingSnap.docs[0].data() } as FriendRequest);
+          setPerformingAction(false);
+          return;
+        }
 
-      const incomingReqQuery = query(
-        collection(db, "friendRequests"),
-        where("fromUserId", "==", profileUser.uid),
-        where("toUserId", "==", currentUser.uid),
-        where("status", "==", "pending")
-      );
-      const incomingSnap = await getDocs(incomingReqQuery);
-      if (!incomingSnap.empty) {
-        setFriendshipStatus("request_received");
-        setRelevantFriendRequest({ id: incomingSnap.docs[0].id, ...incomingSnap.docs[0].data() } as FriendRequest);
-        return;
+        const incomingReqQuery = query(
+          collection(db, "friendRequests"),
+          where("fromUserId", "==", profileUser.uid),
+          where("toUserId", "==", currentUser.uid),
+          where("status", "==", "pending")
+        );
+        const incomingSnap = await getDocs(incomingReqQuery);
+        if (!incomingSnap.empty) {
+          setFriendshipStatus("request_received");
+          setRelevantFriendRequest({ id: incomingSnap.docs[0].id, ...incomingSnap.docs[0].data() } as FriendRequest);
+          setPerformingAction(false);
+          return;
+        }
+        setFriendshipStatus("none");
+      } catch(e){
+        console.error("Error checking friendship status:", e);
+        setFriendshipStatus("none");
+      } finally {
+        setPerformingAction(false);
       }
-      setFriendshipStatus("none");
     };
     checkStatus();
   }, [currentUser, profileUser, isOwnProfile]);
