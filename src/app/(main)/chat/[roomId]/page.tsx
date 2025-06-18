@@ -201,13 +201,211 @@ export default function ChatRoomPage() {
   useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
 
   const sendSignalMessage = useCallback(async (toUid: string, type: 'offer' | 'answer' | 'candidate', data: any) => { if (!currentUser || !roomId) return; const signalColRef = collection(db, `chatRooms/${roomId}/webrtcSignals`); await addDoc(signalColRef, { fromUid: currentUser.uid, toUid, type, data, createdAt: serverTimestamp() }); }, [currentUser, roomId]);
-  const cleanupPeerConnection = useCallback((peerId: string) => { const pc = peerConnectionsRef.current[peerId]; if (pc) { pc.getSenders().forEach(sender => { if (sender.track) { sender.track.stop(); } }); pc.onicecandidate = null; pc.ontrack = null; pc.oniceconnectionstatechange = null; pc.onconnectionstatechange = null; pc.onnegotiationneeded = null; pc.close(); delete peerConnectionsRef.current[peerId]; console.log(`[WebRTC] Cleaned up peer connection for ${peerId}`); } setRemoteStreams(prev => { const newStreams = { ...prev }; if (newStreams[peerId]) { newStreams[peerId].getTracks().forEach(track => track.stop()); delete newStreams[peerId]; console.log(`[WebRTC] Removed remote stream for ${peerId}`); } return newStreams; }); }, []);
+  
+  const cleanupPeerConnection = useCallback((peerId: string) => {
+    const pc = peerConnectionsRef.current[peerId];
+    if (pc) {
+      pc.getSenders().forEach(sender => {
+        if (sender.track) {
+          sender.track.stop();
+        }
+        if (pc.signalingState !== 'closed' && sender.track && pc.removeTrack) {
+            try {
+                pc.removeTrack(sender);
+            } catch (e) {
+                console.warn(`[WebRTC] Error removing track during cleanup for ${peerId}:`, e);
+            }
+        }
+      });
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.oniceconnectionstatechange = null;
+      pc.onconnectionstatechange = null;
+      pc.onnegotiationneeded = null;
+      if (pc.signalingState !== 'closed') {
+        pc.close();
+      }
+      delete peerConnectionsRef.current[peerId];
+      console.log(`[WebRTC] Cleaned up peer connection for ${peerId}`);
+    }
+    setRemoteStreams(prev => {
+      const newStreams = { ...prev };
+      if (newStreams[peerId]) {
+        newStreams[peerId].getTracks().forEach(track => track.stop());
+        delete newStreams[peerId];
+        console.log(`[WebRTC] Removed remote stream for ${peerId}`);
+      }
+      return newStreams;
+    });
+  }, []);
+
   const resetWebRTCState = useCallback(() => { console.log("[WebRTC] Resetting WebRTC state..."); Object.keys(peerConnectionsRef.current).forEach(peerId => { cleanupPeerConnection(peerId); }); peerConnectionsRef.current = {}; if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; console.log("[WebRTC] Local stream stopped and cleared."); } setRemoteStreams({}); console.log("[WebRTC] WebRTC state reset complete."); }, [cleanupPeerConnection]);
-  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => { if (!currentUser) return null; console.log(`[WebRTC] createPeerConnection for ${peerId}. Initiator: ${isInitiator}. localStream available: ${!!localStreamRef.current}`); if (peerConnectionsRef.current[peerId]) { console.log(`[WebRTC] Peer connection for ${peerId} already exists.`); return peerConnectionsRef.current[peerId]; } console.log(`[WebRTC] Creating new peer connection to ${peerId}.`); const pc = new RTCPeerConnection(STUN_SERVERS); peerConnectionsRef.current[peerId] = pc; if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => { try { pc.addTrack(track, localStreamRef.current!); console.log(`[WebRTC] Added local track (${track.kind}) to PC for ${peerId} during creation`); } catch (e) { console.error(`[WebRTC] Error adding track to PC for ${peerId} during creation:`, e); } }); } else { console.log(`[WebRTC] Local stream not available when creating PC for ${peerId}. Tracks will be added later if user joins voice.`); } pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } }; pc.ontrack = (event) => { console.log(`[WebRTC] Remote track received from ${peerId}. Stream ID: ${event.streams[0]?.id}, Track kind: ${event.track?.kind}`); if (event.streams && event.streams[0]) { setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] })); } else { console.warn(`[WebRTC] Remote track from ${peerId} received, but event.streams[0] is unavailable. Track:`, event.track); } }; pc.onconnectionstatechange = () => { console.log(`[WebRTC] Connection state change for ${peerId}: ${pc.connectionState}`); if (pc.connectionState === 'failed') { console.warn(`[WebRTC] Connection for ${peerId} is failed. Cleaning up.`); cleanupPeerConnection(peerId); } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') { console.log(`[WebRTC] Connection for ${peerId} is ${pc.connectionState}. Not cleaning up immediately, might reconnect.`); } }; pc.onnegotiationneeded = async () => { if (currentUser && peerId !== currentUser.uid && pc.signalingState === 'stable') { console.log(`[WebRTC] onnegotiationneeded triggered for ${peerId}. Creating offer.`); try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSignalMessage(peerId, 'offer', offer); } catch (err) { console.error(`[WebRTC] Error in onnegotiationneeded for ${peerId}:`, err); toast({ title: "WebRTC Hatası", description: `On-negotiation-needed sırasında hata (${peerId}): ${err}`, variant: "destructive" }); } } else { console.log(`[WebRTC] onnegotiationneeded for ${peerId} but state is ${pc.signalingState}, self, or no currentUser. Offer not sent.`); } }; return pc; }, [currentUser, sendSignalMessage, cleanupPeerConnection, toast]);
-  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => { if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) { console.log(`[WebRTC] Cannot initiatePeerConnection for ${peerId}. currentUser: ${!!currentUser}, localStream: ${!!localStreamRef.current}, not self: ${peerId !== currentUser?.uid}`); return; } console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`); const pc = createPeerConnection(peerId, isInitiator); if (!pc) { console.error(`[WebRTC] Failed to create/get PC for ${peerId} in initiatePeerConnection`); return; } if (isInitiator) { try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSignalMessage(peerId, 'offer', offer); console.log(`[WebRTC] Offer sent to ${peerId}`); } catch (error) { console.error(`[WebRTC] Error creating offer for ${peerId}:`, error); } } }, [currentUser, createPeerConnection, sendSignalMessage]);
-  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => { if (!currentUser || !roomId) return; const { fromUid, type, data } = signal; console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`); let pc = peerConnectionsRef.current[fromUid]; if (!pc && type === 'offer') { console.log(`[WebRTC] PC not found for ${fromUid} on offer, creating...`); pc = createPeerConnection(fromUid, false); if (!pc) { console.error(`[WebRTC] Failed to create peer connection for incoming offer from ${fromUid}`); return; } } if (!pc) { console.warn(`[WebRTC] No PeerConnection for ${fromUid} to handle ${type}. Signal ignored.`); return; } try { if (type === 'offer') { if (localStreamRef.current) { 
-      localStreamRef.current.getTracks().forEach(track => { const sender = pc.getSenders().find(s => s.track === track); if (!sender) { pc.addTrack(track, localStreamRef.current!); console.log(`[WebRTC] Added local track to PC for ${fromUid} before setting remote offer.`); } }); } await pc.setRemoteDescription(new RTCSessionDescription(data)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); sendSignalMessage(fromUid, 'answer', answer); console.log(`[WebRTC] Answer sent to ${fromUid}`); } else if (type === 'answer') { await pc.setRemoteDescription(new RTCSessionDescription(data)); console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`); } else if (type === 'candidate') { if (pc.remoteDescription) { await pc.addIceCandidate(new RTCIceCandidate(data)); console.log(`[WebRTC] ICE candidate added from ${fromUid}`); } else { console.warn(`[WebRTC] Remote description not set for ${fromUid}, delaying ICE candidate for now.`); } } } catch (error) { console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error); } }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
-  const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => { if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) return Promise.resolve(); if (!isPageUnload) setIsProcessingVoiceJoinLeave(true); resetWebRTCState(); try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid); const roomRef = doc(db, "chatRooms", roomId); const batch = writeBatch(db); batch.delete(voiceParticipantRef); batch.update(roomRef, { voiceParticipantCount: increment(-1) }); await batch.commit(); setIsCurrentUserInVoiceChat(false); if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" }); } catch (error) { console.error("Error leaving voice chat (Firestore):", error); if (!isPageUnload) toast({ title: "Hata", description: "Sesli sohbetten ayrılırken bir sorun oluştu.", variant: "destructive" }); } finally { if (!isPageUnload) setIsProcessingVoiceJoinLeave(false); } return Promise.resolve(); }, [currentUser, roomId, resetWebRTCState, toast]);
+  
+  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => {
+    if (!currentUser) return null;
+    console.log(`[WebRTC] createPeerConnection for ${peerId}. Initiator: ${isInitiator}. localStream available: ${!!localStreamRef.current}`);
+    if (peerConnectionsRef.current[peerId]) {
+      console.log(`[WebRTC] Peer connection for ${peerId} already exists.`);
+      return peerConnectionsRef.current[peerId];
+    }
+    console.log(`[WebRTC] Creating new peer connection to ${peerId}.`);
+    const pc = new RTCPeerConnection(STUN_SERVERS);
+    peerConnectionsRef.current[peerId] = pc;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        try {
+          pc.addTrack(track, localStreamRef.current!);
+          console.log(`[WebRTC] Added local track (${track.kind}) to PC for ${peerId} during creation`);
+        } catch (e) {
+          console.error(`[WebRTC] Error adding track to PC for ${peerId} during creation:`, e);
+        }
+      });
+    } else {
+      console.log(`[WebRTC] Local stream not available when creating PC for ${peerId}. Tracks will be added later if user joins voice.`);
+    }
+
+    pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } };
+    
+    pc.ontrack = (event) => {
+      console.log(`[WebRTC] Remote track received from ${peerId}. Stream ID: ${event.streams[0]?.id}, Track kind: ${event.track?.kind}`);
+      if (event.streams && event.streams[0]) {
+        setRemoteStreams(prev => ({ ...prev, [peerId]: event.streams[0] }));
+      } else {
+        console.warn(`[WebRTC] Remote track from ${peerId} received, but event.streams[0] is unavailable. Track:`, event.track);
+      }
+    };
+    
+    pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Connection state change for ${peerId}: ${pc.connectionState}`);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
+        console.warn(`[WebRTC] Connection for ${peerId} is ${pc.connectionState}. Cleaning up.`);
+        cleanupPeerConnection(peerId);
+      }
+    };
+    
+    pc.onnegotiationneeded = async () => {
+      if (currentUser && peerId !== currentUser.uid && pc.signalingState === 'stable') {
+        console.log(`[WebRTC] onnegotiationneeded triggered for ${peerId}. Signaling state: ${pc.signalingState}. Creating offer.`);
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendSignalMessage(peerId, 'offer', offer);
+        } catch (err: any) {
+          console.error(`[WebRTC] Error in onnegotiationneeded for ${peerId}:`, err);
+          toast({ title: "WebRTC Hatası", description: `On-negotiation-needed sırasında hata (${peerId}): ${err.message}`, variant: "destructive" });
+        }
+      } else {
+        console.log(`[WebRTC] onnegotiationneeded for ${peerId} but state is ${pc.signalingState} (expected stable), or self, or no currentUser. Offer not sent.`);
+      }
+    };
+    return pc;
+  }, [currentUser, sendSignalMessage, cleanupPeerConnection, toast]);
+
+  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => {
+    if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) {
+      console.log(`[WebRTC] Cannot initiatePeerConnection for ${peerId}. currentUser: ${!!currentUser}, localStream: ${!!localStreamRef.current}, not self: ${peerId !== currentUser?.uid}`);
+      return;
+    }
+    console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`);
+    const pc = createPeerConnection(peerId, isInitiator);
+    if (!pc) {
+      console.error(`[WebRTC] Failed to create/get PC for ${peerId} in initiatePeerConnection`);
+      return;
+    }
+
+    if (isInitiator && pc.signalingState === 'stable') {
+      console.log(`[WebRTC] initiatePeerConnection: PC for ${peerId} is stable, attempting to create offer.`);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignalMessage(peerId, 'offer', offer);
+        console.log(`[WebRTC] Offer sent to ${peerId} from initiatePeerConnection`);
+      } catch (error: any) {
+        console.error(`[WebRTC] Error creating offer for ${peerId} in initiatePeerConnection:`, error);
+        toast({ title: "WebRTC Hatası (Initiate)", description: `Offer oluşturulurken hata (${peerId}): ${error.message}`, variant: "destructive" });
+      }
+    } else if (isInitiator && pc.signalingState !== 'stable') {
+        console.log(`[WebRTC] initiatePeerConnection for ${peerId}: signalingState is ${pc.signalingState}, not creating offer immediately. onnegotiationneeded should handle it.`);
+    }
+  }, [currentUser, createPeerConnection, sendSignalMessage, toast]);
+
+  const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => {
+    if (!currentUser || !roomId) return;
+    const { fromUid, type, data } = signal;
+    console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`);
+    let pc = peerConnectionsRef.current[fromUid];
+    
+    if (!pc && type === 'offer') {
+      console.log(`[WebRTC] PC not found for ${fromUid} on offer, creating... (isInitiator: false)`);
+      pc = createPeerConnection(fromUid, false); // Explicitly false as we are responding
+      if (!pc) {
+        console.error(`[WebRTC] Failed to create peer connection for incoming offer from ${fromUid}`);
+        return;
+      }
+    }
+    if (!pc) {
+      console.warn(`[WebRTC] No PeerConnection for ${fromUid} to handle ${type}. Signal ignored.`);
+      return;
+    }
+
+    try {
+      if (type === 'offer') {
+        if (localStreamRef.current) { 
+          localStreamRef.current.getTracks().forEach(track => {
+            const sender = pc.getSenders().find(s => s.track === track);
+            if (!sender) {
+              try {
+                pc.addTrack(track, localStreamRef.current!);
+                console.log(`[WebRTC] Added local track to PC for ${fromUid} before setting remote offer.`);
+              } catch (e) {
+                console.error(`[WebRTC] Error adding track to PC for ${fromUid} when handling offer:`, e);
+              }
+            }
+          });
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignalMessage(fromUid, 'answer', answer);
+        console.log(`[WebRTC] Answer sent to ${fromUid}`);
+      } else if (type === 'answer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
+        console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`);
+      } else if (type === 'candidate') {
+        if (pc.remoteDescription) { // Only add candidate if remote description is set
+          await pc.addIceCandidate(new RTCIceCandidate(data));
+          console.log(`[WebRTC] ICE candidate added from ${fromUid}`);
+        } else {
+          console.warn(`[WebRTC] Remote description not set for ${fromUid}, cannot add ICE candidate yet. Candidate queued or ignored by browser.`);
+        }
+      }
+    } catch (error) {
+      console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${type}):`, error);
+    }
+  }, [currentUser, roomId, createPeerConnection, sendSignalMessage]);
+  
+  const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
+    if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) return Promise.resolve();
+    if (!isPageUnload) setIsProcessingVoiceJoinLeave(true);
+    resetWebRTCState();
+    try {
+      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+      const roomRef = doc(db, "chatRooms", roomId);
+      const batch = writeBatch(db);
+      batch.delete(voiceParticipantRef);
+      batch.update(roomRef, { voiceParticipantCount: increment(-1) });
+      await batch.commit();
+      setIsCurrentUserInVoiceChat(false);
+      if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" });
+    } catch (error) {
+      console.error("Error leaving voice chat (Firestore):", error);
+      if (!isPageUnload) toast({ title: "Hata", description: "Sesli sohbetten ayrılırken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      if (!isPageUnload) setIsProcessingVoiceJoinLeave(false);
+    }
+    return Promise.resolve();
+  }, [currentUser, roomId, resetWebRTCState, toast]);
 
   const handleGameAnswerTimeout = useCallback(async () => {
     if (!roomId || !roomDetails?.currentGameQuestionId || !activeGameQuestion) return;
@@ -425,24 +623,21 @@ export default function ChatRoomPage() {
         if (selfInFirestore) {
             setSelfMuted(selfInFirestore.isMuted || selfInFirestore.isMutedByAdmin || false);
         }
-
-        // Eğer kullanıcı yerel olarak sesli sohbetteyse ama Firestore'da yoksa (ve işlem devam etmiyorsa), yerel olarak ayrılmaya zorla
+        
         if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
             console.warn("[WebRTC] Current user thought they were in call, but not found in Firestore. Forcing local leave.");
             toast({ title: "Bağlantı Kesildi", description: "Sesli sohbetten çıkarıldınız veya bağlantınızda bir sorun oluştu.", variant: "destructive" });
             handleLeaveVoiceChat(true); 
-            return; // Daha fazla işlem yapmadan çık
+            return; 
         }
         
-        // Kullanıcı sesli sohbetteyse ve yerel akış varsa, yeni katılımcılara bağlan veya ayrılanları temizle
         if (localStreamRef.current && isCurrentUserInVoiceChatRef.current) {
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                     console.log(`[WebRTC] New participant ${p.displayName || p.id} detected by ${currentUser.displayName}. Initiating connection.`);
-                    initiatePeerConnection(p.id, true); // isInitiator is true for new connections
+                    initiatePeerConnection(p.id, true); 
                 }
             });
-            // Check for participants who left
             const currentConnectedPeerIds = Object.keys(peerConnectionsRef.current);
             const newParticipantIdsInCall = newVoiceParticipantsData.map(p => p.id);
             currentConnectedPeerIds.forEach(peerId => {
@@ -524,7 +719,7 @@ export default function ChatRoomPage() {
     const participantNameMap = new Map<string, string>();
     activeTextParticipants.forEach(p => {
         if (p.displayName) {
-            participantNameMap.set(p.displayName.toLowerCase().replace(/\s+/g, '_'), p.id); // Boşlukları alt çizgiyle değiştir
+            participantNameMap.set(p.displayName.toLowerCase().replace(/\s+/g, '_'), p.id); 
         }
     });
 
@@ -867,4 +1062,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
