@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useCallback } from "react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, setDoc, collection, addDoc, deleteDoc as deleteFirestoreDoc, query, orderBy, onSnapshot, serverTimestamp, type Timestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, setDoc, collection, addDoc, deleteDoc as deleteFirestoreDoc, query, orderBy, onSnapshot, serverTimestamp, type Timestamp, getDocs } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,27 +98,32 @@ export default function AdminGameSettingsContent() {
     }
   }, [adminUserData, toast]); 
 
-  useEffect(() => {
+  const fetchGameQuestions = useCallback(async () => {
     if (adminUserData?.role !== 'admin') {
       setLoadingQuestions(false);
       return;
     }
     setLoadingQuestions(true);
-    const q = query(collection(db, "gameQuestions"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    try {
+      const q = query(collection(db, "gameQuestions"), orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
       const questions: GameQuestionAdmin[] = [];
       snapshot.forEach((doc) => {
         questions.push({ id: doc.id, ...doc.data() } as GameQuestionAdmin);
       });
       setGameQuestionsList(questions);
-      setLoadingQuestions(false);
-    }, (error) => {
-      console.error("Error fetching game questions:", error);
+    } catch (error) {
+      console.error("Error fetching game questions with getDocs:", error);
       toast({ title: "Hata", description: "Oyun soruları yüklenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
       setLoadingQuestions(false);
-    });
-    return () => unsubscribe();
+    }
   }, [adminUserData?.role, toast]);
+
+  useEffect(() => {
+    fetchGameQuestions();
+  }, [fetchGameQuestions]);
+
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,6 +167,7 @@ export default function AdminGameSettingsContent() {
       setNewQuestionText("");
       setNewQuestionAnswer("");
       setNewQuestionHint("");
+      fetchGameQuestions(); // Refresh list after adding
     } catch (error) {
       console.error("Error adding game question:", error);
       toast({ title: "Hata", description: "Oyun sorusu eklenirken bir sorun oluştu.", variant: "destructive" });
@@ -175,6 +181,7 @@ export default function AdminGameSettingsContent() {
     try {
       await deleteFirestoreDoc(doc(db, "gameQuestions", questionId));
       toast({ title: "Başarılı", description: "Oyun sorusu silindi." });
+      fetchGameQuestions(); // Refresh list after deleting
     } catch (error) {
       console.error("Error deleting game question:", error);
       toast({ title: "Hata", description: "Oyun sorusu silinirken bir sorun oluştu.", variant: "destructive" });

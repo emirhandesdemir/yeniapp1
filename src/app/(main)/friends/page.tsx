@@ -60,17 +60,18 @@ export default function FriendsPage() {
     document.title = 'Arkadaşlarım - HiweWalk';
   }, []);
 
-  useEffect(() => {
+  const fetchFriends = useCallback(async () => {
     if (!currentUser?.uid) {
       setLoadingFriends(false);
       setMyFriends([]);
       return;
     }
     setLoadingFriends(true);
-    const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-    const q = query(friendsRef);
+    try {
+      const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
+      const q = query(friendsRef); // Optionally, order by addedAt if needed
+      const snapshot = await getDocs(q);
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
         const friendData = friendDoc.data();
         try {
@@ -96,22 +97,20 @@ export default function FriendsPage() {
           addedAt: friendData.addedAt
         } as Friend;
       });
-      try {
-        const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
-        setMyFriends(resolvedFriends);
-      } catch (error) {
-        console.error("Error resolving friend profiles:", error);
-        toast({ title: "Hata", description: "Arkadaş profilleri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      } finally {
-        setLoadingFriends(false);
-      }
-    }, (error) => {
-      console.error("Error fetching friends:", error);
+      
+      const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
+      setMyFriends(resolvedFriends);
+    } catch (error) {
+      console.error("Error fetching friends with getDocs:", error);
       toast({ title: "Hata", description: "Arkadaşlar yüklenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
       setLoadingFriends(false);
-    });
-    return () => unsubscribe();
+    }
   }, [currentUser?.uid, toast]);
+
+  useEffect(() => {
+    fetchFriends();
+  }, [fetchFriends]);
 
 
   const handleSearchUsers = useCallback(async (e?: FormEvent) => {
@@ -262,6 +261,7 @@ export default function FriendsPage() {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
+      fetchFriends(); // Refresh friends list after removal
       setSearchResults(prevResults => prevResults.map(sr =>
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
@@ -271,7 +271,7 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(friendId, false);
     }
-  }, [currentUser, toast, setActionLoading]);
+  }, [currentUser, toast, setActionLoading, fetchFriends]);
 
   const handleInitiateCall = useCallback(async (targetFriend: Friend) => {
     if (!currentUser || !userData || !targetFriend.uid) {
@@ -458,9 +458,10 @@ export default function FriendsPage() {
                                 variant="outline"
                                 size="sm"
                                 className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                                disabled
+                                disabled // Popover'dan kabul etme/reddetme işlemleri yönetilecek.
+                                onClick={() => toast({ title: "İstek Mevcut", description: "Bu kullanıcıdan gelen bir arkadaşlık isteği var. Bildirimlerden yönetebilirsiniz."})}
                                 >
-                                <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi (Bildirimlerde)
+                                <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi
                                 </Button>
                             ) : (
                                 <Button

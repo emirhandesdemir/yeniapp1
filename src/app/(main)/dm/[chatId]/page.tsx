@@ -67,7 +67,7 @@ export default function DirectMessagePage() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { currentUser, userData, isUserLoading, reportUser, blockUser } = useAuth(); // reportUser ve blockUser eklendi
+  const { currentUser, userData, isUserLoading, reportUser, blockUser } = useAuth();
   const { toast } = useToast();
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -92,27 +92,32 @@ export default function DirectMessagePage() {
 
     setLoadingDmPartner(true);
     const userDocRef = doc(db, "users", partnerUid);
-    const unsubscribePartner = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const partnerData = docSnap.data() as UserData;
-        setDmPartnerDetails({
-          uid: partnerUid,
-          displayName: partnerData.displayName,
-          photoURL: partnerData.photoURL,
-          email: partnerData.email,
-        });
-        document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
-      } else {
-        toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
-        router.push("/friends");
-      }
-      setLoadingDmPartner(false);
-    }, (error) => {
-      console.error("Error fetching DM partner details:", error);
-      toast({ title: "Hata", description: "Partner bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      setLoadingDmPartner(false);
-    });
-    return () => unsubscribePartner();
+
+    const fetchPartnerDetails = async () => {
+        try {
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+                const partnerData = docSnap.data() as UserData;
+                setDmPartnerDetails({
+                uid: partnerUid,
+                displayName: partnerData.displayName,
+                photoURL: partnerData.photoURL,
+                email: partnerData.email,
+                });
+                document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
+            } else {
+                toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
+                router.push("/friends");
+            }
+        } catch (error) {
+            console.error("Error fetching DM partner details with getDoc:", error);
+            toast({ title: "Hata", description: "Partner bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
+        } finally {
+            setLoadingDmPartner(false);
+        }
+    };
+    fetchPartnerDetails();
+    // onSnapshot yerine getDoc kullandığımız için useEffect'in return'ünde unsubscribe'a gerek yok.
   }, [chatId, currentUser?.uid, toast, router]);
 
 
@@ -270,18 +275,13 @@ export default function DirectMessagePage() {
   const handleReportUserAction = useCallback(async () => {
     if (!currentUser || !dmPartnerDetails) return;
     if (!confirm(`${dmPartnerDetails.displayName || 'Bu kullanıcıyı'} şikayet etmek istediğinizden emin misiniz?`)) return;
-    
-    await reportUser(dmPartnerDetails.uid);
-    // reportUser fonksiyonu zaten kendi toast'ını gösteriyor.
-    // Burada ek bir toast göstermeye gerek yok, AuthContext'e bırakalım.
-  }, [currentUser, dmPartnerDetails, reportUser]);
+    await reportUser(dmPartnerDetails.uid, `DM sohbetinden (${chatId}) şikayet`);
+  }, [currentUser, dmPartnerDetails, reportUser, chatId]);
 
   const handleBlockUserAction = useCallback(async () => {
     if (!currentUser || !dmPartnerDetails) return;
      if (!confirm(`${dmPartnerDetails.displayName || 'Bu kullanıcıyı'} engellemek istediğinizden emin misiniz? Engelleme işlemi sonrası bu kullanıcıyla etkileşimleriniz kısıtlanacaktır.`)) return;
-
     await blockUser(dmPartnerDetails.uid);
-    // blockUser fonksiyonu zaten kendi toast'ını gösteriyor.
   }, [currentUser, dmPartnerDetails, blockUser]);
 
 

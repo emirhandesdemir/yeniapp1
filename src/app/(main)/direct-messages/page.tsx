@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone } from "lucide-react";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, onSnapshot, Timestamp, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -46,20 +46,21 @@ export default function DirectMessagesPage() {
     document.title = 'Direkt Mesajlar - HiweWalk';
   }, []);
 
-  useEffect(() => {
+  const fetchConversations = useCallback(async () => {
     if (!currentUser?.uid || isAuthLoading) {
       if (!isAuthLoading) setLoadingConversations(false);
       return;
     }
 
     setLoadingConversations(true);
-    const dmQuery = query(
-      collection(db, "directMessages"),
-      where("participantUids", "array-contains", currentUser.uid),
-      orderBy("lastMessageTimestamp", "desc")
-    );
+    try {
+      const dmQuery = query(
+        collection(db, "directMessages"),
+        where("participantUids", "array-contains", currentUser.uid),
+        orderBy("lastMessageTimestamp", "desc")
+      );
+      const snapshot = await getDocs(dmQuery);
 
-    const unsubscribe = onSnapshot(dmQuery, async (snapshot) => {
       if (snapshot.empty) {
         setConversations([]);
         setLoadingConversations(false);
@@ -97,24 +98,21 @@ export default function DirectMessagesPage() {
         return { ...data, otherParticipant: otherParticipantData };
       });
 
-      try {
-        const resolvedConversations = (await Promise.all(convPromises))
-            .filter(conv => conv.otherParticipant !== undefined) as DirectMessageConversation[];
-        setConversations(resolvedConversations);
-      } catch (error) {
-          console.error("Error processing DM conversations:", error);
-          toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive"});
-      } finally {
-        setLoadingConversations(false);
-      }
-    }, (error) => {
-      console.error("Error fetching direct messages:", error);
-      toast({ title: "Hata", description: "Direkt mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
+      const resolvedConversations = (await Promise.all(convPromises))
+          .filter(conv => conv.otherParticipant !== undefined) as DirectMessageConversation[];
+      setConversations(resolvedConversations);
+    } catch (error) {
+        console.error("Error fetching DM conversations with getDocs:", error);
+        toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive"});
+    } finally {
       setLoadingConversations(false);
-    });
-
-    return () => unsubscribe();
+    }
   }, [currentUser?.uid, isAuthLoading, toast]);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
 
   const getAvatarFallback = useCallback((name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "PN";

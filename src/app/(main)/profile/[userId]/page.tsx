@@ -20,7 +20,7 @@ import {
   where,
   orderBy,
   limit,
-  onSnapshot,
+  onSnapshot, // Posts ve ActiveRooms için geçici olarak onSnapshot'tan getDocs'a çevrildi
   addDoc,
   deleteDoc as deleteFirestoreDoc,
   serverTimestamp,
@@ -67,22 +67,26 @@ export default function UserProfilePage() {
     if (!userId) return;
     setLoadingProfile(true);
     const userDocRef = doc(db, "users", userId);
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setProfileUser({ uid: docSnap.id, ...docSnap.data() } as UserData);
-        document.title = `${docSnap.data().displayName || 'Kullanıcı'} Profili - HiweWalk`;
-      } else {
-        setProfileUser(null);
-        toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
-        router.push("/"); 
-      }
-      setLoadingProfile(false);
-    }, (error) => {
-      console.error("Error fetching profile user data:", error);
-      toast({ title: "Hata", description: "Profil bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
-      setLoadingProfile(false);
-    });
-    return () => unsubscribe();
+    
+    const fetchProfileUser = async () => {
+        try {
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+                setProfileUser({ uid: docSnap.id, ...docSnap.data() } as UserData);
+                document.title = `${docSnap.data().displayName || 'Kullanıcı'} Profili - HiweWalk`;
+            } else {
+                setProfileUser(null);
+                toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
+                router.push("/"); 
+            }
+        } catch (error) {
+            console.error("Error fetching profile user data with getDoc:", error);
+            toast({ title: "Hata", description: "Profil bilgileri yüklenirken bir sorun oluştu.", variant: "destructive" });
+        } finally {
+            setLoadingProfile(false);
+        }
+    };
+    fetchProfileUser();
   }, [userId, router, toast]);
 
   useEffect(() => {
@@ -158,16 +162,19 @@ export default function UserProfilePage() {
       orderBy("createdAt", "desc"),
       limit(20) 
     );
-    const unsubscribe = onSnapshot(postsQuery, (snapshot) => {
-      const postsData: Post[] = [];
-      snapshot.forEach((doc) => postsData.push({ id: doc.id, ...doc.data() } as Post));
-      setProfilePosts(postsData);
-      setLoadingPosts(false);
-    }, (error) => {
-      console.error("Error fetching profile posts:", error);
-      setLoadingPosts(false);
-    });
-    return () => unsubscribe();
+    const fetchPosts = async () => {
+        try {
+            const snapshot = await getDocs(postsQuery);
+            const postsData: Post[] = [];
+            snapshot.forEach((doc) => postsData.push({ id: doc.id, ...doc.data() } as Post));
+            setProfilePosts(postsData);
+        } catch (error) {
+            console.error("Error fetching profile posts with getDocs:", error);
+        } finally {
+            setLoadingPosts(false);
+        }
+    };
+    fetchPosts();
   }, [userId, profileUser, canViewContent]);
 
   useEffect(() => {
@@ -186,16 +193,19 @@ export default function UserProfilePage() {
       where("expiresAt", ">", Timestamp.now()),
       orderBy("expiresAt", "asc") 
     );
-    const unsubscribe = onSnapshot(roomsQuery, (snapshot) => {
-      const roomsData: PublicProfileChatRoom[] = [];
-      snapshot.forEach((doc) => roomsData.push({ id: doc.id, ...doc.data() } as PublicProfileChatRoom));
-      setActiveRooms(roomsData);
-      setLoadingRooms(false);
-    }, (error) => {
-      console.error("Error fetching active rooms:", error);
-      setLoadingRooms(false);
-    });
-    return () => unsubscribe();
+    const fetchActiveRooms = async () => {
+        try {
+            const snapshot = await getDocs(roomsQuery);
+            const roomsData: PublicProfileChatRoom[] = [];
+            snapshot.forEach((doc) => roomsData.push({ id: doc.id, ...doc.data() } as PublicProfileChatRoom));
+            setActiveRooms(roomsData);
+        } catch (error) {
+            console.error("Error fetching active rooms with getDocs:", error);
+        } finally {
+            setLoadingRooms(false);
+        }
+    };
+    fetchActiveRooms();
   }, [userId, profileUser, canViewContent]);
 
 
@@ -486,4 +496,3 @@ export default function UserProfilePage() {
     </div>
   );
 }
-
