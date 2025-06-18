@@ -17,7 +17,7 @@ import {
   Rss,
   // Additional icons for bottom nav or other features
 } from 'lucide-react';
-import { Button, buttonVariants } from '@/components/ui/button'; // buttonVariants import edildi
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
@@ -523,7 +523,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </motion.main>
         </AnimatePresence>
       ) : (
-        <main className={mainContentClasses}>
+        <main className={cn(mainContentClasses, "flex flex-col")}>
           {children}
         </main>
       )}
@@ -543,5 +543,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
-    
