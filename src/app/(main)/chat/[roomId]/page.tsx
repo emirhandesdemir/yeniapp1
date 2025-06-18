@@ -134,7 +134,7 @@ const MESSAGE_WINDOW_SECONDS = 5;
 
 const CAPACITY_INCREASE_COST = 5;
 const CAPACITY_INCREASE_SLOTS = 1;
-const PREMIUM_USER_ROOM_CAPACITY = 50; 
+const PREMIUM_USER_ROOM_CAPACITY = 50;
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -202,7 +202,7 @@ export default function ChatRoomPage() {
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
     if (!currentUser || !roomId) return;
-    console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type, signal.sdp ? `SDP (first 30): ${signal.sdp.substring(0, 30)}...` : (signal.candidate ? `Candidate: ${signal.candidate.candidate?.substring(0,30)}...` : "No SDP/Candidate"));
+    console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type, signal.sdp ? `SDP (first 30): ${signal.sdp.substring(0, 30)}...` : (signal.candidate ? `Candidate: ${signal.candidate.substring(0,30)}...` : "No SDP/Candidate"));
     try {
       const signalWithTimestampAndSender: WebRTCSignal = {
         ...signal,
@@ -560,7 +560,7 @@ export default function ChatRoomPage() {
     peerConnectionsRef.current = {};
     negotiatingRef.current = {};
     setActiveRemoteStreams({});
-    lastProcessedSignalTimestampRef.current = null; 
+    lastProcessedSignalTimestampRef.current = null;
 
 
     if (localStreamRef.current) {
@@ -629,7 +629,7 @@ export default function ChatRoomPage() {
 
           if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
               console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
-              handleLeaveVoiceChat(true); 
+              handleLeaveVoiceChat(true);
               return;
           }
 
@@ -653,7 +653,7 @@ export default function ChatRoomPage() {
       });
     };
 
-    setupVoiceParticipantsListener(); 
+    setupVoiceParticipantsListener();
 
     return () => {
       if (unsubscribeVoiceParticipants) {
@@ -1120,7 +1120,7 @@ export default function ChatRoomPage() {
   const handleDmAction = useCallback((targetUserId: string | undefined | null) => { if (!currentUser?.uid || !targetUserId) return; const dmId = generateDmChatId(currentUser.uid, targetUserId); router.push(`/dm/${dmId}`); setPopoverOpenForUserId(null); }, [currentUser?.uid, router]);
   const handleViewProfileAction = useCallback((targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); }, [router]);
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
-  const isCurrentUserPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+  const isCurrentUserPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' &&
                              (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
 
 
@@ -1313,5 +1313,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
-    

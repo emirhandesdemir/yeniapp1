@@ -41,15 +41,15 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
 ];
 
 const PREDEFINED_AVATARS = [
-  "https://placehold.co/128x128/ADD8E6/333333.png?text=HW1", 
-  "https://placehold.co/128x128/7FFFD4/333333.png?text=HW2", 
-  "https://placehold.co/128x128/F0F8FF/333333.png?text=HW3", 
-  "https://placehold.co/128x128/FFB6C1/333333.png?text=HW4", 
-  "https://placehold.co/128x128/90EE90/333333.png?text=HW5", 
-  "https://placehold.co/128x128/FFA07A/333333.png?text=HW6", 
-  "https://placehold.co/128x128/DDA0DD/333333.png?text=HW7", 
-  "https://placehold.co/128x128/B0E0E6/333333.png?text=HW8", 
-  null, 
+  "https://placehold.co/128x128/ADD8E6/333333.png?text=HW1",
+  "https://placehold.co/128x128/7FFFD4/333333.png?text=HW2",
+  "https://placehold.co/128x128/F0F8FF/333333.png?text=HW3",
+  "https://placehold.co/128x128/FFB6C1/333333.png?text=HW4",
+  "https://placehold.co/128x128/90EE90/333333.png?text=HW5",
+  "https://placehold.co/128x128/FFA07A/333333.png?text=HW6",
+  "https://placehold.co/128x128/DDA0DD/333333.png?text=HW7",
+  "https://placehold.co/128x128/B0E0E6/333333.png?text=HW8",
+  null,
 ];
 
 
@@ -60,7 +60,7 @@ export default function ProfilePage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
-  const [previewImage, setPreviewImage] = useState<string | null>(null); 
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
     postsVisibleToFriendsOnly: false,
@@ -102,7 +102,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (userData) {
-      if (!isEditing) { 
+      if (!isEditing) {
         setPreviewImage(userData.photoURL || null);
         setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
       }
@@ -124,13 +124,13 @@ export default function ProfilePage() {
   }, [micTestStream]);
 
   const handleEditToggle = () => {
-    if (isEditing) { 
+    if (isEditing) {
       if (currentUser && userData) {
         setTempProfile({
             username: userData.displayName || currentUser.displayName || "",
             bio: userData.bio || ""
         });
-        setPreviewImage(userData.photoURL || currentUser.photoURL || null); 
+        setPreviewImage(userData.photoURL || currentUser.photoURL || null);
         setPrivacySettings({
             postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
             activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
@@ -141,9 +141,9 @@ export default function ProfilePage() {
         setPreviewImage(currentUser.photoURL || null);
         setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true });
       }
-    } else { 
+    } else {
        if (currentUser && userData) {
-        setPreviewImage(userData.photoURL || currentUser.photoURL || null); 
+        setPreviewImage(userData.photoURL || currentUser.photoURL || null);
        }
     }
     setIsEditing(!isEditing);
@@ -185,8 +185,8 @@ export default function ProfilePage() {
     }
 
     const originalPhotoURL = userData?.photoURL || currentUser?.photoURL || null;
-    if (previewImage !== originalPhotoURL) { 
-        updates.newPhotoURL = previewImage; 
+    if (previewImage !== originalPhotoURL) {
+        updates.newPhotoURL = previewImage;
         profileChanged = true;
     }
 
@@ -227,7 +227,7 @@ export default function ProfilePage() {
 
   const startMicTest = async () => {
     setMicError(null);
-    if (micTestStream) { 
+    if (micTestStream) {
       micTestStream.getTracks().forEach(track => track.stop());
       setMicTestStream(null);
     }
@@ -288,7 +288,7 @@ export default function ProfilePage() {
   }
 
   const displayPhotoUrlToShow = isEditing ? previewImage : (userData?.photoURL || currentUser?.photoURL || null);
-  const isPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+  const isPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' &&
                     (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
 
   return (
@@ -303,7 +303,7 @@ export default function ProfilePage() {
                     src={displayPhotoUrlToShow}
                     alt={tempProfile.username || "Kullanıcı"}
                     data-ai-hint="user portrait"
-                    key={displayPhotoUrlToShow} 
+                    key={displayPhotoUrlToShow}
                   />
               ) : null }
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
@@ -363,7 +363,7 @@ export default function ProfilePage() {
                       className={cn(
                         "aspect-square rounded-full border-2 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
                         previewImage === avatarUrl ? "border-primary ring-2 ring-primary scale-110" : "border-transparent hover:border-primary/50",
-                        !avatarUrl && "flex items-center justify-center bg-muted hover:bg-muted/80" 
+                        !avatarUrl && "flex items-center justify-center bg-muted hover:bg-muted/80"
                       )}
                       aria-label={avatarUrl ? `Avatar ${index + 1} seç` : "Avatarı kaldır"}
                     >

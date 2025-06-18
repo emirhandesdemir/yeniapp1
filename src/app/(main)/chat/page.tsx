@@ -53,14 +53,14 @@ interface GameSettings {
   questionIntervalSeconds: number;
 }
 
-const ROOM_CREATION_COST = 1; 
+const ROOM_CREATION_COST = 1;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
-const MAX_PARTICIPANTS_PER_ROOM = 7; 
-const PREMIUM_USER_ROOM_CAPACITY = 50; 
+const MAX_PARTICIPANTS_PER_ROOM = 7;
+const PREMIUM_USER_ROOM_CAPACITY = 50;
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
-const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk'; 
+const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk';
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
@@ -68,7 +68,7 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     height: 'auto',
-    marginBottom: '1.5rem', 
+    marginBottom: '1.5rem',
     transition: {
       type: "spring",
       stiffness: 100,
@@ -85,7 +85,7 @@ const cardVariants = {
   }
 };
 
-const itemVariants = { 
+const itemVariants = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
 };
@@ -100,7 +100,7 @@ export default function ChatRoomsPage() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
-  const [now, setNow] = useState(new Date()); 
+  const [now, setNow] = useState(new Date());
   const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
 
   const [isRoomsInfoCardVisible, setIsRoomsInfoCardVisible] = useState(() => {
@@ -112,7 +112,7 @@ export default function ChatRoomsPage() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date()); 
+      setNow(new Date());
     }, 60000);
     return () => clearInterval(timer);
   }, []);
@@ -157,9 +157,9 @@ export default function ChatRoomsPage() {
     const currentTime = Timestamp.now();
     const q = query(
       collection(db, "chatRooms"),
-      where("expiresAt", ">", currentTime),      
-      orderBy("expiresAt", "asc"),             
-      limit(50) 
+      where("expiresAt", ">", currentTime),
+      orderBy("expiresAt", "asc"),
+      limit(50)
     );
 
     const fetchRooms = async () => {
@@ -168,7 +168,7 @@ export default function ChatRoomsPage() {
         const querySnapshot = await getDocs(q);
         const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
           const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
-          if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) { 
+          if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
             let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
             try {
               const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
@@ -220,8 +220,8 @@ export default function ChatRoomsPage() {
       toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için giriş yapmalısınız.", variant: "destructive" });
       return;
     }
-    
-    const isPremiumUser = userData.premiumStatus && userData.premiumStatus !== 'none' && 
+
+    const isPremiumUser = userData.premiumStatus && userData.premiumStatus !== 'none' &&
                           (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
 
     if (!isPremiumUser && (userData.diamonds ?? 0) < ROOM_CREATION_COST) {
@@ -270,7 +270,7 @@ export default function ChatRoomsPage() {
       participantCount: 0,
       voiceParticipantCount: 0,
       maxParticipants: roomMaxParticipants,
-      gameInitialized: false, 
+      gameInitialized: false,
       currentGameQuestionId: null,
       nextGameQuestionTimestamp: null,
       currentGameAnswerDeadline: null,
@@ -284,11 +284,11 @@ export default function ChatRoomsPage() {
 
     try {
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
-      if (!isPremiumUser) { 
+      if (!isPremiumUser) {
         await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
         toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       } else {
-        toast({ title: "Başarılı", description: `Premium kullanıcı olduğunuz için "${newRoomName}" odası ücretsiz oluşturuldu! (${roomMaxParticipants} kişilik)` });
+        toast({ title: "Başarılı", description: `Premium kullanıcı olduğunuz için "${newRoomName}" odası ücretsiz oluşturuldu!` });
       }
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
@@ -305,7 +305,7 @@ export default function ChatRoomsPage() {
         toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için lütfen giriş yapın.", variant: "destructive" });
         return;
     }
-    const isPremiumUser = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+    const isPremiumUser = userData?.premiumStatus && userData.premiumStatus !== 'none' &&
                           (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
 
     if (!isPremiumUser && (userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
@@ -324,7 +324,7 @@ export default function ChatRoomsPage() {
           variant: "destructive",
           duration: 10000,
         });
-        return; 
+        return;
     }
     setIsCreateModalOpen(true);
 };
@@ -353,7 +353,7 @@ export default function ChatRoomsPage() {
 
     const diffSecondsTotal = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
 
-    if (diffSecondsTotal < 0) return "Süresi Doldu"; 
+    if (diffSecondsTotal < 0) return "Süresi Doldu";
 
     const days = Math.floor(diffSecondsTotal / 86400);
     const hours = Math.floor((diffSecondsTotal % 86400) / 3600);
@@ -385,7 +385,7 @@ export default function ChatRoomsPage() {
       </div>
     );
   }
-  const isCreatorPremiumForDialog = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+  const isCreatorPremiumForDialog = userData?.premiumStatus && userData.premiumStatus !== 'none' &&
                                     (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
   const hasEnoughDiamonds = (userData?.diamonds ?? 0) >= ROOM_CREATION_COST;
 
@@ -422,7 +422,7 @@ export default function ChatRoomsPage() {
                   className="text-sm text-muted-foreground"
                   variants={itemVariants}
                 >
-                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı {isCreatorPremiumForDialog ? "ücretsiz (Premium)" : `oluşturabilirsiniz.`}
+                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı oluşturabilirsiniz.
                 </motion.p>
               </CardContent>
             </Card>
@@ -456,9 +456,9 @@ export default function ChatRoomsPage() {
               <DialogHeader>
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
-                  Odanız için bir ad ve açıklama belirleyin. 
-                  {isCreatorPremiumForDialog 
-                    ? ` Premium kullanıcı olduğunuz için oda oluşturmak ücretsizdir ve ${PREMIUM_USER_ROOM_CAPACITY} katılımcı limitine sahip olacaktır.` 
+                  Odanız için bir ad ve açıklama belirleyin.
+                  {isCreatorPremiumForDialog
+                    ? ` Premium kullanıcı olduğunuz için oda oluşturmak ücretsizdir ve ${PREMIUM_USER_ROOM_CAPACITY} katılımcı limitine sahip olacaktır.`
                     : ` Oda oluşturmak ${ROOM_CREATION_COST} elmasa mal olur, ${MAX_PARTICIPANTS_PER_ROOM} katılımcı limiti ve ${ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalma süresi olur.`}
                   Mevcut elmasınız: {userData?.diamonds ?? 0}
                 </DialogDescription>
@@ -650,4 +650,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
