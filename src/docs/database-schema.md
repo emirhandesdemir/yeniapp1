@@ -22,10 +22,15 @@ Kullanıcı profil bilgilerini saklar.
     - `feedShowsEveryone`: (Boolean) `true` ise kullanıcının ana sayfa akışında herkesin gönderileri gösterilir, `false` ise sadece arkadaşlarının gönderileri gösterilir. (Varsayılan: `true`)
   - `premiumStatus`: (String, nullable) Kullanıcının premium abonelik durumu ('none', 'weekly', 'monthly'). (Varsayılan: 'none')
   - `premiumExpiryDate`: (Timestamp, nullable) Premium aboneliğin sona erme tarihi. (Varsayılan: `null`)
+  - `reportCount`: (Number, isteğe bağlı) Kullanıcının aldığı şikayet sayısı. (Varsayılan: 0)
+  - `isBanned`: (Boolean, isteğe bağlı) Kullanıcının banlanıp banlanmadığı. (Varsayılan: `false`)
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`
     - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `addedAt` (Timestamp)
+  - `blockedUsers`: Kullanıcının engellediği diğer kullanıcıları saklar.
+    - **Yol:** `/users/{userId}/blockedUsers/{blockedUserId}`
+    - **Alanlar:** `blockedAt` (Timestamp) - Engelleme zamanı
 - **Gerekli İndeksler:**
   - Admin panelinde kullanıcıları kayıt tarihine göre listelemek için (`src/components/admin/sections/AdminUsersContent.tsx`):
     - Koleksiyon: `users`
@@ -218,6 +223,25 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - **Kullanıcının gönderilerini profil sayfasında listelemek için (`src/app/(main)/profile/[userId]/page.tsx`):**
     - **Koleksiyon:** `posts`
     - **Alanlar:** `userId` (Artan), `createdAt` (Azalan)
+
+## `reports`
+Kullanıcı şikayetlerini saklar.
+- **Yol:** `/reports/{reportId}`
+- **Alanlar:**
+  - `reporterId`: (String) Şikayeti yapan kullanıcının UID'si.
+  - `reporterName`: (String, nullable) Şikayeti yapan kullanıcının adı.
+  - `reportedUserId`: (String) Şikayet edilen kullanıcının UID'si.
+  - `reason`: (String, isteğe bağlı) Şikayet nedeni.
+  - `timestamp`: (Timestamp) Şikayetin yapıldığı zaman.
+  - `status`: (String) Şikayetin durumu (örn: "pending_review", "resolved", "dismissed"). (Varsayılan: "pending_review")
+- **Gerekli İndeksler:**
+  - Admin panelinde şikayetleri listelemek ve tarihe göre sıralamak için:
+    - Koleksiyon: `reports`
+    - Alanlar: `timestamp` (Azalan)
+  - Belirli bir kullanıcıya yapılan şikayetleri saymak için (sunucu tarafında):
+    - Koleksiyon: `reports`
+    - Alanlar: `reportedUserId` (Artan), `status` (Artan)
+
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.

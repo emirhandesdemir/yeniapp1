@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone } from "lucide-react"; // Phone eklendi
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -26,7 +26,7 @@ import {
 } from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { generateDmChatId } from "@/lib/utils"; 
+import { generateDmChatId } from "@/lib/utils";
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
 import {
   DropdownMenu,
@@ -40,7 +40,7 @@ interface DirectMessage {
   id: string;
   text: string;
   senderId: string;
-  senderName: string; 
+  senderName: string;
   senderAvatar: string | null;
   timestamp: Timestamp | null;
   isOwn?: boolean;
@@ -51,15 +51,15 @@ interface DmPartnerDetails {
   uid: string;
   displayName: string | null;
   photoURL: string | null;
-  email?: string | null; 
+  email?: string | null;
 }
 
-const TYPING_DEBOUNCE_DELAY = 1500; 
+const TYPING_DEBOUNCE_DELAY = 1500;
 
 export default function DirectMessagePage() {
   const params = useParams();
   const router = useRouter();
-  const chatId = params.chatId as string; 
+  const chatId = params.chatId as string;
   const [dmPartnerDetails, setDmPartnerDetails] = useState<DmPartnerDetails | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -67,7 +67,7 @@ export default function DirectMessagePage() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { currentUser, userData, isUserLoading } = useAuth();
+  const { currentUser, userData, isUserLoading, reportUser, blockUser } = useAuth(); // reportUser ve blockUser eklendi
   const { toast } = useToast();
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -86,10 +86,10 @@ export default function DirectMessagePage() {
 
     if (!partnerUid) {
         toast({ title: "Hata", description: "Sohbet partneri belirlenemedi.", variant: "destructive" });
-        router.push("/friends"); 
+        router.push("/friends");
         return;
     }
-    
+
     setLoadingDmPartner(true);
     const userDocRef = doc(db, "users", partnerUid);
     const unsubscribePartner = onSnapshot(userDocRef, (docSnap) => {
@@ -128,7 +128,7 @@ export default function DirectMessagePage() {
           id: doc.id,
           text: data.text,
           senderId: data.senderId,
-          senderName: data.senderName, 
+          senderName: data.senderName,
           senderAvatar: data.senderAvatar,
           timestamp: data.timestamp,
         });
@@ -181,18 +181,18 @@ export default function DirectMessagePage() {
     e.preventDefault();
     if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) return;
 
-    if (isSending) return; 
+    if (isSending) return;
 
     setIsSending(true);
     const tempMessage = newMessage.trim();
-    
+
     try {
       const dmChatDocRef = doc(db, "directMessages", chatId);
       const dmChatDocSnap = await getDoc(dmChatDocRef);
-      
+
       const messageDataForParentDoc = {
         lastMessageTimestamp: serverTimestamp(),
-        lastMessageText: tempMessage.substring(0, 50), 
+        lastMessageText: tempMessage.substring(0, 50),
         lastMessageSenderId: currentUser.uid,
       };
 
@@ -223,7 +223,7 @@ export default function DirectMessagePage() {
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         timestamp: serverTimestamp(),
       });
-      setNewMessage(""); 
+      setNewMessage("");
     } catch (error) {
       console.error("Error sending DM:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
@@ -267,23 +267,22 @@ export default function DirectMessagePage() {
     });
   }, [dmPartnerDetails, toast]);
 
-  const handleReportUser = useCallback(() => {
-    toast({
-      title: "Kullanıcı Şikayet Edildi (Simülasyon)",
-      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} hakkındaki şikayetiniz kaydedildi. Gerekli incelemeler yapılacaktır. (Bu bir test mesajıdır, gerçek bir şikayet sistemi henüz aktif değildir.)`,
-      variant: "default",
-      duration: 7000,
-    });
-  }, [dmPartnerDetails, toast]);
+  const handleReportUserAction = useCallback(async () => {
+    if (!currentUser || !dmPartnerDetails) return;
+    if (!confirm(`${dmPartnerDetails.displayName || 'Bu kullanıcıyı'} şikayet etmek istediğinizden emin misiniz?`)) return;
+    
+    await reportUser(dmPartnerDetails.uid);
+    // reportUser fonksiyonu zaten kendi toast'ını gösteriyor.
+    // Burada ek bir toast göstermeye gerek yok, AuthContext'e bırakalım.
+  }, [currentUser, dmPartnerDetails, reportUser]);
 
-  const handleBlockUser = useCallback(() => {
-    toast({
-      title: "Kullanıcı Engelleme (Geliştiriliyor)",
-      description: `${dmPartnerDetails?.displayName || 'Kullanıcıyı'} engelleme özelliği yakında eklenecektir. Tam engelleme işlevselliği için çalışmalar devam etmektedir.`,
-      variant: "default",
-      duration: 7000,
-    });
-  }, [dmPartnerDetails, toast]);
+  const handleBlockUserAction = useCallback(async () => {
+    if (!currentUser || !dmPartnerDetails) return;
+     if (!confirm(`${dmPartnerDetails.displayName || 'Bu kullanıcıyı'} engellemek istediğinizden emin misiniz? Engelleme işlemi sonrası bu kullanıcıyla etkileşimleriniz kısıtlanacaktır.`)) return;
+
+    await blockUser(dmPartnerDetails.uid);
+    // blockUser fonksiyonu zaten kendi toast'ını gösteriyor.
+  }, [currentUser, dmPartnerDetails, blockUser]);
 
 
   if (loadingDmPartner || !dmPartnerDetails || isUserLoading) {
@@ -332,11 +331,11 @@ export default function DirectMessagePage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleReportUser}>
+              <DropdownMenuItem onClick={handleReportUserAction}>
                 <ShieldAlert className="mr-2 h-4 w-4 text-orange-500" />
                 Kullanıcıyı Şikayet Et
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleBlockUser} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+              <DropdownMenuItem onClick={handleBlockUserAction} className="text-destructive focus:text-destructive focus:bg-destructive/10">
                 <Ban className="mr-2 h-4 w-4" />
                 Kullanıcıyı Engelle
               </DropdownMenuItem>
@@ -360,7 +359,7 @@ export default function DirectMessagePage() {
                     <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p>
                 </div>
             )}
-            
+
             {messages.map((msg) => (
               <DirectMessageItem
                 key={msg.id}
