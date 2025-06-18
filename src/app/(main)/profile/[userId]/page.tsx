@@ -8,7 +8,7 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings } from "lucide-react";
+import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings, Gem } from "lucide-react";
 import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
@@ -405,7 +405,15 @@ export default function UserProfilePage() {
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
             {profileUser.displayName || "Kullanıcı Adı Yok"}
           </CardTitle>
-          <CardDescription className="text-foreground/80">{profileUser.email}</CardDescription>
+          {isOwnProfile && profileUser.email && (
+            <CardDescription className="text-foreground/80">{profileUser.email}</CardDescription>
+          )}
+          {isOwnProfile && (
+            <div className="mt-1 flex items-center gap-2 text-foreground/90">
+              <Gem className="h-4 w-4 text-yellow-500" />
+              <span className="font-medium">{currentUserData?.diamonds ?? 0} Elmas</span>
+            </div>
+          )}
           
           {isOwnProfile && (
              <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full max-w-xs">
