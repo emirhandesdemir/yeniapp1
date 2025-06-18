@@ -210,7 +210,7 @@ export default function ChatRoomPage() {
     try {
       const signalWithTimestampAndSender: WebRTCSignal = {
         ...signal,
-        from: currentUser.uid, // Gönderen bilgisini ekle
+        from: currentUser.uid, 
         signalTimestamp: serverTimestamp() as Timestamp,
       };
       await addDoc(collection(db, `chatRooms/${roomId}/webrtcSignals/${toUid}/signals`), signalWithTimestampAndSender);
@@ -266,16 +266,21 @@ export default function ChatRoomPage() {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`[WebRTC] ICE candidate for ${targetUid}:`, event.candidate.candidate.substring(0, 15) + "...");
+        console.log(`[WebRTC] ICE candidate for ${targetUid}:`, event.candidate.candidate.substring(0, 30) + "...");
         sendSignalMessage(targetUid, { type: 'candidate', candidate: event.candidate.toJSON() });
+      } else {
+        console.log(`[WebRTC] All ICE candidates have been sent for ${targetUid}`);
       }
     };
 
     pc.ontrack = (event) => {
-      console.log(`[WebRTC] Track received from ${targetUid}`);
+      console.log(`[WebRTC] Track received from ${targetUid}. Stream ID: ${event.streams[0]?.id}, Number of tracks: ${event.streams[0]?.getTracks().length}`);
       if (event.streams && event.streams[0]) {
         remoteStreamsRef.current[targetUid] = event.streams[0];
         setActiveRemoteStreams(prev => ({ ...prev, [targetUid]: event.streams[0] }));
+        event.streams[0].getTracks().forEach(track => {
+          console.log(`[WebRTC] Remote track from ${targetUid}: kind=${track.kind}, id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}`);
+        });
       } else {
         console.warn(`[WebRTC] Received track from ${targetUid} but no stream associated.`);
       }
@@ -290,16 +295,12 @@ export default function ChatRoomPage() {
     
     pc.onsignalingstatechange = () => {
       console.log(`[WebRTC] Signaling state for ${targetUid}: ${pc.signalingState}`);
-      if (pc.signalingState === 'stable' && negotiatingRef.current[targetUid]) {
-        // negotiationRef, handleIncomingSignal içinde 'answer' alındığında veya
-        // onnegotiationneeded içinde offer gönderildikten sonra (hata durumunda da) false yapılır.
-      }
     };
 
     pc.onnegotiationneeded = async () => {
-      console.log(`[WebRTC] Negotiation needed for ${targetUid}. Signaling state: ${pc.signalingState}`);
+      console.log(`[WebRTC] Negotiation needed for ${targetUid}. Signaling state: ${pc.signalingState}, Negotiating flag: ${negotiatingRef.current[targetUid]}`);
       if (negotiatingRef.current[targetUid]) {
-        console.log(`[WebRTC] Negotiation for ${targetUid} already in progress. Skipping.`);
+        console.log(`[WebRTC] Negotiation for ${targetUid} already in progress. Skipping onnegotiationneeded.`);
         return;
       }
       try {
@@ -307,7 +308,7 @@ export default function ChatRoomPage() {
           negotiatingRef.current[targetUid] = true;
           console.log(`[WebRTC] Creating offer for ${targetUid} due to onnegotiationneeded.`);
           const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer); // Bu satırda hata alınıyordu ("m-lines")
+          await pc.setLocalDescription(offer);
           sendSignalMessage(targetUid, { type: 'offer', sdp: pc.localDescription!.sdp });
         } else {
            console.log(`[WebRTC] Negotiation needed for ${targetUid} but signaling state is ${pc.signalingState}. Skipping offer creation.`);
@@ -316,8 +317,6 @@ export default function ChatRoomPage() {
         console.error(`[WebRTC] Error in onnegotiationneeded for ${targetUid}:`, error);
         toast({ title: "WebRTC Anlaşma Hatası", description: `Bağlantı anlaşması (onnegotiationneeded) sırasında hata (${targetUid}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
       } finally {
-        // Offer gönderildikten sonra veya hata durumunda bayrağı sıfırla.
-        // Cevap (answer) gelince tekrar sıfırlanacak ama offer gönderme döngüsünün bittiğini belirtmek için burada da önemli.
         negotiatingRef.current[targetUid] = false;
       }
     };
@@ -326,9 +325,9 @@ export default function ChatRoomPage() {
       localStreamRef.current.getTracks().forEach(track => {
         if (!pc.getSenders().find(s => s.track === track)) {
            pc.addTrack(track, localStreamRef.current!);
-           console.log(`[WebRTC] Local track added to PC for ${targetUid}`);
+           console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) added to PC for ${targetUid}`);
         } else {
-           console.log(`[WebRTC] Local track already exists on PC for ${targetUid}. Not adding again.`);
+           console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) already exists on PC for ${targetUid}. Not adding again.`);
         }
       });
     } else {
@@ -341,7 +340,7 @@ export default function ChatRoomPage() {
 
 
   const handleIncomingSignal = useCallback(async (signal: WebRTCSignal, fromUid: string) => {
-    console.log(`[WebRTC] Received signal from ${fromUid}:`, signal.type);
+    console.log(`[WebRTC] Received signal from ${fromUid}:`, signal.type, "Current signaling state:", peerConnectionsRef.current[fromUid]?.signalingState);
     let pc = peerConnectionsRef.current[fromUid];
 
     if (!pc && (signal.type === 'offer')) {
@@ -355,9 +354,12 @@ export default function ChatRoomPage() {
     try {
         if (signal.type === 'offer') {
             if (pc.signalingState !== "stable" && pc.signalingState !== "have-remote-offer") {
-                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might lead to issues if not handled carefully (e.g., glare).`);
+                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition or race.`);
+                // Potansiyel glare çözümü (basit): Eğer local offer varsa ve remote offer geliyorsa, kendi offer'ımızı iptal edip remote'u kabul edebiliriz.
+                // Ancak bu karmaşıktır ve genellikle kütüphaneler daha iyi çözer. Şimdilik logluyoruz.
             }
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
+            console.log(`[WebRTC] Remote description (offer) set for ${fromUid}. Creating answer.`);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             sendSignalMessage(fromUid, { type: 'answer', sdp: pc.localDescription!.sdp });
@@ -367,23 +369,25 @@ export default function ChatRoomPage() {
                  console.warn(`[WebRTC] Received answer from ${fromUid} but signaling state is ${pc.signalingState}. Expected 'have-local-offer'.`);
             }
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
+            console.log(`[WebRTC] Remote description (answer) set for ${fromUid}. Connection should be established.`);
             negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'candidate') {
             if (pc.remoteDescription && signal.candidate) { 
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    console.log(`[WebRTC] ICE candidate added for ${fromUid}`);
                 } catch (e) {
                      console.warn(`[WebRTC] Error adding ICE candidate for ${fromUid}:`, e, "Candidate:", signal.candidate);
-                     // Bu hatayı toast ile göstermek yerine konsolda tutmak daha iyi olabilir, çok sık gelebilir.
                 }
             } else {
                 console.warn(`[WebRTC] Received candidate from ${fromUid} but remote description not set or candidate is null. Buffering or ignoring.`);
+                // Adayları bir süre bufferlayıp remoteDescription set edildikten sonra eklemeyi deneyebilirsiniz.
             }
         }
     } catch (error) {
         console.error(`[WebRTC] Error handling signal from ${fromUid} (${signal.type}):`, error);
         toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
-        negotiatingRef.current[fromUid] = false;
+        negotiatingRef.current[fromUid] = false; // Hata durumunda bayrağı sıfırla
     }
   }, [createPeerConnection, sendSignalMessage, toast]);
 
@@ -447,7 +451,7 @@ export default function ChatRoomPage() {
         unsubscribe();
       }
     };
-  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef.current]);
+  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef]); // isCurrentUserInVoiceChatRef.current yerine isCurrentUserInVoiceChatRef kullandım
 
 
   const handleJoinVoiceChat = useCallback(async () => {
@@ -466,6 +470,7 @@ export default function ChatRoomPage() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       localStreamRef.current = stream;
       setIsCurrentUserInVoiceChat(true); 
+      isCurrentUserInVoiceChatRef.current = true; // Ref'i de güncelle
 
       await setDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), {
         uid: currentUser.uid,
@@ -486,8 +491,7 @@ export default function ChatRoomPage() {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          // initiatePeerConnection(participantData.id, true); // Eski metod, createPeerConnection ve onnegotiationneeded'e güvenir
-          const pc = createPeerConnection(participantData.id, true); // PC oluşturulur, track'ler eklenir
+          const pc = createPeerConnection(participantData.id, true); 
           // onnegotiationneeded tetiklenmeli ve offer göndermeli.
         }
       });
@@ -500,6 +504,7 @@ export default function ChatRoomPage() {
         localStreamRef.current = null;
       }
       setIsCurrentUserInVoiceChat(false); 
+      isCurrentUserInVoiceChatRef.current = false; // Ref'i de güncelle
       setSelfMuted(false);
       try { 
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -534,6 +539,7 @@ export default function ChatRoomPage() {
     }
 
     setIsCurrentUserInVoiceChat(false);
+    isCurrentUserInVoiceChatRef.current = false; // Ref'i de güncelle
 
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -564,7 +570,7 @@ export default function ChatRoomPage() {
 
 
   useEffect(() => {
-    if (!roomId || !currentUser) return;
+    if (!currentUser || !roomId) return;
 
     const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`), orderBy("joinedAt", "asc"));
     const unsubscribeVoice = onSnapshot(voiceParticipantsQuery, (snapshot) => {
@@ -584,8 +590,7 @@ export default function ChatRoomPage() {
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                     console.log(`[WebRTC] New participant ${p.displayName || p.id} detected. Initiating connection.`);
-                    const newPc = createPeerConnection(p.id, true); // PC oluşturulur, track'ler eklenir
-                    // onnegotiationneeded tetiklenip offer göndermeli
+                    const newPc = createPeerConnection(p.id, true); 
                 }
             });
             Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
@@ -1026,7 +1031,7 @@ export default function ChatRoomPage() {
   }, [currentUser, handleOpenUserInfoPopover]);
 
   const handleKickParticipantFromTextChat = async (targetUserId: string, targetUsername?: string) => {
-    if (!isCurrentUserRoomCreator || !currentUser || targetUserId === currentUser.uid) {
+    if (!isCurrentUserRoomCreator || !currentUser || targetUserId === currentUser?.uid) {
       toast({ title: "Yetki Hatası", description: "Bu kullanıcıyı odadan atma yetkiniz yok.", variant: "destructive" });
       return;
     }
@@ -1140,5 +1145,7 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
+    
 
     
