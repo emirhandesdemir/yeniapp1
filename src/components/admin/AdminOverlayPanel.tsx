@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon } from 'lucide-react';
+import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot } from 'lucide-react'; // Bot ikonu eklendi
 import { cn } from '@/lib/utils';
 
 // Dinamik olarak yüklenecek admin bölüm içerikleri
@@ -13,6 +13,7 @@ import AdminDashboardContent from '@/components/admin/sections/AdminDashboardCon
 import AdminUsersContent from '@/components/admin/sections/AdminUsersContent';
 import AdminChatRoomsContent from '@/components/admin/sections/AdminChatRoomsContent';
 import AdminGameSettingsContent from '@/components/admin/sections/AdminGameSettingsContent';
+import AdminProjectAssistantContent from '@/components/admin/sections/AdminProjectAssistantContent'; // Yeni import
 
 export default function AdminOverlayPanel() {
   const { isAdminPanelOpen, setIsAdminPanelOpen, userData } = useAuth();
@@ -27,6 +28,7 @@ export default function AdminOverlayPanel() {
     { value: "users", label: "Kullanıcılar", icon: Users, component: <AdminUsersContent /> },
     { value: "chat-rooms", label: "Sohbet Odaları", icon: ListChecks, component: <AdminChatRoomsContent /> },
     { value: "game-settings", label: "Oyun Ayarları", icon: GameSettingsIcon, component: <AdminGameSettingsContent /> },
+    { value: "project-assistant", label: "Proje Asistanı", icon: Bot, component: <AdminProjectAssistantContent /> }, // Yeni sekme
   ];
 
   return (
@@ -54,10 +56,10 @@ export default function AdminOverlayPanel() {
 
         <div className="flex-1 p-1 sm:p-2 overflow-hidden">
           <Tabs defaultValue="dashboard" value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-4 mb-2">
+            <TabsList className={cn("grid w-full mb-2", adminSections.length === 5 ? "grid-cols-5" : "grid-cols-4")}>
               {adminSections.map(section => (
-                <TabsTrigger key={section.value} value={section.value} className="text-xs sm:text-sm">
-                  <section.icon className="h-4 w-4 mr-1.5 hidden sm:inline-block" />
+                <TabsTrigger key={section.value} value={section.value} className="text-xs sm:text-sm px-1 sm:px-2">
+                  <section.icon className="h-4 w-4 mr-1 sm:mr-1.5 hidden sm:inline-block" />
                   {section.label}
                 </TabsTrigger>
               ))}
