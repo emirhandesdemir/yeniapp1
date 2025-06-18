@@ -100,7 +100,7 @@ interface WebRTCSignal {
   sdp?: string;
   candidate?: RTCIceCandidateInit;
   signalTimestamp?: Timestamp;
-  from?: string; 
+  from?: string;
 }
 
 
@@ -167,7 +167,7 @@ export default function ChatRoomPage() {
   const isCurrentUserParticipantRef = useRef(isCurrentUserParticipant);
   const [currentTime, setCurrentTime] = useState(new Date());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
   const [activeGameQuestion, setActiveGameQuestion] = useState<GameQuestion | null>(null);
   const [showGameQuestionCard, setShowGameQuestionCard] = useState(false);
@@ -176,7 +176,7 @@ export default function ChatRoomPage() {
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [questionAnswerCountdown, setQuestionAnswerCountdown] = useState<number | null>(null);
-  const [loadingGameAssets, setLoadingGameAssets] = useState(true); 
+  const [loadingGameAssets, setLoadingGameAssets] = useState(true);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<{ [key: string]: RTCPeerConnection }>({});
@@ -186,11 +186,11 @@ export default function ChatRoomPage() {
   const negotiatingRef = useRef<{ [key: string]: boolean }>({});
 
   const lastMessageTimesRef = useRef<number[]>([]);
-  
+
   const isHandlingTimeoutRef = useRef(false);
   const gameAnswerDeadlineTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCurrentUserInVoiceChatRef = useRef(isCurrentUserInVoiceChat);
-  
+
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
   useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
@@ -202,7 +202,7 @@ export default function ChatRoomPage() {
     try {
       const signalWithTimestampAndSender: WebRTCSignal = {
         ...signal,
-        from: currentUser.uid, 
+        from: currentUser.uid,
         signalTimestamp: serverTimestamp() as Timestamp,
       };
       await addDoc(collection(db, `chatRooms/${roomId}/webrtcSignals/${toUid}/signals`), signalWithTimestampAndSender);
@@ -221,12 +221,12 @@ export default function ChatRoomPage() {
       pc.onnegotiationneeded = null;
       pc.onconnectionstatechange = null;
       pc.onsignalingstatechange = null;
-      pc.oniceconnectionstatechange = null; 
+      pc.oniceconnectionstatechange = null;
 
       pc.getSenders().forEach(sender => {
         if (sender.track) {
           try {
-            pc.removeTrack(sender); 
+            pc.removeTrack(sender);
           } catch (e) {
             console.warn(`[WebRTC] Error removing track/sender for ${targetUid} during cleanup:`, e);
           }
@@ -256,7 +256,7 @@ export default function ChatRoomPage() {
     }
 
     const pc = new RTCPeerConnection(STUN_SERVERS);
-    peerConnectionsRef.current[targetUid] = pc; 
+    peerConnectionsRef.current[targetUid] = pc;
     console.log(`[WebRTC] PeerConnection created for ${targetUid}.`);
 
     pc.onicecandidate = (event) => {
@@ -280,7 +280,7 @@ export default function ChatRoomPage() {
         console.warn(`[WebRTC] Received track from ${targetUid} but no stream associated.`);
       }
     };
-    
+
     pc.oniceconnectionstatechange = () => {
         console.log(`[WebRTC] ICE connection state with ${targetUid}: ${pc.iceConnectionState}`);
     };
@@ -292,7 +292,7 @@ export default function ChatRoomPage() {
         cleanupPeerConnection(targetUid);
       }
     };
-    
+
     pc.onsignalingstatechange = () => {
       console.log(`[WebRTC] Signaling state for ${targetUid}: ${pc.signalingState}`);
     };
@@ -318,10 +318,10 @@ export default function ChatRoomPage() {
         console.error(`[WebRTC] Error in onnegotiationneeded for ${targetUid}:`, error);
         toast({ title: "WebRTC Müzakere Hatası", description: `Bağlantı anlaşması (onnegotiationneeded) sırasında hata (${targetUid}). Detaylar konsolda.`, variant: "destructive" });
       } finally {
-        negotiatingRef.current[targetUid] = false; 
+        negotiatingRef.current[targetUid] = false;
       }
     };
-    
+
     if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
       console.log(`[WebRTC] Adding ${localStreamRef.current.getTracks().length} local tracks to new PC for ${targetUid}.`);
       localStreamRef.current.getTracks().forEach(track => {
@@ -350,7 +350,7 @@ export default function ChatRoomPage() {
 
     if (!pc && signal.type === 'offer') {
         console.log(`[WebRTC] No PC for ${fromUid} for incoming offer, creating one as non-initiator.`);
-        pc = createPeerConnection(fromUid); 
+        pc = createPeerConnection(fromUid);
     } else if (!pc) {
         console.warn(`[WebRTC] Received ${signal.type} from ${fromUid} but no PC exists and signal is not an offer. Ignoring.`);
         return;
@@ -358,7 +358,7 @@ export default function ChatRoomPage() {
 
     try {
         if (signal.type === 'offer') {
-            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer") { 
+            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer") {
                 console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition.`);
             }
             if (signal.sdp) {
@@ -371,7 +371,7 @@ export default function ChatRoomPage() {
             } else {
                  console.error(`[WebRTC] Received offer from ${fromUid} without SDP.`);
             }
-            negotiatingRef.current[fromUid] = false; 
+            negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'answer') {
             if (pc.signalingState === 'have-local-offer') {
                 if (signal.sdp) {
@@ -383,9 +383,9 @@ export default function ChatRoomPage() {
             } else {
                  console.warn(`[WebRTC] Received answer from ${fromUid} but local signaling state is ${pc.signalingState} (expected 'have-local-offer'). Ignoring answer.`);
             }
-            negotiatingRef.current[fromUid] = false; 
+            negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'candidate') {
-            if (signal.candidate) { 
+            if (signal.candidate) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
                 } catch (e: any) {
@@ -401,7 +401,7 @@ export default function ChatRoomPage() {
     } catch (error) {
         console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${signal.type}):`, error);
         toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Detaylar konsolda.`, variant: "destructive" });
-        negotiatingRef.current[fromUid] = false; 
+        negotiatingRef.current[fromUid] = false;
     }
   }, [createPeerConnection, sendSignalMessage, toast]);
 
@@ -424,7 +424,7 @@ export default function ChatRoomPage() {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const signalData = change.doc.data() as WebRTCSignal;
-              const senderOfSignal = signalData.from; 
+              const senderOfSignal = signalData.from;
               if (!senderOfSignal) {
                   console.warn("[WebRTC] Signal received without a 'from' field. Cannot process.", signalData);
                   return;
@@ -449,7 +449,7 @@ export default function ChatRoomPage() {
           toast({ title: "Sinyal Dinleme Hatası", description: "Diğer kullanıcılardan sinyal alınırken hata.", variant: "destructive" });
         });
     };
-    if (isCurrentUserInVoiceChat) { 
+    if (isCurrentUserInVoiceChat) {
         setupListener();
     } else {
         if (unsubscribe) {
@@ -489,7 +489,7 @@ export default function ChatRoomPage() {
         throw new Error("No tracks in media stream");
       }
       localStreamRef.current = stream;
-      
+
       await setDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), {
         uid: currentUser.uid,
         displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
@@ -500,19 +500,19 @@ export default function ChatRoomPage() {
         isSpeaking: false,
       });
       await updateDoc(doc(db, "chatRooms", roomId), { voiceParticipantCount: increment(1) });
-      
-      setIsCurrentUserInVoiceChat(true); 
+
+      setIsCurrentUserInVoiceChat(true);
       setSelfMuted(false);
       toast({ title: "Sesli Sohbete Katıldın!" });
-      
+
       const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`));
       const voiceParticipantsSnap = await getDocs(voiceParticipantsQuery);
-      
+
       voiceParticipantsSnap.forEach(docSnap => {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Joining: Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          createPeerConnection(participantData.id); 
+          createPeerConnection(participantData.id);
         }
       });
 
@@ -524,8 +524,8 @@ export default function ChatRoomPage() {
         localStreamRef.current = null;
         console.log("[WebRTC] Local stream stopped due to join error.");
       }
-      setIsCurrentUserInVoiceChat(false); 
-      try { 
+      setIsCurrentUserInVoiceChat(false);
+      try {
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
         const voiceParticipantSnap = await getDoc(voiceParticipantRef);
         if (voiceParticipantSnap.exists()) {
@@ -548,15 +548,15 @@ export default function ChatRoomPage() {
       return Promise.resolve();
     }
     if (!isPageUnload) setIsProcessingVoiceJoinLeave(true);
-    
+
     console.log("[WebRTC] Leaving voice chat...");
     Object.keys(peerConnectionsRef.current).forEach(peerUid => {
       cleanupPeerConnection(peerUid);
     });
-    peerConnectionsRef.current = {}; 
+    peerConnectionsRef.current = {};
     negotiatingRef.current = {};
     setActiveRemoteStreams({});
-    lastProcessedSignalTimestampRef.current = null; 
+    lastProcessedSignalTimestampRef.current = null;
 
 
     if (localStreamRef.current) {
@@ -570,17 +570,17 @@ export default function ChatRoomPage() {
         console.log("[WebRTC] localStreamRef was already null when trying to leave voice chat.");
     }
 
-    setIsCurrentUserInVoiceChat(false); 
+    setIsCurrentUserInVoiceChat(false);
 
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
       const roomRef = doc(db, "chatRooms", roomId);
-      
+
       const signalsCollectionRef = collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`);
       const signalsSnap = await getDocs(signalsCollectionRef);
 
       const batch = writeBatch(db);
-      
+
       const voiceParticipantDocSnap = await getDoc(voiceParticipantRef);
       if (voiceParticipantDocSnap.exists()) {
         batch.delete(voiceParticipantRef);
@@ -593,9 +593,9 @@ export default function ChatRoomPage() {
       } else {
         console.warn("[WebRTC] Voice participant document to delete was not found for user:", currentUser.uid);
       }
-      
+
       signalsSnap.forEach(signalDoc => batch.delete(signalDoc.ref));
-      
+
       await batch.commit();
       if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" });
       console.log("[WebRTC] Successfully left voice chat (Firestore updated).");
@@ -622,15 +622,15 @@ export default function ChatRoomPage() {
 
         if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
             console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
-            handleLeaveVoiceChat(true); 
-            return; 
+            handleLeaveVoiceChat(true);
+            return;
         }
-        
+
         if (isCurrentUserInVoiceChatRef.current && localStreamRef.current) {
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                     console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
-                    createPeerConnection(p.id); 
+                    createPeerConnection(p.id);
                 }
             });
             Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
@@ -640,10 +640,10 @@ export default function ChatRoomPage() {
                 }
             });
         }
-    }, (error) => { 
-      console.error("[WebRTC] Error fetching voice participants:", error); 
+    }, (error) => {
+      console.error("[WebRTC] Error fetching voice participants:", error);
     });
-    
+
     return () => unsubscribeVoice();
   }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave]);
 
@@ -669,7 +669,7 @@ export default function ChatRoomPage() {
 
       } catch (error) {
         console.error("[GameSystem] Error fetching game assets:", error);
-        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); 
+        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 });
         setAvailableGameQuestions([]);
         toast({ title: "Oyun Hatası", description: "Oyun verileri yüklenemedi.", variant: "destructive" });
       } finally {
@@ -788,25 +788,25 @@ export default function ChatRoomPage() {
         if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline) {
           attemptToAskNewQuestion();
         }
-      }, 5000); 
+      }, 5000);
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
   }, [gameSettings, roomDetails, attemptToAskNewQuestion, loadingGameAssets]);
 
 
   useEffect(() => { if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline && availableGameQuestions.length > 0 && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !loadingGameAssets) { attemptToAskNewQuestion(); } }, [gameSettings, roomDetails, availableGameQuestions, attemptToAskNewQuestion, loadingGameAssets]);
-  
-  useEffect(() => { 
-    if (roomDetails?.currentGameQuestionId && availableGameQuestions.length > 0) { 
-      const question = availableGameQuestions.find(q => q.id === roomDetails.currentGameQuestionId); 
-      setActiveGameQuestion(question || null); setShowGameQuestionCard(!!question); 
-    } else { 
-      setActiveGameQuestion(null); setShowGameQuestionCard(false); 
-    } 
+
+  useEffect(() => {
+    if (roomDetails?.currentGameQuestionId && availableGameQuestions.length > 0) {
+      const question = availableGameQuestions.find(q => q.id === roomDetails.currentGameQuestionId);
+      setActiveGameQuestion(question || null); setShowGameQuestionCard(!!question);
+    } else {
+      setActiveGameQuestion(null); setShowGameQuestionCard(false);
+    }
   }, [roomDetails?.currentGameQuestionId, availableGameQuestions]);
 
-  const handleCloseGameQuestionCard = () => setShowGameQuestionCard(false);
-  const getAvatarFallbackText = (name?: string | null) => name ? name.substring(0, 2).toUpperCase() : "PN";
+  const handleCloseGameQuestionCard = useCallback(() => setShowGameQuestionCard(false), []);
+  const getAvatarFallbackText = useCallback((name?: string | null) => name ? name.substring(0, 2).toUpperCase() : "PN", []);
 
   const updateUserTypingStatus = useCallback(async (isTyping: boolean) => {
     if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return;
@@ -822,20 +822,20 @@ export default function ChatRoomPage() {
     const roomRef = doc(db, "chatRooms", roomId);
     const userDisplayNameForLeave = userData?.displayName || currentUser?.displayName;
     if (userDisplayNameForLeave && !isPageUnload) { try { await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[SİSTEM] ${userDisplayNameForLeave} odadan ayrıldı.`, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true }); } catch (msgError) { /* console.warn("Error sending leave message (minor):", msgError); */ } }
-    try { 
-        const batch = writeBatch(db); 
-        batch.delete(participantRef); 
+    try {
+        const batch = writeBatch(db);
+        batch.delete(participantRef);
         const roomDocSnap = await getDoc(roomRef);
         if (roomDocSnap.exists() && (roomDocSnap.data()?.participantCount ?? 0) > 0) {
-             batch.update(roomRef, { participantCount: increment(-1) }); 
+             batch.update(roomRef, { participantCount: increment(-1) });
         }
-        await batch.commit(); 
-        setIsCurrentUserParticipant(false); 
+        await batch.commit();
+        setIsCurrentUserParticipant(false);
     } catch (error) { console.error("Error leaving room:", error); }
   }, [currentUser, roomId, updateUserTypingStatus, userData?.displayName]);
 
   const handleJoinRoom = useCallback(async () => {
-    if (!currentUser || !userData || !roomId || !roomDetails || loadingGameAssets) return; 
+    if (!currentUser || !userData || !roomId || !roomDetails || loadingGameAssets) return;
     setIsProcessingJoinLeave(true);
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
@@ -845,33 +845,33 @@ export default function ChatRoomPage() {
       const currentRoomSnap = await getDoc(roomRef); if (!currentRoomSnap.exists()) { toast({ title: "Hata", description: "Oda bulunamadı.", variant: "destructive" }); router.push("/chat"); return; }
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
       if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) { setIsRoomFullError(true); toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); setIsProcessingJoinLeave(false); return; }
-      
+
       const batch = writeBatch(db);
       batch.set(participantRef, { joinedAt: serverTimestamp(), displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", photoURL: userData.photoURL || currentUser.photoURL || null, uid: currentUser.uid, isTyping: false });
       batch.update(roomRef, { participantCount: increment(1) });
-      
-      if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId && !currentRoomData.currentGameAnswerDeadline) { 
-        batch.update(roomRef, { 
-            gameInitialized: true, 
-            nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)), 
-            currentGameQuestionId: null, 
-            currentGameAnswerDeadline: null 
-        }); 
+
+      if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId && !currentRoomData.currentGameAnswerDeadline) {
+        batch.update(roomRef, {
+            gameInitialized: true,
+            nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds)),
+            currentGameQuestionId: null,
+            currentGameAnswerDeadline: null
+        });
       }
 
-      await batch.commit(); 
-      setIsCurrentUserParticipant(true); 
+      await batch.commit();
+      setIsCurrentUserParticipant(true);
       toast({ title: "Odaya Katıldınız!", description: `${roomDetails.name} odasına başarıyla katıldınız.` });
       const userDisplayNameForJoin = userData.displayName || currentUser.displayName || "Bir kullanıcı";
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[SİSTEM] ${userDisplayNameForJoin} odaya katıldı.`, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true });
-      
+
       if (gameSettings?.isGameEnabled) {
         let gameInfoMessage = `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `;
         const updatedRoomSnap = await getDoc(roomRef); const updatedRoomData = updatedRoomSnap.data() as ChatRoomDetails;
-        if (updatedRoomData?.currentGameQuestionId && availableGameQuestions.length > 0) { 
-            const currentQ = availableGameQuestions.find(q => q.id === updatedRoomData.currentGameQuestionId); 
-            if (currentQ) gameInfoMessage += `Aktif bir soru var: "${currentQ.text}". Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`; 
-            if (updatedRoomData.currentGameAnswerDeadline) gameInfoMessage += ` (Kalan Süre: ${formatCountdown(Math.max(0, Math.floor((updatedRoomData.currentGameAnswerDeadline.toDate().getTime() - new Date().getTime())/1000)))})` 
+        if (updatedRoomData?.currentGameQuestionId && availableGameQuestions.length > 0) {
+            const currentQ = availableGameQuestions.find(q => q.id === updatedRoomData.currentGameQuestionId);
+            if (currentQ) gameInfoMessage += `Aktif bir soru var: "${currentQ.text}". Cevaplamak için /answer <cevabınız>, ipucu için /hint yazın.`;
+            if (updatedRoomData.currentGameAnswerDeadline) gameInfoMessage += ` (Kalan Süre: ${formatCountdown(Math.max(0, Math.floor((updatedRoomData.currentGameAnswerDeadline.toDate().getTime() - new Date().getTime())/1000)))})`
         }
         else if (updatedRoomData?.nextGameQuestionTimestamp) { const now = new Date(); const nextTime = updatedRoomData.nextGameQuestionTimestamp.toDate(); const diffSeconds = Math.max(0, Math.floor((nextTime.getTime() - now.getTime()) / 1000)); gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(diffSeconds)} sonra gelecek.`; }
         else if (typeof gameSettings.questionIntervalSeconds === 'number') { gameInfoMessage += `Bir sonraki oyun sorusu yaklaşık ${formatCountdown(gameSettings.questionIntervalSeconds)} sonra gelecek.`; }
@@ -881,11 +881,11 @@ export default function ChatRoomPage() {
     finally { setIsProcessingJoinLeave(false); }
   }, [currentUser, userData, roomId, roomDetails, toast, router, gameSettings, loadingGameAssets, availableGameQuestions]);
 
-  const formatCountdown = (seconds: number | null): string => {
+  const formatCountdown = useCallback((seconds: number | null): string => {
     if (seconds === null || seconds < 0) return "";
     const minutes = Math.floor(seconds / 60); const secs = seconds % 60;
     return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
+  },[]);
 
   useEffect(() => {
     if (!roomId) return; setLoadingRoom(true);
@@ -935,30 +935,30 @@ export default function ChatRoomPage() {
     const currentGameAnswerDeadlineTimer = gameAnswerDeadlineTimerRef.current;
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
-      handleLeaveRoom(true); 
+      handleLeaveRoom(true);
       if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true);
       if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
       if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
       if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
       if (currentGameAnswerDeadlineTimer) clearInterval(currentGameAnswerDeadlineTimer);
     };
-  }, [handleLeaveRoom, handleLeaveVoiceChat]); 
+  }, [handleLeaveRoom, handleLeaveVoiceChat]);
 
-  const scrollToBottom = () => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } };
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  const scrollToBottom = useCallback(() => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } }, []);
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
   const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current;
 
-  const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleNewMessageInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const currentMessage = e.target.value; setNewMessage(currentMessage);
     if (!isCurrentUserParticipantRef.current || !canSendMessage) return;
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     else if (currentMessage.trim() !== "") updateUserTypingStatus(true);
     if (currentMessage.trim() === "") { updateUserTypingStatus(false); if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; } }
     else { typingTimeoutRef.current = setTimeout(() => { updateUserTypingStatus(false); typingTimeoutRef.current = null; }, TYPING_DEBOUNCE_DELAY); }
-  };
+  }, [canSendMessage, updateUserTypingStatus]);
 
-  const handleSendMessage = async (e: FormEvent) => {
+  const handleSendMessage = useCallback(async (e: FormEvent) => {
     e.preventDefault();
     if (isSending || isUserLoading || !currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData || loadingGameAssets) return;
 
@@ -972,20 +972,20 @@ export default function ChatRoomPage() {
     setIsSending(true); const tempMessage = newMessage.trim();
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     updateUserTypingStatus(false); const roomDocRef = doc(db, "chatRooms", roomId);
-    
+
     const mentionedUserIds: string[] = [];
     const mentionRegex = /@([\w.-]+)/g;
     let match;
-    
+
     const participantNameMap = new Map<string, string>();
     activeTextParticipants.forEach(p => {
         if (p.displayName) {
-            participantNameMap.set(p.displayName.toLowerCase().replace(/\s+/g, '_'), p.id); 
+            participantNameMap.set(p.displayName.toLowerCase().replace(/\s+/g, '_'), p.id);
         }
     });
 
     while ((match = mentionRegex.exec(tempMessage)) !== null) {
-      const username = match[1].toLowerCase().replace(/\s+/g, '_'); 
+      const username = match[1].toLowerCase().replace(/\s+/g, '_');
       const mentionedUid = participantNameMap.get(username);
       if (mentionedUid && !mentionedUserIds.includes(mentionedUid)) {
         mentionedUserIds.push(mentionedUid);
@@ -1009,43 +1009,43 @@ export default function ChatRoomPage() {
         setNewMessage(""); setIsSending(false); return;
       }
     }
-    try { 
-        await addDoc(collection(db, `chatRooms/${roomId}/messages`), { 
-            text: tempMessage, 
-            senderId: currentUser.uid, 
-            senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı", 
-            senderAvatar: userData?.photoURL || currentUser.photoURL, 
-            timestamp: serverTimestamp(), 
+    try {
+        await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+            text: tempMessage,
+            senderId: currentUser.uid,
+            senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
+            senderAvatar: userData?.photoURL || currentUser.photoURL,
+            timestamp: serverTimestamp(),
             isGameMessage: false,
             mentionedUserIds: mentionedUserIds,
-        }); 
-        setNewMessage(""); 
-        lastMessageTimesRef.current.push(now); 
-    } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); } 
+        });
+        setNewMessage("");
+        lastMessageTimesRef.current.push(now);
+    } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); }
     finally { setIsSending(false); }
-  };
+  },[isSending, isUserLoading, currentUser, newMessage, roomId, canSendMessage, userData, loadingGameAssets, activeGameQuestion, gameSettings, roomDetails, toast, updateUserDiamonds, activeTextParticipants, updateUserTypingStatus]);
 
-  const handleDeleteRoom = async () => {
+  const handleDeleteRoom = useCallback(async () => {
     if (!roomDetails || !currentUser || roomDetails.creatorId !== currentUser.uid) { toast({ title: "Hata", description: "Bu odayı silme yetkiniz yok.", variant: "destructive" }); return; }
     if (!confirm(`"${roomDetails.name}" odasını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz, tüm mesajlar ve katılımcı bilgileri silinecektir.`)) return;
     try { await deleteChatRoomAndSubcollections(roomId); toast({ title: "Başarılı", description: `"${roomDetails.name}" odası silindi.` }); router.push("/chat"); } catch (error) { console.error("Error deleting room: ", error); toast({ title: "Hata", description: "Oda silinirken bir sorun oluştu.", variant: "destructive" }); }
-  };
+  },[roomDetails, currentUser, roomId, router, toast]);
 
-  const handleExtendDuration = async () => {
+  const handleExtendDuration = useCallback(async () => {
     if (!roomDetails || !currentUser || !userData || roomDetails.creatorId !== currentUser.uid || !roomDetails.expiresAt) { toast({ title: "Hata", description: "Süre uzatma işlemi yapılamadı.", variant: "destructive" }); return; }
     if ((userData.diamonds ?? 0) < ROOM_EXTENSION_COST) { toast({ title: "Yetersiz Elmas", description: `Süre uzatmak için ${ROOM_EXTENSION_COST} elmasa ihtiyacınız var. Mevcut elmas: ${userData.diamonds ?? 0}`, variant: "destructive" }); return; }
     setIsExtending(true);
     try { const currentExpiresAt = roomDetails.expiresAt.toDate(); const newExpiresAtDate = addMinutes(currentExpiresAt, ROOM_EXTENSION_DURATION_MINUTES); const roomDocRef = doc(db, "chatRooms", roomId); await updateDoc(roomDocRef, { expiresAt: Timestamp.fromDate(newExpiresAtDate) }); await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_EXTENSION_COST); toast({ title: "Başarılı", description: `Oda süresi ${ROOM_EXTENSION_DURATION_MINUTES} dakika uzatıldı. ${ROOM_EXTENSION_COST} elmas harcandı.` }); } catch (error) { console.error("Error extending room duration:", error); toast({ title: "Hata", description: "Süre uzatılırken bir sorun oluştu.", variant: "destructive" }); } finally { setIsExtending(false); }
-  };
+  },[roomDetails, currentUser, userData, roomId, toast, updateUserDiamonds]);
 
-  const getPreciseExpiryInfo = (): string => {
+  const getPreciseExpiryInfo = useCallback((): string => {
     if (!roomDetails?.expiresAt) return "Süre bilgisi yok"; const expiryDate = roomDetails.expiresAt.toDate(); const now = currentTime;
     if (isPast(expiryDate)) return "Süresi Doldu"; const diffSeconds = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
     if (diffSeconds < 0) return "Süresi Doldu"; const days = Math.floor(diffSeconds / 86400); const hours = Math.floor((diffSeconds % 86400) / 3600); const minutes = Math.floor((diffSeconds % 3600) / 60); const seconds = diffSeconds % 60;
     if (days > 0) { return `${days} gün ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} sonra`; }
     if (hours > 0) { return `Kalan: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`; }
     return `Kalan: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  };
+  }, [roomDetails?.expiresAt, currentTime]);
 
   const handleOpenUserInfoPopover = useCallback(async (senderId: string) => {
     if (!currentUser || senderId === currentUser.uid) return; setPopoverOpenForUserId(senderId); setPopoverLoading(true); setRelevantFriendRequest(null);
@@ -1060,66 +1060,66 @@ export default function ChatRoomPage() {
     finally { setPopoverLoading(false); }
   }, [currentUser, toast]);
 
-  const handleSendFriendRequestPopover = async () => {
+  const handleSendFriendRequestPopover = useCallback(async () => {
     if (!currentUser || !userData || !popoverTargetUser) return; setPopoverLoading(true);
     try { const newRequestRef = await addDoc(collection(db, "friendRequests"), { fromUserId: currentUser.uid, fromUsername: userData.displayName, fromAvatarUrl: userData.photoURL, toUserId: popoverTargetUser.uid, toUsername: popoverTargetUser.displayName, toAvatarUrl: popoverTargetUser.photoURL, status: "pending", createdAt: serverTimestamp() }); toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` }); setFriendshipStatus("request_sent"); setRelevantFriendRequest({ id: newRequestRef.id, fromUserId: currentUser.uid, fromUsername: userData.displayName || "", fromAvatarUrl: userData.photoURL || null, toUserId: popoverTargetUser.uid, toUsername: popoverTargetUser.displayName || "", toAvatarUrl: popoverTargetUser.photoURL || null, status: "pending", createdAt: Timestamp.now() }); }
     catch (error) { console.error("Error sending friend request from popover:", error); toast({ title: "Hata", description: "Arkadaşlık isteği gönderilemedi.", variant: "destructive" }); }
     finally { setPopoverLoading(false); }
-  };
+  }, [currentUser, userData, popoverTargetUser, toast]);
 
-  const handleAcceptFriendRequestPopover = async () => {
+  const handleAcceptFriendRequestPopover = useCallback(async () => {
     if (!currentUser || !userData || !relevantFriendRequest || !popoverTargetUser) return; setPopoverLoading(true);
     try { const batch = writeBatch(db); const requestRef = doc(db, "friendRequests", relevantFriendRequest.id); batch.update(requestRef, { status: "accepted" }); const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, popoverTargetUser.uid); batch.set(myFriendRef, { displayName: popoverTargetUser.displayName, photoURL: popoverTargetUser.photoURL, addedAt: serverTimestamp() }); const theirFriendRef = doc(db, `users/${popoverTargetUser.uid}/confirmedFriends`, currentUser.uid); batch.set(theirFriendRef, { displayName: userData.displayName, photoURL: userData.photoURL, addedAt: serverTimestamp() }); await batch.commit(); toast({ title: "Başarılı", description: `${popoverTargetUser.displayName} ile arkadaş oldunuz.` }); setFriendshipStatus("friends"); setRelevantFriendRequest(null); }
     catch (error) { console.error("Error accepting friend request from popover:", error); toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" }); }
     finally { setPopoverLoading(false); }
-  };
+  }, [currentUser, userData, relevantFriendRequest, popoverTargetUser, toast]);
 
-  const handleDmAction = (targetUserId: string | undefined | null) => { if (!currentUser?.uid || !targetUserId) return; const dmId = generateDmChatId(currentUser.uid, targetUserId); router.push(`/dm/${dmId}`); setPopoverOpenForUserId(null); };
-  const handleViewProfileAction = (targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); };
+  const handleDmAction = useCallback((targetUserId: string | undefined | null) => { if (!currentUser?.uid || !targetUserId) return; const dmId = generateDmChatId(currentUser.uid, targetUserId); router.push(`/dm/${dmId}`); setPopoverOpenForUserId(null); }, [currentUser?.uid, router]);
+  const handleViewProfileAction = useCallback((targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); }, [router]);
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
 
-  const toggleSelfMute = async () => {
+  const toggleSelfMute = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current || !localStreamRef.current) return;
     const newMuteState = !selfMuted;
     localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = !newMuteState; });
     try {
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
-        await updateDoc(voiceParticipantRef, { isMuted: newMuteState, isMutedByAdmin: false }); 
+        await updateDoc(voiceParticipantRef, { isMuted: newMuteState, isMutedByAdmin: false });
         setSelfMuted(newMuteState);
     } catch (error) {
         console.error("Error toggling self mute:", error);
         toast({ title: "Hata", description: "Mikrofon durumu güncellenirken bir sorun oluştu.", variant: "destructive" });
-        localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = selfMuted; }); 
+        localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = selfMuted; });
     }
-  };
+  }, [currentUser, roomId, selfMuted, toast]);
 
-  const handleAdminKickFromVoice = async (targetUserId: string) => { 
+  const handleAdminKickFromVoice = useCallback(async (targetUserId: string) => {
     if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
     cleanupPeerConnection(targetUserId);
-    try { 
-      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); 
-      const roomRef = doc(db, "chatRooms", roomId); 
-      const batch = writeBatch(db); 
-      batch.delete(voiceParticipantRef); 
-      
+    try {
+      const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
+      const roomRef = doc(db, "chatRooms", roomId);
+      const batch = writeBatch(db);
+      batch.delete(voiceParticipantRef);
+
       const roomDocSnap = await getDoc(roomRef);
       if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
-        batch.update(roomRef, { voiceParticipantCount: increment(-1) }); 
+        batch.update(roomRef, { voiceParticipantCount: increment(-1) });
       }
 
       const signalsRef = collection(db, `chatRooms/${roomId}/webrtcSignals/${targetUserId}/signals`);
       const signalsSnap = await getDocs(signalsRef);
       signalsSnap.forEach(signalDoc => batch.delete(signalDoc.ref));
 
-      await batch.commit(); 
-      toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." }); 
-    } catch (error) { 
-      console.error("Error kicking user from voice:", error); 
-      toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" }); 
-    } 
-  };
+      await batch.commit();
+      toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." });
+    } catch (error) {
+      console.error("Error kicking user from voice:", error);
+      toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" });
+    }
+  }, [currentUser, roomId, isCurrentUserRoomCreator, cleanupPeerConnection, toast]);
 
-  const handleAdminToggleMuteUserVoice = async (targetUserId: string, currentMuteState?: boolean) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState, isMuted: !currentMuteState }); toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` }); } catch (error) { console.error("Error toggling user mute by admin:", error); toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" }); } };
+  const handleAdminToggleMuteUserVoice = useCallback(async (targetUserId: string, currentMuteState?: boolean) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState, isMuted: !currentMuteState }); toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` }); } catch (error) { console.error("Error toggling user mute by admin:", error); toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" }); } }, [currentUser, roomId, isCurrentUserRoomCreator, toast]);
 
   const handleVoiceParticipantSlotClick = useCallback((participantId: string | null) => {
     if (participantId && participantId !== currentUser?.uid) {
@@ -1127,7 +1127,7 @@ export default function ChatRoomPage() {
     }
   }, [currentUser, handleOpenUserInfoPopover]);
 
-  const handleKickParticipantFromTextChat = async (targetUserId: string, targetUsername?: string) => {
+  const handleKickParticipantFromTextChat = useCallback(async (targetUserId: string, targetUsername?: string) => {
     if (!isCurrentUserRoomCreator || !currentUser || targetUserId === currentUser?.uid) {
       toast({ title: "Yetki Hatası", description: "Bu kullanıcıyı odadan atma yetkiniz yok.", variant: "destructive" });
       return;
@@ -1140,7 +1140,7 @@ export default function ChatRoomPage() {
       batch.delete(participantRef);
 
       const roomRef = doc(db, "chatRooms", roomId);
-      
+
       const roomDocSnap = await getDoc(roomRef);
       if (roomDocSnap.exists() && (roomDocSnap.data()?.participantCount ?? 0) > 0) {
         batch.update(roomRef, { participantCount: increment(-1) });
@@ -1150,7 +1150,7 @@ export default function ChatRoomPage() {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
       const voiceParticipantSnap = await getDoc(voiceParticipantRef);
       if (voiceParticipantSnap.exists()) {
-        cleanupPeerConnection(targetUserId); 
+        cleanupPeerConnection(targetUserId);
         batch.delete(voiceParticipantRef);
         if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
             batch.update(roomRef, { voiceParticipantCount: increment(-1) });
@@ -1172,7 +1172,7 @@ export default function ChatRoomPage() {
       console.error("Error kicking participant from text chat:", error);
       toast({ title: "Hata", description: "Kullanıcı odadan atılırken bir sorun oluştu.", variant: "destructive" });
     }
-  };
+  }, [isCurrentUserRoomCreator, currentUser, roomId, cleanupPeerConnection, toast]);
 
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current) || loadingGameAssets) {
@@ -1230,7 +1230,7 @@ export default function ChatRoomPage() {
       <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
       <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={onOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
+          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
         </ScrollArea>
       </div>
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
@@ -1242,4 +1242,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
