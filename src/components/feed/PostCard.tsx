@@ -3,13 +3,12 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"; // Card still used for structure
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2, Star } from "lucide-react"; // Star eklendi
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { useAuth, checkUserPremium } from "@/contexts/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,13 +21,14 @@ import CommentForm from "./CommentForm";
 import CommentCard, { type CommentData } from "./CommentCard";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { motion } from "framer-motion"; // Added for animation
 
 export interface Post {
   id: string;
   userId: string;
   username: string | null;
   userAvatar: string | null;
-  authorIsPremium?: boolean; // Eklendi
+  authorIsPremium?: boolean;
   content: string;
   createdAt: Timestamp;
   likeCount: number;
@@ -42,7 +42,7 @@ export interface Post {
   originalPostUserId?: string;
   originalPostUsername?: string | null;
   originalPostUserAvatar?: string | null;
-  originalPostAuthorIsPremium?: boolean; // Eklendi
+  originalPostAuthorIsPremium?: boolean;
   originalPostContent?: string;
   originalPostCreatedAt?: Timestamp;
   originalPostSharedRoomId?: string;
@@ -56,7 +56,11 @@ interface PostCardProps {
 const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   const { currentUser, userData } = useAuth();
   const { toast } = useToast();
-  const [isLiking, setIsLiking] = useState(false);
+
+  const [optimisticHasLiked, setOptimisticHasLiked] = useState(false);
+  const [optimisticLikeCount, setOptimisticLikeCount] = useState(0);
+
+  const [isLiking, setIsLiking] = useState(false); // To prevent multiple quick clicks
   const [isReposting, setIsReposting] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<CommentData[]>([]);
@@ -66,6 +70,16 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   useEffect(() => {
     setLocalCommentCount(post.commentCount);
   }, [post.commentCount]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setOptimisticHasLiked(post.likedBy.includes(currentUser.uid));
+    } else {
+      setOptimisticHasLiked(false);
+    }
+    setOptimisticLikeCount(post.likeCount);
+  }, [post.likedBy, post.likeCount, currentUser]);
+
 
   useEffect(() => {
     if (showComments && post.id) {
@@ -110,7 +124,6 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 
 
   const isOwnPost = currentUser?.uid === post.userId;
-  const hasLiked = currentUser ? post.likedBy.includes(currentUser.uid) : false;
 
   const handleDeletePost = useCallback(async () => {
     if (!isOwnPost) return;
@@ -134,14 +147,19 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 
     setIsLiking(true);
     const postRef = doc(db, "posts", post.id);
+    const currentlyLiked = optimisticHasLiked; // Use optimistic state for current action
+
+    // Optimistic UI update
+    setOptimisticHasLiked(!currentlyLiked);
+    setOptimisticLikeCount(prevCount => currentlyLiked ? prevCount - 1 : prevCount + 1);
 
     try {
-      if (hasLiked) {
+      if (currentlyLiked) { // If it was liked, now we are unliking
         await updateDoc(postRef, {
           likeCount: increment(-1),
           likedBy: arrayRemove(currentUser.uid)
         });
-      } else {
+      } else { // If it was not liked, now we are liking
         await updateDoc(postRef, {
           likeCount: increment(1),
           likedBy: arrayUnion(currentUser.uid)
@@ -150,10 +168,13 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     } catch (error) {
       console.error("Error liking/unliking post:", error);
       toast({ title: "Hata", description: "Beğeni işlemi sırasında bir sorun oluştu.", variant: "destructive" });
+      // Revert optimistic update on error
+      setOptimisticHasLiked(currentlyLiked);
+      setOptimisticLikeCount(prevCount => currentlyLiked ? prevCount + 1 : prevCount - 1);
     } finally {
       setIsLiking(false);
     }
-  }, [currentUser, userData, isLiking, post.id, hasLiked, toast]);
+  }, [currentUser, userData, post.id, optimisticHasLiked, isLiking, toast]);
 
   const handleRepost = useCallback(async () => {
     if (!currentUser || !userData) {
@@ -170,7 +191,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
       userId: post.originalPostUserId,
       username: post.originalPostUsername,
       userAvatar: post.originalPostUserAvatar,
-      authorIsPremium: post.originalPostAuthorIsPremium, // Eklendi
+      authorIsPremium: post.originalPostAuthorIsPremium,
       content: post.originalPostContent,
       createdAt: post.originalPostCreatedAt,
       sharedRoomId: post.originalPostSharedRoomId,
@@ -188,14 +209,14 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
         userId: currentUser.uid,
         username: userData.displayName,
         userAvatar: userData.photoURL,
-        authorIsPremium: currentUserIsPremium, // Eklendi
+        authorIsPremium: currentUserIsPremium,
         createdAt: serverTimestamp(),
         isRepost: true,
         originalPostId: postToRepost.id,
         originalPostUserId: postToRepost.userId,
         originalPostUsername: postToRepost.username,
         originalPostUserAvatar: postToRepost.userAvatar,
-        originalPostAuthorIsPremium: postToRepost.authorIsPremium, // Eklendi
+        originalPostAuthorIsPremium: postToRepost.authorIsPremium,
         originalPostContent: postToRepost.content,
         originalPostCreatedAt: postToRepost.createdAt,
         originalPostSharedRoomId: postToRepost.sharedRoomId,
@@ -310,7 +331,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
               userId: post.originalPostUserId,
               username: post.originalPostUsername,
               userAvatar: post.originalPostUserAvatar,
-              authorIsPremium: post.originalPostAuthorIsPremium, // Eklendi
+              authorIsPremium: post.originalPostAuthorIsPremium,
               content: post.originalPostContent,
               createdAt: post.originalPostCreatedAt,
               sharedRoomId: post.originalPostSharedRoomId,
@@ -353,13 +374,27 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
             size="sm"
             className="text-muted-foreground hover:text-green-500 px-2 py-1.5"
             onClick={handleRepost}
-            disabled={isReposting || !currentUser || isOwnPost} // Kendi gönderisini RT'leme engeli
+            disabled={isReposting || !currentUser || isOwnPost}
         >
           {isReposting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Repeat className="h-4 w-4 mr-1.5" />}
         </Button>
-        <Button variant="ghost" size="sm" className={cn("px-2 py-1.5", hasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500')} onClick={handleLikePost} disabled={isLiking || !currentUser}>
-          <Heart className={`h-4 w-4 mr-1.5 ${hasLiked ? 'fill-current' : ''}`} />
-          <span className="text-xs">{post.likeCount}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "px-2 py-1.5",
+            optimisticHasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'
+          )}
+          onClick={handleLikePost}
+          disabled={isLiking || !currentUser}
+        >
+          <motion.div
+            animate={{ scale: optimisticHasLiked && !isLiking ? [1, 1.3, 1] : 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Heart className={`h-4 w-4 mr-1.5 ${optimisticHasLiked ? 'fill-current' : ''}`} />
+          </motion.div>
+          <span className="text-xs">{optimisticLikeCount}</span>
         </Button>
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-blue-500 px-2 py-1.5 ml-auto" onClick={() => toast({title: "Yakında!", description:"Paylaşma özelliği yakında eklenecek."})}>
           <Share className="h-4 w-4" />
@@ -397,5 +432,3 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 });
 PostCard.displayName = 'PostCard';
 export default PostCard;
-
-    
