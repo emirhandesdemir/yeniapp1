@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone } from "lucide-react"; // Phone eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -177,7 +177,7 @@ export default function DirectMessagePage() {
     setNewMessage(currentMessage);
   };
 
-  const handleSendMessage = async (e: FormEvent) => {
+  const handleSendMessage = useCallback(async (e: FormEvent) => {
     e.preventDefault();
     if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) return;
 
@@ -230,7 +230,35 @@ export default function DirectMessagePage() {
     } finally {
       setIsSending(false);
     }
-  };
+  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast]);
+
+  const handleVoiceCall = useCallback(async () => {
+    if (!currentUser || !userData || !dmPartnerDetails) {
+      toast({ title: "Hata", description: "Arama başlatılamadı. Kullanıcı bilgileri eksik.", variant: "destructive" });
+      return;
+    }
+    const callId = doc(collection(db, "directCalls")).id;
+    try {
+      const callDocRef = doc(db, "directCalls", callId);
+      await setDoc(callDocRef, {
+        callId: callId,
+        callerId: currentUser.uid,
+        callerName: userData.displayName,
+        callerAvatar: userData.photoURL,
+        calleeId: dmPartnerDetails.uid,
+        calleeName: dmPartnerDetails.displayName,
+        calleeAvatar: dmPartnerDetails.photoURL,
+        status: "initiating",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Arama Başlatılıyor...", description: `${dmPartnerDetails.displayName || 'Kullanıcı'} aranıyor.` });
+      router.push(`/call/${callId}`);
+    } catch (error) {
+      console.error("Error initiating call from DM header:", error);
+      toast({ title: "Arama Hatası", description: "Arama başlatılırken bir sorun oluştu.", variant: "destructive" });
+    }
+  }, [currentUser, userData, dmPartnerDetails, router, toast]);
 
   const handleVideoCall = useCallback(() => {
     toast({
@@ -241,17 +269,19 @@ export default function DirectMessagePage() {
 
   const handleReportUser = useCallback(() => {
     toast({
-      title: "Kullanıcıyı Şikayet Et (Yakında)",
-      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} şikayet etme özelliği yakında eklenecektir.`,
-      variant: "default"
+      title: "Kullanıcı Şikayet Edildi (Simülasyon)",
+      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} hakkındaki şikayetiniz kaydedildi. Gerekli incelemeler yapılacaktır. (Bu bir test mesajıdır, gerçek bir şikayet sistemi henüz aktif değildir.)`,
+      variant: "default",
+      duration: 7000,
     });
   }, [dmPartnerDetails, toast]);
 
   const handleBlockUser = useCallback(() => {
     toast({
-      title: "Kullanıcıyı Engelle (Yakında)",
-      description: `${dmPartnerDetails?.displayName || 'Kullanıcı'} engelleme özelliği yakında eklenecektir.`,
-      variant: "destructive"
+      title: "Kullanıcı Engelleme (Geliştiriliyor)",
+      description: `${dmPartnerDetails?.displayName || 'Kullanıcıyı'} engelleme özelliği yakında eklenecektir. Tam engelleme işlevselliği için çalışmalar devam etmektedir.`,
+      variant: "default",
+      duration: 7000,
     });
   }, [dmPartnerDetails, toast]);
 
@@ -281,11 +311,15 @@ export default function DirectMessagePage() {
                     <AvatarFallback>{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                    <h2 className="text-sm sm:text-base font-semibold text-primary-foreground/90 truncate hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                    <h2 className="text-sm sm:text-base font-semibold text-foreground hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
                 </div>
             </Link>
         </div>
         <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 text-muted-foreground hover:text-primary">
+            <Phone className="h-5 w-5" />
+            <span className="sr-only">Sesli Ara</span>
+          </Button>
           <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 text-muted-foreground hover:text-primary">
             <Video className="h-5 w-5" />
             <span className="sr-only">Görüntülü Ara</span>

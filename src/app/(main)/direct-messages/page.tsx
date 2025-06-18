@@ -154,7 +154,7 @@ export default function DirectMessagesPage() {
       toast({ title: "Arama Başlatılıyor...", description: `${targetDmConv.otherParticipant.displayName || 'Kullanıcı'} aranıyor.` });
       router.push(`/call/${callId}`);
     } catch (error) {
-      console.error("Error initiating call from DM:", error);
+      console.error("Error initiating call from DM list:", error);
       toast({ title: "Arama Hatası", description: "Arama başlatılırken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setPerformingCallAction(null);
