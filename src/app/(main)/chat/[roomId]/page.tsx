@@ -409,9 +409,9 @@ export default function ChatRoomPage() {
     if (!currentUser || !roomId) {
         return;
     }
-    let unsubscribe: Unsubscribe | null = null;
-    const setupListener = () => {
-        if (unsubscribe) unsubscribe();
+    let unsubscribeSignals: Unsubscribe | null = null;
+    const setupSignalListener = () => {
+        if (unsubscribeSignals) unsubscribeSignals();
         console.log(`[WebRTC] Setting up signal listener for ${currentUser.uid} in room ${roomId}. Last processed timestamp:`, lastProcessedSignalTimestampRef.current);
         let q = query(
           collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`),
@@ -420,7 +420,7 @@ export default function ChatRoomPage() {
         if (lastProcessedSignalTimestampRef.current) {
           q = query(q, where("signalTimestamp", ">", lastProcessedSignalTimestampRef.current));
         }
-        unsubscribe = onSnapshot(q, (snapshot) => {
+        unsubscribeSignals = onSnapshot(q, (snapshot) => {
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const signalData = change.doc.data() as WebRTCSignal;
@@ -450,18 +450,18 @@ export default function ChatRoomPage() {
         });
     };
     if (isCurrentUserInVoiceChat) {
-        setupListener();
+        setupSignalListener();
     } else {
-        if (unsubscribe) {
+        if (unsubscribeSignals) {
             console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} as user left voice chat.`);
-            unsubscribe();
-            unsubscribe = null;
+            unsubscribeSignals();
+            unsubscribeSignals = null;
         }
     }
     return () => {
-      if (unsubscribe) {
+      if (unsubscribeSignals) {
         console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} on component unmount or re-run.`);
-        unsubscribe();
+        unsubscribeSignals();
       }
     };
   }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChat]);
@@ -556,7 +556,7 @@ export default function ChatRoomPage() {
     peerConnectionsRef.current = {};
     negotiatingRef.current = {};
     setActiveRemoteStreams({});
-    lastProcessedSignalTimestampRef.current = null;
+    lastProcessedSignalTimestampRef.current = null; // Reset last processed signal timestamp
 
 
     if (localStreamRef.current) {
@@ -612,39 +612,50 @@ export default function ChatRoomPage() {
   useEffect(() => {
     if (!currentUser || !roomId) return;
 
-    const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`), orderBy("joinedAt", "asc"));
-    const unsubscribeVoice = onSnapshot(voiceParticipantsQuery, (snapshot) => {
-        const newVoiceParticipantsData: ActiveVoiceParticipantData[] = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ActiveVoiceParticipantData));
-        setActiveVoiceParticipants(newVoiceParticipantsData);
-        console.log("[WebRTC Voice Listener] Active voice participants updated:", newVoiceParticipantsData.map(p=>p.displayName));
+    let unsubscribeVoiceParticipants: Unsubscribe | null = null;
+    const setupVoiceParticipantsListener = () => {
+      if (unsubscribeVoiceParticipants) unsubscribeVoiceParticipants();
+      const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`), orderBy("joinedAt", "asc"));
+      unsubscribeVoiceParticipants = onSnapshot(voiceParticipantsQuery, (snapshot) => {
+          const newVoiceParticipantsData: ActiveVoiceParticipantData[] = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ActiveVoiceParticipantData));
+          setActiveVoiceParticipants(newVoiceParticipantsData);
+          console.log("[WebRTC Voice Listener] Active voice participants updated:", newVoiceParticipantsData.map(p=>p.displayName));
 
-        const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
+          const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
 
-        if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
-            console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
-            handleLeaveVoiceChat(true);
-            return;
-        }
+          if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
+              console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
+              handleLeaveVoiceChat(true); // Pass true to indicate it's an auto-cleanup, not user-initiated
+              return;
+          }
 
-        if (isCurrentUserInVoiceChatRef.current && localStreamRef.current) {
-            newVoiceParticipantsData.forEach(p => {
-                if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
-                    console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
-                    createPeerConnection(p.id);
-                }
-            });
-            Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
-                if (!newVoiceParticipantsData.find(p => p.id === existingPeerId)) {
-                    console.log(`[WebRTC Voice Listener] Participant ${existingPeerId} detected as left. Cleaning up connection.`);
-                    cleanupPeerConnection(existingPeerId);
-                }
-            });
-        }
-    }, (error) => {
-      console.error("[WebRTC] Error fetching voice participants:", error);
-    });
+          if (isCurrentUserInVoiceChatRef.current && localStreamRef.current) {
+              newVoiceParticipantsData.forEach(p => {
+                  if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
+                      console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
+                      createPeerConnection(p.id);
+                  }
+              });
+              Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
+                  if (!newVoiceParticipantsData.find(p => p.id === existingPeerId)) {
+                      console.log(`[WebRTC Voice Listener] Participant ${existingPeerId} detected as left. Cleaning up connection.`);
+                      cleanupPeerConnection(existingPeerId);
+                  }
+              });
+          }
+      }, (error) => {
+        console.error("[WebRTC] Error fetching voice participants:", error);
+        toast({ title: "Sesli Katılımcı Hatası", description: "Sesli sohbet katılımcıları alınırken hata.", variant: "destructive" });
+      });
+    };
 
-    return () => unsubscribeVoice();
+    setupVoiceParticipantsListener(); // Initial setup
+
+    return () => {
+      if (unsubscribeVoiceParticipants) {
+        unsubscribeVoiceParticipants();
+      }
+    };
   }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave]);
 
   useEffect(() => {
@@ -791,10 +802,10 @@ export default function ChatRoomPage() {
       }, 5000);
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
-  }, [gameSettings, roomDetails, attemptToAskNewQuestion, loadingGameAssets]);
+  }, [gameSettings, roomDetails, attemptToAskNewQuestion, loadingGameAssets, isCurrentUserParticipantRef]);
 
 
-  useEffect(() => { if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline && availableGameQuestions.length > 0 && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !loadingGameAssets) { attemptToAskNewQuestion(); } }, [gameSettings, roomDetails, availableGameQuestions, attemptToAskNewQuestion, loadingGameAssets]);
+  useEffect(() => { if (isCurrentUserParticipantRef.current && gameSettings?.isGameEnabled && roomDetails?.nextGameQuestionTimestamp && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline && availableGameQuestions.length > 0 && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !loadingGameAssets) { attemptToAskNewQuestion(); } }, [gameSettings, roomDetails, availableGameQuestions, attemptToAskNewQuestion, loadingGameAssets, isCurrentUserParticipantRef]);
 
   useEffect(() => {
     if (roomDetails?.currentGameQuestionId && availableGameQuestions.length > 0) {
@@ -1199,7 +1210,7 @@ export default function ChatRoomPage() {
           <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint="group chat" /> <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback> </Avatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-semibold text-primary-foreground/90 truncate" title={roomDetails.name}>{roomDetails.name}</h2>
+              <h2 className="text-base sm:text-lg font-semibold text-foreground truncate" title={roomDetails.name}>{roomDetails.name}</h2>
               {isCurrentUserRoomCreator && <Crown className="h-4 w-4 text-yellow-500 flex-shrink-0" title="Oda Sahibi" />}
               {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)}
             </div>
@@ -1242,3 +1253,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+

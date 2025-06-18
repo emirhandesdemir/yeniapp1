@@ -91,12 +91,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log("[AuthContext] onAuthStateChanged triggered. User:", user ? user.uid : null);
       setCurrentUser(user);
       if (user) {
-        // Firestore'dan kullanıcı verisini çekmeden önce, eğer yerel userData'da isBanned varsa ve true ise hemen çıkış yaptır.
-        // Bu, özellikle banlandıktan sonra sayfa yenilemesi gibi durumlarda hızlı tepki verir.
         if (userData && userData.uid === user.uid && userData.isBanned) {
             console.log(`[AuthContext] Local userData indicates user ${user.uid} is banned. Forcing logout immediately.`);
             await signOut(auth);
-            setUserData(null); // Yerel userData'yı da temizle
+            setUserData(null);
             setIsUserDataLoading(false);
             setLoading(false);
             router.push('/login?reason=banned_local_check');
@@ -124,6 +122,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 console.log(`[AuthContext] User document found for ${user.uid}. Data:`, existingData);
                 const updatedData: UserData = {
                     ...existingData,
+                    displayName: existingData.displayName !== undefined ? existingData.displayName : (user.displayName || null),
+                    photoURL: existingData.photoURL !== undefined ? existingData.photoURL : (user.photoURL || null),
+                    email: existingData.email !== undefined ? existingData.email : (user.email || null),
+                    diamonds: existingData.diamonds ?? INITIAL_DIAMONDS,
+                    role: existingData.role ?? "user",
+                    bio: existingData.bio ?? "",
+                    gender: existingData.gender ?? "belirtilmemiş",
                     privacySettings: {
                         postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
                         activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
@@ -134,7 +139,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     reportCount: existingData.reportCount ?? 0,
                     isBanned: existingData.isBanned ?? false,
                 };
+
+                let needsFirestoreUpdate = false;
+                if (updatedData.displayName !== existingData.displayName || 
+                    updatedData.photoURL !== existingData.photoURL ||
+                    updatedData.email !== existingData.email) {
+                    needsFirestoreUpdate = true;
+                }
+                
+                if (needsFirestoreUpdate) {
+                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo for ${user.uid} to Firestore.`);
+                    await updateDoc(userDocRef, {
+                        displayName: updatedData.displayName,
+                        photoURL: updatedData.photoURL,
+                        email: updatedData.email,
+                    }).catch(err => console.error("Error syncing auth profile to firestore:", err));
+                }
                 setUserData(updatedData);
+
             } else {
                 console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
                 const dataToSet: UserData = {
@@ -144,7 +166,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     photoURL: user.photoURL,
                     diamonds: INITIAL_DIAMONDS,
                     role: "user",
-                    createdAt: Timestamp.now(), // serverTimestamp() client-side setDoc'ta hemen çözülmez, bu yüzden geçici Timestamp.now()
+                    createdAt: Timestamp.now(), 
                     bio: "",
                     gender: "belirtilmemiş",
                     privacySettings: {
@@ -168,7 +190,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUserData(freshSnap.data() as UserData);
                     } else {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
-                        setUserData(dataToSet); // fallback to data with client-side timestamp
+                        setUserData(dataToSet); 
                         toast({
                             title: "Kullanıcı Verisi Senkronizasyonu",
                             description: "Kullanıcı bilgileriniz oluşturuldu ancak anlık senkronizasyonda bir gecikme olabilir.",
@@ -202,7 +224,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
     return unsubscribe;
-  }, [toast, router]);
+  }, [toast, router, userData]); // userData added to dependency array for local ban check
 
 
   const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
@@ -387,13 +409,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         let needsUpdate = false;
-        if (updatesToFirestore.displayName) needsUpdate = true;
-        if (updatesToFirestore.photoURL) needsUpdate = true;
-        if (updatesToFirestore.bio !== undefined) needsUpdate = true;
-        if (updatesToFirestore.gender !== undefined) needsUpdate = true;
-        if (updatesToFirestore.privacySettings.postsVisibleToFriendsOnly !== (firestoreData.privacySettings?.postsVisibleToFriendsOnly ?? false) ||
-            updatesToFirestore.privacySettings.activeRoomsVisibleToFriendsOnly !== (firestoreData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false) ||
-            updatesToFirestore.privacySettings.feedShowsEveryone !== (firestoreData.privacySettings?.feedShowsEveryone ?? true)
+        if (updatesToFirestore.displayName && updatesToFirestore.displayName !== firestoreData.displayName) needsUpdate = true;
+        if (updatesToFirestore.photoURL && updatesToFirestore.photoURL !== firestoreData.photoURL) needsUpdate = true;
+        if (updatesToFirestore.bio !== undefined && updatesToFirestore.bio !== firestoreData.bio) needsUpdate = true;
+        if (updatesToFirestore.gender !== undefined && updatesToFirestore.gender !== firestoreData.gender) needsUpdate = true;
+        
+        if (updatesToFirestore.privacySettings && (
+                updatesToFirestore.privacySettings.postsVisibleToFriendsOnly !== (firestoreData.privacySettings?.postsVisibleToFriendsOnly ?? false) ||
+                updatesToFirestore.privacySettings.activeRoomsVisibleToFriendsOnly !== (firestoreData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false) ||
+                updatesToFirestore.privacySettings.feedShowsEveryone !== (firestoreData.privacySettings?.feedShowsEveryone ?? true)
+            )
         ) {
             needsUpdate = true;
         }
@@ -401,9 +426,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
 
         if (needsUpdate) {
+            console.log("[AuthContext] Google sign-in: Firestore document needs update. Updates:", updatesToFirestore);
             await updateDoc(userDocRef, updatesToFirestore);
             setUserData({ ...firestoreData, ...updatesToFirestore });
         } else {
+            console.log("[AuthContext] Google sign-in: No Firestore document update needed.");
             setUserData(firestoreData);
         }
       }
@@ -456,7 +483,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
 
     try {
-      const currentLocalUserData = userData; // Mevcut userData state'ini al
+      const currentLocalUserData = userData; 
 
       const currentDisplayName = currentLocalUserData?.displayName || auth.currentUser.displayName || "";
       if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
@@ -471,9 +498,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       const currentPhotoURL = currentLocalUserData?.photoURL || auth.currentUser.photoURL || null;
-      if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) {
+      if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) { 
           console.log("[AuthContext] Fotoğraf URL güncellemesi sağlandı:", updates.newPhotoURL);
-          authUpdates.photoURL = updates.newPhotoURL;
+          authUpdates.photoURL = updates.newPhotoURL; 
           firestoreUpdates.photoURL = updates.newPhotoURL;
       }
 
@@ -516,7 +543,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(userDocRef, firestoreUpdates);
       }
 
-      // Set local userData state immediately with the applied changes
       if (hasFirestoreUpdates) {
         setUserData(prev => prev ? { ...prev, ...firestoreUpdates } : null);
       }
@@ -577,24 +603,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       const reportedUserRef = doc(db, "users", reportedUserId);
+      let newReportCount = 0;
+      let shouldBeBanned = false;
       await runTransaction(db, async (transaction) => {
         const reportedUserSnap = await transaction.get(reportedUserRef);
         if (!reportedUserSnap.exists()) {
           throw "Şikayet edilen kullanıcı bulunamadı!";
         }
         const currentReportCount = reportedUserSnap.data().reportCount || 0;
-        const newReportCount = currentReportCount + 1;
-        transaction.update(reportedUserRef, { reportCount: newReportCount });
-
+        newReportCount = currentReportCount + 1;
+        const updates: Partial<UserData> = { reportCount: newReportCount };
         if (newReportCount >= 3) {
-          transaction.update(reportedUserRef, { isBanned: true });
-          console.log(`[AuthContext] User ${reportedUserId} has been automatically banned due to reaching ${newReportCount} reports.`);
-          toast({ title: "Kullanıcı Banlandı (Simülasyon)", description: `${reportedUserId} ID'li kullanıcı ${newReportCount} şikayete ulaştığı için otomatik olarak banlandı. Bu bir ön yüz simülasyonudur, gerçek banlama için admin onayı gerekebilir.`, variant: "destructive", duration: 7000 });
-          // Burada admin'e bildirim gönderme veya loglama gibi ek işlemler yapılabilir.
+          updates.isBanned = true;
+          shouldBeBanned = true;
         }
+        transaction.update(reportedUserRef, updates);
+      });
+      
+      setUserData(prev => {
+        if(prev && prev.uid === reportedUserId) {
+          return {...prev, reportCount: newReportCount, isBanned: shouldBeBanned || prev.isBanned};
+        }
+        return prev;
       });
 
-      toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir. Gerekli incelemeler yapılacaktır." });
+      toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir." });
+      if(shouldBeBanned){
+         toast({ title: "Kullanıcı Banlandı (Simülasyon)", description: `${reportedUserId} ID'li kullanıcı ${newReportCount} şikayete ulaştığı için otomatik olarak banlandı.`, variant: "destructive", duration: 7000 });
+      }
+
     } catch (error: any) {
       console.error("Error reporting user:", error);
       toast({ title: "Hata", description: `Kullanıcı şikayet edilirken bir sorun oluştu: ${error.message || error}`, variant: "destructive" });
@@ -612,13 +649,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
     try {
       const blockRef = doc(db, `users/${currentUser.uid}/blockedUsers`, blockedUserId);
+      const targetUserDoc = await getDoc(doc(db, "users", blockedUserId));
+      let blockedUserName = "Bilinmeyen Kullanıcı";
+      let blockedUserPhoto: string | null = null;
+      if(targetUserDoc.exists()){
+        blockedUserName = targetUserDoc.data()?.displayName || "Bilinmeyen Kullanıcı";
+        blockedUserPhoto = targetUserDoc.data()?.photoURL || null;
+      }
+
       await setDoc(blockRef, {
         blockedAt: serverTimestamp(),
-        displayName: "Bilinmiyor", // Engellenen kullanıcının adı buraya eklenebilir, ancak ekstra okuma gerektirir.
-        photoURL: null,        // Şimdilik temel tutalım.
+        displayName: blockedUserName, 
+        photoURL: blockedUserPhoto,        
       });
-      toast({ title: "Kullanıcı Engellendi", description: "Bu kullanıcı engellenmiştir. Engellenen kullanıcıların içeriklerini görmemeniz için gerekli güncellemeler zamanla aktif olacaktır." });
-      // TODO: Gerçek filtreleme için ek mantık (query'leri güncelleme vb.) gereklidir.
+      toast({ title: "Kullanıcı Engellendi", description: `${blockedUserName} engellendi. Bu kullanıcının içeriklerini görmeyeceksiniz (Filtreleme yakında aktif olacak).` });
     } catch (error) {
       console.error("Error blocking user:", error);
       toast({ title: "Hata", description: "Kullanıcı engellenirken bir sorun oluştu.", variant: "destructive" });
@@ -675,3 +719,4 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
+
