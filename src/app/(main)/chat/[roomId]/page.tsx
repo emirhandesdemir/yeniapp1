@@ -55,7 +55,7 @@ interface Message {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; // Eklendi
+  senderIsPremium?: boolean;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -68,8 +68,8 @@ interface ChatRoomDetails {
   name: string;
   description?: string;
   creatorId: string;
-  creatorIsPremium?: boolean; // Eklendi
-  isPremiumRoom?: boolean; // Eklendi
+  creatorIsPremium?: boolean;
+  isPremiumRoom?: boolean;
   participantCount?: number;
   maxParticipants: number;
   expiresAt?: Timestamp;
@@ -84,7 +84,7 @@ export interface ActiveTextParticipant {
   id: string;
   displayName: string | null;
   photoURL: string | null;
-  isPremium?: boolean; // Eklendi
+  isPremium?: boolean;
   joinedAt?: Timestamp;
   isTyping?: boolean;
 }
@@ -93,7 +93,7 @@ export interface ActiveVoiceParticipantData {
   id: string;
   displayName: string | null;
   photoURL: string | null;
-  isPremium?: boolean; // Eklendi
+  isPremium?: boolean;
   joinedAt?: Timestamp;
   isMuted?: boolean;
   isMutedByAdmin?: boolean;
@@ -207,7 +207,7 @@ export default function ChatRoomPage() {
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
     if (!currentUser || !roomId) return;
-    console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type, signal.sdp ? `SDP (first 30): ${signal.sdp.substring(0, 30)}...` : (signal.candidate ? `Candidate: ${signal.candidate.substring(0,30)}...` : "No SDP/Candidate"));
+    console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type, signal.sdp ? `SDP (first 30): ${signal.sdp.substring(0, 30)}...` : (signal.candidate ? `Candidate: ${signal.candidate.candidate?.substring(0,30)}...` : "No SDP/Candidate"));
     try {
       const signalWithTimestampAndSender: WebRTCSignal = {
         ...signal,
@@ -254,7 +254,7 @@ export default function ChatRoomPage() {
       delete newStreams[targetUid];
       return newStreams;
     });
-    negotiatingRef.current[targetUid] = false;
+    delete negotiatingRef.current[targetUid]; // Ensure negotiating flag is cleared
   }, []);
 
   const createPeerConnection = useCallback((targetUid: string): RTCPeerConnection => {
@@ -331,22 +331,23 @@ export default function ChatRoomPage() {
       }
     };
 
-    if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
-      console.log(`[WebRTC] Adding ${localStreamRef.current.getTracks().length} local tracks to new PC for ${targetUid}.`);
+    if (localStreamRef.current && localStreamRef.current.active && localStreamRef.current.getTracks().length > 0) {
+      console.log(`[WebRTC] Adding ${localStreamRef.current.getTracks().length} local tracks to new PC for ${targetUid}. Local stream is active: ${localStreamRef.current.active}`);
       localStreamRef.current.getTracks().forEach(track => {
         try {
-            if (!pc.getSenders().find(s => s.track === track)) {
-                 pc.addTrack(track, localStreamRef.current!);
-                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) added to PC for ${targetUid}.`);
+            const sender = pc.getSenders().find(s => s.track === track);
+            if (!sender) {
+                 const newSender = pc.addTrack(track, localStreamRef.current!);
+                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) added to PC for ${targetUid}. Sender:`, newSender);
             } else {
-                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) already on PC for ${targetUid}. Not re-adding.`);
+                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) already on PC for ${targetUid}. Sender:`, sender, `Not re-adding.`);
             }
         } catch (e) {
             console.error(`[WebRTC] Error adding local track ${track.kind} to PC for ${targetUid}:`, e);
         }
       });
     } else {
-       console.warn(`[WebRTC] createPeerConnection for ${targetUid}: Local stream not available or has no tracks when PC created.`);
+       console.warn(`[WebRTC] createPeerConnection for ${targetUid}: Local stream not available, not active, or has no tracks when PC created. localStreamRef.current:`, localStreamRef.current, `localStreamRef.current?.active:`, localStreamRef.current?.active);
     }
 
     return pc;
@@ -492,11 +493,11 @@ export default function ChatRoomPage() {
     const userIsCurrentlyPremium = isCurrentUserPremium();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      console.log("[WebRTC] Got user media stream:", stream, "Number of tracks:", stream.getTracks().length);
-      if (stream.getTracks().length === 0) {
-        console.error("[WebRTC] GetUserMedia returned a stream with no tracks!");
-        toast({title: "Medya Hatası", description: "Mikrofonunuza erişilemedi veya boş bir medya akışı alındı.", variant: "destructive"});
-        throw new Error("No tracks in media stream");
+      console.log("[WebRTC] Got user media stream:", stream, "Number of tracks:", stream.getTracks().length, "Stream active:", stream.active);
+      if (!stream.active || stream.getTracks().length === 0) {
+        console.error("[WebRTC] GetUserMedia returned an inactive stream or a stream with no tracks!");
+        toast({title: "Medya Hatası", description: "Mikrofonunuza erişilemedi veya boş/inaktif bir medya akışı alındı.", variant: "destructive"});
+        throw new Error("No active tracks in media stream");
       }
       localStreamRef.current = stream;
 
@@ -504,7 +505,7 @@ export default function ChatRoomPage() {
         uid: currentUser.uid,
         displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
         photoURL: userData.photoURL || currentUser.photoURL || null,
-        isPremium: userIsCurrentlyPremium, // Eklendi
+        isPremium: userIsCurrentlyPremium,
         joinedAt: serverTimestamp(),
         isMuted: false,
         isMutedByAdmin: false,
@@ -523,7 +524,7 @@ export default function ChatRoomPage() {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Joining: Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          createPeerConnection(participantData.id);
+          createPeerConnection(participantData.id); // PC created here, local tracks will be added inside createPeerConnection
         }
       });
 
@@ -565,7 +566,7 @@ export default function ChatRoomPage() {
       cleanupPeerConnection(peerUid);
     });
     peerConnectionsRef.current = {};
-    negotiatingRef.current = {};
+    // negotiatingRef.current = {}; // This is now cleared inside cleanupPeerConnection
     setActiveRemoteStreams({});
     lastProcessedSignalTimestampRef.current = null;
 
@@ -640,11 +641,11 @@ export default function ChatRoomPage() {
               return;
           }
 
-          if (isCurrentUserInVoiceChatRef.current && localStreamRef.current) {
+          if (isCurrentUserInVoiceChatRef.current && localStreamRef.current && localStreamRef.current.active) {
               newVoiceParticipantsData.forEach(p => {
                   if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                       console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
-                      createPeerConnection(p.id);
+                      createPeerConnection(p.id); // Create PC, tracks will be added inside if local stream is ready
                   }
               });
               Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
@@ -870,13 +871,13 @@ export default function ChatRoomPage() {
       if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) { setIsRoomFullError(true); toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); setIsProcessingJoinLeave(false); return; }
 
       const batch = writeBatch(db);
-      batch.set(participantRef, { 
-          joinedAt: serverTimestamp(), 
-          displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", 
-          photoURL: userData.photoURL || currentUser.photoURL || null, 
-          uid: currentUser.uid, 
+      batch.set(participantRef, {
+          joinedAt: serverTimestamp(),
+          displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
+          photoURL: userData.photoURL || currentUser.photoURL || null,
+          uid: currentUser.uid,
           isTyping: false,
-          isPremium: userIsCurrentlyPremium, // Eklendi
+          isPremium: userIsCurrentlyPremium,
        });
       batch.update(roomRef, { participantCount: increment(1) });
 
@@ -923,21 +924,21 @@ export default function ChatRoomPage() {
     const unsubscribeRoom = onSnapshot(roomDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const fetchedRoomDetails: ChatRoomDetails = { 
-            id: docSnap.id, 
-            name: data.name, 
-            description: data.description, 
-            creatorId: data.creatorId, 
-            creatorIsPremium: data.creatorIsPremium || false, // Eklendi
-            isPremiumRoom: data.isPremiumRoom || false, // Eklendi
-            participantCount: data.participantCount || 0, 
-            maxParticipants: data.maxParticipants || (PREMIUM_USER_ROOM_CAPACITY), 
-            expiresAt: data.expiresAt, 
-            currentGameQuestionId: data.currentGameQuestionId, 
-            nextGameQuestionTimestamp: data.nextGameQuestionTimestamp, 
-            gameInitialized: data.gameInitialized, 
-            voiceParticipantCount: data.voiceParticipantCount || 0, 
-            currentGameAnswerDeadline: data.currentGameAnswerDeadline 
+        const fetchedRoomDetails: ChatRoomDetails = {
+            id: docSnap.id,
+            name: data.name,
+            description: data.description,
+            creatorId: data.creatorId,
+            creatorIsPremium: data.creatorIsPremium || false,
+            isPremiumRoom: data.isPremiumRoom || false,
+            participantCount: data.participantCount || 0,
+            maxParticipants: data.maxParticipants || (PREMIUM_USER_ROOM_CAPACITY),
+            expiresAt: data.expiresAt,
+            currentGameQuestionId: data.currentGameQuestionId,
+            nextGameQuestionTimestamp: data.nextGameQuestionTimestamp,
+            gameInitialized: data.gameInitialized,
+            voiceParticipantCount: data.voiceParticipantCount || 0,
+            currentGameAnswerDeadline: data.currentGameAnswerDeadline
         };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
@@ -1061,7 +1062,7 @@ export default function ChatRoomPage() {
             senderId: currentUser.uid,
             senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
             senderAvatar: userData?.photoURL || currentUser.photoURL,
-            senderIsPremium: userIsCurrentlyPremium, // Eklendi
+            senderIsPremium: userIsCurrentlyPremium,
             timestamp: serverTimestamp(),
             isGameMessage: false,
             mentionedUserIds: mentionedUserIds,
@@ -1126,8 +1127,8 @@ export default function ChatRoomPage() {
     if (!currentUser || senderId === currentUser.uid) return; setPopoverOpenForUserId(senderId); setPopoverLoading(true); setRelevantFriendRequest(null);
     try {
       const userDocRef = doc(db, "users", senderId); const userDocSnap = await getDoc(userDocRef); if (!userDocSnap.exists()) { toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" }); setPopoverOpenForUserId(null); return; }
-      const targetUser = { uid: userDocSnap.id, ...userDocSnap.data() } as UserData; 
-      targetUser.isPremium = checkUserPremium(targetUser); // isPremium durumunu dinamik olarak ekle
+      const targetUser = { uid: userDocSnap.id, ...userDocSnap.data() } as UserData;
+      targetUser.isPremium = checkUserPremium(targetUser);
       setPopoverTargetUser(targetUser);
       const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, senderId); const friendDocSnap = await getDoc(friendDocRef); if (friendDocSnap.exists()) { setFriendshipStatus("friends"); setPopoverLoading(false); return; }
       const outgoingReqQuery = query(collection(db, "friendRequests"), where("fromUserId", "==", currentUser.uid), where("toUserId", "==", senderId), where("status", "==", "pending")); const outgoingReqSnap = await getDocs(outgoingReqQuery); if (!outgoingReqSnap.empty) { setFriendshipStatus("request_sent"); setRelevantFriendRequest({ id: outgoingReqSnap.docs[0].id, ...outgoingReqSnap.docs[0].data() } as FriendRequest); setPopoverLoading(false); return; }
@@ -1157,7 +1158,7 @@ export default function ChatRoomPage() {
   const handleDmAction = useCallback((targetUserId: string | undefined | null) => { if (!currentUser?.uid || !targetUserId) return; const dmId = generateDmChatId(currentUser.uid, targetUserId); router.push(`/dm/${dmId}`); setPopoverOpenForUserId(null); }, [currentUser?.uid, router]);
   const handleViewProfileAction = useCallback((targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); }, [router]);
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
-  
+
   const userIsCurrentlyPremium = isCurrentUserPremium();
 
 
