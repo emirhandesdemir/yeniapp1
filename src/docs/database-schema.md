@@ -59,7 +59,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
-  - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar. PeerJS ID'lerini içerir.
+  - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
     - **Alanlar:**
       - `uid`: (String) Kullanıcının UID'si
@@ -69,7 +69,13 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `isMuted`: (Boolean) Kullanıcının kendi mikrofonunu kapatıp kapatmadığı (Varsayılan: `false`)
       - `isMutedByAdmin`: (Boolean) Oda yöneticisi tarafından susturulup susturulmadığı (Varsayılan: `false`)
       - `isSpeaking`: (Boolean) Kullanıcının o anda konuşup konuşmadığı (Prototipte simüle edilebilir, Varsayılan: `false`)
-      - `peerJsId`: (String, nullable) PeerJS bağlantısı için kullanıcının Peer ID'si.
+  - `webrtcSignals`: Kullanıcılar arasında WebRTC sinyallerini (offer, answer, ICE candidate) iletmek için kullanılır. Her kullanıcı kendi UID'si altında bir belgeye sahip olur ve bu belge altında gelen sinyalleri saklayan bir `signals` alt koleksiyonu bulunur.
+    - **Yol:** `/chatRooms/{roomId}/webrtcSignals/{userId}/signals/{signalId}`
+    - **Alanlar:**
+      - `type`: (String) 'offer', 'answer', veya 'candidate'
+      - `sdp`: (String, isteğe bağlı) Offer veya Answer için SDP.
+      - `candidate`: (Object, isteğe bağlı) ICE adayı nesnesi.
+      - `signalTimestamp`: (Timestamp) Sinyalin Firestore'a yazıldığı zaman.
 - **Gerekli İndeksler:**
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
@@ -89,6 +95,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını ve Karttaki Önizlemeleri Sıralama:**
     - Koleksiyon Grubu: `voiceParticipants`
     - Alanlar: `joinedAt` (Artan)
+  - **WebRTC Sinyallerini Sıralama ve Filtreleme:**
+    - Koleksiyon Grubu: `signals` (Tüm `webrtcSignals` içindeki `signals` alt koleksiyonlarını hedefler)
+    - Alanlar: `signalTimestamp` (Artan)
 
 
 ## `directMessages`
