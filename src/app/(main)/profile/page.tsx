@@ -9,8 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star } from "lucide-react"; 
-import { useAuth, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2 } from "lucide-react"; 
+import { useAuth, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ThemeSetting } from "@/contexts/ThemeContext";
@@ -40,19 +40,6 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'dark', label: 'Koyu Tema' },
 ];
 
-const PREDEFINED_AVATARS = [
-  "https://placehold.co/128x128/ADD8E6/333333.png?text=HW1",
-  "https://placehold.co/128x128/7FFFD4/333333.png?text=HW2",
-  "https://placehold.co/128x128/F0F8FF/333333.png?text=HW3",
-  "https://placehold.co/128x128/FFB6C1/333333.png?text=HW4",
-  "https://placehold.co/128x128/90EE90/333333.png?text=HW5",
-  "https://placehold.co/128x128/FFA07A/333333.png?text=HW6",
-  "https://placehold.co/128x128/DDA0DD/333333.png?text=HW7",
-  "https://placehold.co/128x128/B0E0E6/333333.png?text=HW8",
-  null,
-];
-
-
 export default function ProfilePage() {
   const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen, isCurrentUserPremium } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -61,6 +48,8 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
     postsVisibleToFriendsOnly: false,
@@ -81,6 +70,7 @@ export default function ProfilePage() {
         bio: userData.bio || "",
       });
       setPreviewImage(userData.photoURL || currentUser.photoURL || null);
+      setSelectedFile(null); 
       setPrivacySettings({
         postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
         activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
@@ -92,6 +82,7 @@ export default function ProfilePage() {
             bio: "",
         });
          setPreviewImage(currentUser.photoURL || null);
+         setSelectedFile(null);
          setPrivacySettings({
             postsVisibleToFriendsOnly: false,
             activeRoomsVisibleToFriendsOnly: false,
@@ -104,6 +95,7 @@ export default function ProfilePage() {
     if (userData) {
       if (!isEditing) {
         setPreviewImage(userData.photoURL || null);
+        setSelectedFile(null);
         setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
       }
       setPrivacySettings(prev => ({
@@ -124,13 +116,14 @@ export default function ProfilePage() {
   }, [micTestStream]);
 
   const handleEditToggle = () => {
-    if (isEditing) {
+    if (isEditing) { // Cancel editing
       if (currentUser && userData) {
         setTempProfile({
             username: userData.displayName || currentUser.displayName || "",
             bio: userData.bio || ""
         });
         setPreviewImage(userData.photoURL || currentUser.photoURL || null);
+        setSelectedFile(null);
         setPrivacySettings({
             postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
             activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
@@ -139,11 +132,13 @@ export default function ProfilePage() {
       } else if (currentUser) {
         setTempProfile({ username: currentUser.displayName || "", bio: "" });
         setPreviewImage(currentUser.photoURL || null);
+        setSelectedFile(null);
         setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true });
       }
-    } else {
+    } else { // Start editing
        if (currentUser && userData) {
         setPreviewImage(userData.photoURL || currentUser.photoURL || null);
+        setSelectedFile(null);
        }
     }
     setIsEditing(!isEditing);
@@ -154,9 +149,36 @@ export default function ProfilePage() {
     setTempProfile(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleAvatarSelect = (avatarUrl: string | null) => {
-    setPreviewImage(avatarUrl);
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast({ title: "Hata", description: "Lütfen bir resim dosyası seçin.", variant: "destructive" });
+        return;
+      }
+      // Max file size (e.g., 5MB) - can be adjusted
+      if (file.size > 5 * 1024 * 1024) {
+         toast({ title: "Hata", description: "Dosya boyutu çok büyük (Maks 5MB).", variant: "destructive" });
+         return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewImage(reader.result as string);
+        setSelectedFile(file);
+      };
+      reader.readAsDataURL(file);
+    }
   };
+
+  const handleRemovePreviewImage = () => {
+    setPreviewImage(null);
+    setSelectedFile(null); // If a new file was selected but not saved, clear it too
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""; // Reset file input
+    }
+  };
+
 
   const handlePrivacySettingChange = (setting: keyof PrivacySettings, value: boolean) => {
     setPrivacySettings(prev => ({ ...prev, [setting]: value }));
@@ -165,7 +187,7 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!currentUser) return;
 
-    const updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings } = {};
+    const updates: { displayName?: string; newPhotoFile?: File; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings } = {};
     let profileChanged = false;
 
     const currentDisplayName = userData?.displayName || currentUser.displayName || "";
@@ -183,10 +205,13 @@ export default function ProfilePage() {
         updates.bio = tempProfile.bio.trim();
         profileChanged = true;
     }
-
-    const originalPhotoURL = userData?.photoURL || currentUser?.photoURL || null;
-    if (previewImage !== originalPhotoURL) {
-        updates.newPhotoURL = previewImage;
+    
+    if (selectedFile) {
+        updates.newPhotoFile = selectedFile;
+        profileChanged = true;
+    } else if (previewImage === null && (userData?.photoURL || currentUser?.photoURL)) {
+        // User explicitly cleared the preview and there was an existing photo
+        updates.removePhoto = true;
         profileChanged = true;
     }
 
@@ -215,6 +240,7 @@ export default function ProfilePage() {
     const success = await updateUserProfile(updates);
     if (success) {
       setIsEditing(false);
+      setSelectedFile(null); // Clear selected file after successful save
     }
   };
 
@@ -287,7 +313,7 @@ export default function ProfilePage() {
     );
   }
 
-  const displayPhotoUrlToShow = isEditing ? previewImage : (userData?.photoURL || currentUser?.photoURL || null);
+  const displayPhotoUrlToShow = previewImage; // Always show previewImage in edit or non-edit mode after initial load
   const isCurrentlyPremium = isCurrentUserPremium();
 
   return (
@@ -302,23 +328,46 @@ export default function ProfilePage() {
                     src={displayPhotoUrlToShow}
                     alt={tempProfile.username || "Kullanıcı"}
                     data-ai-hint="user portrait"
-                    key={displayPhotoUrlToShow}
+                    key={displayPhotoUrlToShow} // Force re-render if URL changes
                   />
               ) : null }
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
             </Avatar>
             {isEditing && (
-               <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-card hover:bg-muted shadow-md"
-                onClick={() => { }} // Bu butona tıklama olayı eklenmeli, örneğin avatar seçme modalı açabilir
-                aria-label="Avatar seç"
-                disabled={isUserLoading}
-              >
-                <ImagePlus className="h-4 w-4 sm:h-5 sm:w-5" />
-              </Button>
+              <>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  ref={fileInputRef}
+                  className="hidden"
+                  id="profile-photo-upload"
+                />
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-card hover:bg-muted shadow-md"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Profil fotoğrafı yükle"
+                    disabled={isUserLoading}
+                  >
+                  <ImagePlus className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+                 {previewImage && ( // Show remove button only if there's a preview (either existing or newly selected)
+                    <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-0 right-0 rounded-full h-7 w-7 sm:h-8 sm:w-8 opacity-80 group-hover:opacity-100 transition-opacity"
+                        onClick={handleRemovePreviewImage}
+                        aria-label="Profil fotoğrafını kaldır"
+                        disabled={isUserLoading}
+                    >
+                        <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    </Button>
+                )}
+              </>
             )}
             {!isEditing && isCurrentlyPremium && (
                 <Star className="absolute bottom-1 right-1 h-6 w-6 text-yellow-400 fill-yellow-500 bg-card p-1 rounded-full shadow-md" title="Premium Kullanıcı" />
@@ -353,32 +402,6 @@ export default function ProfilePage() {
                   disabled={isUserLoading}
                 />
               </div>
-
-              <div className="space-y-3 pt-2">
-                <Label className="text-base">Avatar Seç</Label>
-                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 sm:gap-3">
-                  {PREDEFINED_AVATARS.map((avatarUrl, index) => (
-                    <button
-                      key={avatarUrl || `remove-avatar-${index}`}
-                      type="button"
-                      onClick={() => handleAvatarSelect(avatarUrl)}
-                      className={cn(
-                        "aspect-square rounded-full border-2 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                        previewImage === avatarUrl ? "border-primary ring-2 ring-primary scale-110" : "border-transparent hover:border-primary/50",
-                        !avatarUrl && "flex items-center justify-center bg-muted hover:bg-muted/80"
-                      )}
-                      aria-label={avatarUrl ? `Avatar ${index + 1} seç` : "Avatarı kaldır"}
-                    >
-                      {avatarUrl ? (
-                        <Image src={avatarUrl} alt={`Avatar ${index + 1}`} width={64} height={64} className="rounded-full object-cover" data-ai-hint="predefined avatar choice" />
-                      ) : (
-                        <XCircle className="h-8 w-8 text-muted-foreground" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
 
               <Card className="pt-4 bg-transparent border-border/50">
                 <CardHeader className="p-0 px-2 pb-3">
@@ -618,5 +641,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    

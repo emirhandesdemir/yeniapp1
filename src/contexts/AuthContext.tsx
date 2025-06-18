@@ -13,12 +13,13 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, storage } from '@/lib/firebase'; // storage import edildi
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; // storage fonksiyonları import edildi
 import { useRouter } from 'next/navigation';
-import { Flame, Star } from 'lucide-react'; // Star eklendi
+import { Flame, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { isPast } from 'date-fns'; // isPast eklendi
+import { isPast } from 'date-fns';
 
 const INITIAL_DIAMONDS = 30;
 
@@ -41,7 +42,7 @@ export interface UserData {
   privacySettings?: PrivacySettings;
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
-  isPremium?: boolean; // Dinamik olarak hesaplanacak veya Firestore'a eklenecek
+  isPremium?: boolean;
   reportCount?: number;
   isBanned?: boolean;
 }
@@ -52,11 +53,11 @@ interface AuthContextType {
   loading: boolean;
   isUserLoading: boolean;
   isUserDataLoading: boolean;
-  isCurrentUserPremium: () => boolean; // isPremium kontrol fonksiyonu eklendi
+  isCurrentUserPremium: () => boolean;
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoFile?: File; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -99,7 +100,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = user.photoURL;
     
-    const currentPremiumStatus = isGoogleSignUp ? 'none' : 'none'; // Google ile kayıtta başlangıçta premium yok
+    const currentPremiumStatus = isGoogleSignUp ? 'none' : 'none'; 
     const currentPremiumExpiryDate = null;
     const dynamicIsPremium = currentPremiumStatus !== 'none' && (!currentPremiumExpiryDate || !isPast(currentPremiumExpiryDate.toDate()));
 
@@ -127,14 +128,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
 
     try {
-        const dataToSave: Omit<UserData, 'createdAt'> & { createdAt: Timestamp } = { // createdAt Firestore.Timestamp olmalı
+        const dataToSave: Omit<UserData, 'createdAt'> & { createdAt: Timestamp } = { 
             uid: user.uid,
             email: user.email,
             displayName: username || user.displayName,
             photoURL: initialPhotoURL,
             diamonds: INITIAL_DIAMONDS,
             role: "user",
-            // createdAt: serverTimestamp() as Timestamp, // Bu satır doğrudan kullanılamaz setDoc içinde.
             bio: "",
             gender: gender || "belirtilmemiş",
             privacySettings: {
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             reportCount: 0,
             isBanned: false,
         };
-        await setDoc(userDocRef, { ...dataToSave, createdAt: serverTimestamp() }); // serverTimestamp burada kullanılır.
+        await setDoc(userDocRef, { ...dataToSave, createdAt: serverTimestamp() });
         console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
 
         const docSnap = await getDoc(userDocRef);
@@ -165,7 +165,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc in createUserDocument. Using fallback with client-side timestamp.`);
             const fallbackUserData: UserData = {
                 ...dataToSave,
-                createdAt: Timestamp.now(), // Fallback
+                createdAt: Timestamp.now(), 
             };
             setUserData(fallbackUserData);
              toast({
@@ -182,7 +182,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log("[AuthContext] onAuthStateChanged triggered. User:", user ? user.uid : null);
       setCurrentUser(user);
       if (user) {
         setIsUserDataLoading(true);
@@ -192,14 +191,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (docSnap.exists()) {
                 const existingData = docSnap.data() as UserData;
                 if (existingData.isBanned) {
-                    console.log(`[AuthContext] Firestore check: User ${user.uid} is banned. Forcing logout.`);
                     await signOut(auth);
                     router.push('/login?reason=banned_firestore_check');
                     toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
                     return; 
                 }
 
-                console.log(`[AuthContext] User document found for ${user.uid}. Data:`, existingData);
                 const dynamicIsPremium = existingData.premiumStatus !== 'none' && existingData.premiumStatus !== undefined &&
                                        (!existingData.premiumExpiryDate || !isPast(existingData.premiumExpiryDate.toDate()));
                 const updatedData: UserData = {
@@ -227,24 +224,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 if (updatedData.displayName !== existingData.displayName || 
                     updatedData.photoURL !== existingData.photoURL ||
                     updatedData.email !== existingData.email ||
-                    updatedData.isPremium !== existingData.isPremium // isPremium da senkronize edilebilir
+                    updatedData.isPremium !== existingData.isPremium
                     ) {
                     needsFirestoreUpdate = true;
                 }
                 
-                if (needsFirestoreUpdate) {
-                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo/isPremium for ${user.uid} to Firestore.`);
+                if (needsFirestoreUpdate && (
+                    (updatedData.displayName !== (user.displayName || null)) ||
+                    (updatedData.photoURL !== (user.photoURL || null)) ||
+                    (updatedData.email !== (user.email || null))
+                  )) {
+                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo for ${user.uid} to Firestore.`);
                     await updateDoc(userDocRef, {
                         displayName: updatedData.displayName,
                         photoURL: updatedData.photoURL,
                         email: updatedData.email,
-                        isPremium: updatedData.isPremium, // Firestore'a isPremium ekle
+                        isPremium: updatedData.isPremium, 
                     }).catch(err => console.error("Error syncing auth profile to firestore:", err));
                 }
                 setUserData(updatedData);
 
             } else {
-                console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
                 await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
             }
         } catch (error: any) {
@@ -252,16 +252,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
              toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
              setUserData(null);
         } finally {
-            console.log(`[AuthContext] Finished processing user data for ${user ? user.uid : 'null user'}. Setting isUserDataLoading to false.`);
             setIsUserDataLoading(false);
         }
       } else {
-        console.log("[AuthContext] No user authenticated. Clearing user data.");
         setUserData(null);
         setIsUserDataLoading(false);
         setIsAdminPanelOpen(false);
       }
-      console.log("[AuthContext] Auth state processing finished. Setting loading to false.");
       setLoading(false);
     });
     return unsubscribe;
@@ -270,18 +267,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
     setIsUserLoading(true);
-    console.log(`[AuthContext] Attempting signUp for email: ${email}, username: ${username}, gender: ${gender}`);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
       await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
-      console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
       await createUserDocument(userCredential.user, username, gender, false);
-      console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
-      console.error("[AuthContext] Signup error:", error.message, "Code:", error.code, error.stack);
       let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') {
         message = "Bu e-posta adresi zaten kullanımda.";
@@ -298,7 +290,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
-    console.log(`[AuthContext] Attempting logIn for email: ${email}`);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const userDocRef = doc(db, "users", userCredential.user.uid);
@@ -310,12 +301,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setIsUserLoading(false);
         return;
       }
-
-      console.log(`[AuthContext] LogIn successful for email: ${email}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
-      console.error("[AuthContext] Login error:", error.message, "Code:", error.code, error.stack);
       let message = `Giriş sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.`;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         message = "E-posta veya şifre hatalı.";
@@ -329,15 +317,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const signInWithGoogle = useCallback(async () => {
     setIsUserLoading(true);
     const provider = new GoogleAuthProvider();
-    console.log("[AuthContext] Attempting signInWithGoogle.");
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
-      console.log(`[AuthContext] Google sign-in successful for user: ${user.uid}. Checking/creating document...`);
       const userDocRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
-        console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
         await createUserDocument(user, user.displayName || undefined, "belirtilmemiş", true);
       } else {
         const firestoreData = docSnap.data() as UserData;
@@ -348,7 +333,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setIsUserLoading(false);
             return;
         }
-        console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, firestoreData);
         const dynamicIsPremium = firestoreData.premiumStatus !== 'none' && firestoreData.premiumStatus !== undefined &&
                                (!firestoreData.premiumExpiryDate || !isPast(firestoreData.premiumExpiryDate.toDate()));
 
@@ -365,7 +349,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         updatesToFirestore.premiumExpiryDate = firestoreData.premiumExpiryDate ?? null;
         updatesToFirestore.reportCount = firestoreData.reportCount ?? 0;
         updatesToFirestore.isBanned = firestoreData.isBanned ?? false;
-
 
         if (user.displayName && user.displayName !== firestoreData.displayName) {
             updatesToFirestore.displayName = user.displayName;
@@ -400,21 +383,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
         if (updatesToFirestore.premiumStatus !== (firestoreData.premiumStatus ?? 'none')) needsUpdate = true;
 
-
         if (needsUpdate) {
-            console.log("[AuthContext] Google sign-in: Firestore document needs update. Updates:", updatesToFirestore);
             await updateDoc(userDocRef, updatesToFirestore);
             setUserData({ ...firestoreData, ...updatesToFirestore });
         } else {
-            console.log("[AuthContext] Google sign-in: No Firestore document update needed.");
             setUserData({...firestoreData, isPremium: dynamicIsPremium});
         }
       }
-      console.log(`[AuthContext] Google sign-in process complete for ${user.uid}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Google ile giriş yapıldı." });
     } catch (error: any) {
-      console.error("[AuthContext] Google sign-in error:", error.message, "Code:", error.code, error.stack);
       let message = "Google ile giriş sırasında bir hata oluştu.";
       if (error.code === 'auth/popup-closed-by-user') {
         message = "Giriş penceresi kapatıldı.";
@@ -431,71 +409,82 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logOut = useCallback(async () => {
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting logOut.");
     try {
       await signOut(auth);
-      console.log("[AuthContext] LogOut successful. Navigating to /login.");
       setIsAdminPanelOpen(false);
       router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
-      console.error("[AuthContext] Logout error:", error.message, "Code:", error.code, error.stack);
       toast({ title: "Çıkış Hatası", description: "Çıkış yapılırken bir hata oluştu.", variant: "destructive" });
     } finally {
       setIsUserLoading(false);
     }
   }, [router, toast]);
 
-  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoFile?: File; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] Attempting profile update for user:", auth.currentUser.uid, "with updates:", JSON.stringify(updates));
 
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
+    let finalPhotoURL: string | null | undefined = undefined; // undefined: no change, null: remove, string: new URL
 
     try {
-      const currentLocalUserData = userData; 
-
-      const currentDisplayName = currentLocalUserData?.displayName || auth.currentUser.displayName || "";
-      if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
-          if(updates.displayName.trim().length < 3){
-              toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
-              setIsUserLoading(false);
-              return false;
+      // Handle photo upload/removal first
+      if (updates.newPhotoFile) {
+        const photoFile = updates.newPhotoFile;
+        const fileExtension = photoFile.name.split('.').pop();
+        const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
+        await uploadBytes(photoRef, photoFile);
+        finalPhotoURL = await getDownloadURL(photoRef);
+      } else if (updates.removePhoto) {
+        finalPhotoURL = null;
+        // Optionally delete old photo from storage if it exists
+        const currentPhotoURL = userData?.photoURL || auth.currentUser?.photoURL;
+        if (currentPhotoURL) {
+          try {
+            const oldPhotoRef = storageRef(storage, currentPhotoURL);
+            await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error:", e));
+          } catch (e) {
+            console.warn("Could not delete old profile picture from storage:", e);
           }
-          console.log("[AuthContext] Görünen ad güncellemesi sağlandı:", updates.displayName);
-          authUpdates.displayName = updates.displayName.trim();
-          firestoreUpdates.displayName = updates.displayName.trim();
+        }
       }
 
-      const currentPhotoURL = currentLocalUserData?.photoURL || auth.currentUser?.photoURL || null;
-      if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) { 
-          console.log("[AuthContext] Fotoğraf URL güncellemesi sağlandı:", updates.newPhotoURL);
-          authUpdates.photoURL = updates.newPhotoURL; 
-          firestoreUpdates.photoURL = updates.newPhotoURL;
+      if (finalPhotoURL !== undefined) {
+        authUpdates.photoURL = finalPhotoURL;
+        firestoreUpdates.photoURL = finalPhotoURL;
       }
 
+      // Handle other updates
+      const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
+      if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
+        if (updates.displayName.trim().length < 3) {
+          toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
+          setIsUserLoading(false);
+          return false;
+        }
+        authUpdates.displayName = updates.displayName.trim();
+        firestoreUpdates.displayName = updates.displayName.trim();
+      }
 
-      const currentBio = currentLocalUserData?.bio || "";
+      const currentBio = userData?.bio || "";
       if (updates.bio !== undefined && updates.bio.trim() !== currentBio) {
-          console.log("[AuthContext] Bio güncellemesi sağlandı:", updates.bio);
-          firestoreUpdates.bio = updates.bio.trim();
+        firestoreUpdates.bio = updates.bio.trim();
       }
 
       if (updates.privacySettings) {
-        console.log("[AuthContext] Gizlilik ayarları güncellemesi sağlandı:", updates.privacySettings);
         firestoreUpdates.privacySettings = {
-            ...(currentLocalUserData?.privacySettings || {
-                postsVisibleToFriendsOnly: false,
-                activeRoomsVisibleToFriendsOnly: false,
-                feedShowsEveryone: true,
-             }),
-            ...updates.privacySettings
+          ...(userData?.privacySettings || {
+            postsVisibleToFriendsOnly: false,
+            activeRoomsVisibleToFriendsOnly: false,
+            feedShowsEveryone: true,
+          }),
+          ...updates.privacySettings,
         };
       }
 
@@ -503,33 +492,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
-        console.log("[AuthContext] Profile uygulanacak gerçek bir değişiklik yok.");
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         setIsUserLoading(false);
         return true;
       }
 
       if (hasAuthUpdates && auth.currentUser) {
-        console.log("[AuthContext] Firebase Auth profili şununla güncelleniyor:", authUpdates);
         await updateFirebaseProfile(auth.currentUser, authUpdates);
       }
 
       if (hasFirestoreUpdates) {
-        console.log("[AuthContext] Firestore kullanıcı belgesi şununla güncelleniyor:", firestoreUpdates);
         await updateDoc(userDocRef, firestoreUpdates);
       }
 
       if (hasFirestoreUpdates) {
-        setUserData(prev => prev ? { ...prev, ...firestoreUpdates } : null);
+        setUserData(prev => prev ? { ...prev, ...firestoreUpdates, photoURL: finalPhotoURL !== undefined ? finalPhotoURL : prev.photoURL } : null);
+      } else if (hasAuthUpdates && authUpdates.photoURL !== undefined) { // Only photo was updated in Auth
+        setUserData(prev => prev ? { ...prev, photoURL: authUpdates.photoURL } : null);
       }
 
 
-      console.log("[AuthContext] Profil güncelleme başarılı.");
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
       return true;
 
     } catch (error: any) {
-      console.error("[AuthContext] Genel profil güncelleme başarısız:", error.code || error.name, error.message, error.stack);
+      console.error("[AuthContext] Genel profil güncelleme başarısız:", error);
       toast({
         title: "Profil Güncelleme Hatası",
         description: `Profil güncellenirken bir sorun oluştu: ${error.message || 'Bilinmeyen hata'}`,
@@ -537,7 +524,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       return false;
     } finally {
-      console.log("[AuthContext] Profil güncelleme işlemi bitti. isUserLoading false olarak ayarlanıyor.");
       setIsUserLoading(false);
     }
   }, [toast, userData]);
@@ -597,11 +583,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         transaction.update(reportedUserRef, updates);
       });
       
-      if (userData && reportedUserId === userData.uid) { // Bu blok muhtemelen gereksiz, şikayet eden kendi verisini güncellemez.
-         setUserData(prev => prev ? {...prev, reportCount: newReportCount, isBanned: shouldBeBanned || prev.isBanned} : null);
-      }
-
-
       toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir." });
       if(shouldBeBanned){
          toast({ title: "Kullanıcı Banlandı (Simülasyon)", description: `Şikayet edilen kullanıcı ${newReportCount} şikayete ulaştığı için otomatik olarak banlandı.`, variant: "destructive", duration: 7000 });
@@ -651,8 +632,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
 
   if (loading || (currentUser && isUserDataLoading && !(userData && userData.uid === currentUser.uid && !userData.isBanned))) {
-    // Ban kontrolü için `!userData.isBanned` eklendi. Eğer banlıysa yükleme ekranında takılı kalmasın.
-    // Zaten onAuthStateChanged içinde banlıysa logout ediliyor.
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-4">
@@ -703,11 +682,8 @@ export interface FriendRequest {
   createdAt: Timestamp;
 }
 
-// Helper function to check premium status, can be used in other components if UserData is available
 export const checkUserPremium = (user: UserData | null): boolean => {
   if (!user) return false;
   return user.premiumStatus !== 'none' && user.premiumStatus !== undefined &&
          (!user.premiumExpiryDate || !isPast(user.premiumExpiryDate.toDate()));
 };
-
-    
