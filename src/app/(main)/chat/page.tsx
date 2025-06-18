@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star } from "lucide-react"; // Star eklendi
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore";
 import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 
 interface ChatRoomVoiceParticipantPreview {
   uid: string;
@@ -41,8 +42,8 @@ interface ChatRoom {
   description: string;
   creatorId: string;
   creatorName: string;
-  creatorIsPremium?: boolean; // Eklendi
-  isPremiumRoom?: boolean; // Eklendi
+  creatorIsPremium?: boolean; 
+  isPremiumRoom?: boolean; 
   createdAt: Timestamp;
   expiresAt: Timestamp;
   participantCount?: number;
@@ -154,75 +155,70 @@ export default function ChatRoomsPage() {
   }, []);
 
 
+  const fetchRooms = useCallback(async () => {
+    setLoading(true);
+    try {
+      const currentTime = Timestamp.now();
+      const q = query(
+        collection(db, "chatRooms"),
+        where("expiresAt", ">", currentTime),
+        orderBy("expiresAt", "asc"),
+        limit(50)
+      );
+      const querySnapshot = await getDocs(q);
+      const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
+        const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
+        if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
+          let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
+          try {
+            const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
+            const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
+            const voiceSnapshot = await getDocs(voiceQuery);
+            voiceSnapshot.forEach(vpDoc => {
+              const vpData = vpDoc.data();
+              voicePreviews.push({
+                uid: vpDoc.id,
+                photoURL: vpData.photoURL || null,
+                displayName: vpData.displayName || null,
+              });
+            });
+          } catch (error) {
+            console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
+          }
+          return { 
+              id: docSnapshot.id, 
+              ...roomData, 
+              voiceParticipantPreviews: voicePreviews,
+              creatorIsPremium: roomData.creatorIsPremium || false,
+              isPremiumRoom: roomData.isPremiumRoom || false,
+          } as ChatRoom;
+        }
+        return null;
+      });
+
+      const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
+      const sortedRooms = resolvedRooms.sort((a,b) => {
+        if (a.isPremiumRoom && !b.isPremiumRoom) return -1;
+        if (!a.isPremiumRoom && b.isPremiumRoom) return 1;
+        const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
+        if (participantDiff !== 0) return participantDiff;
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return timeB - timeA;
+      });
+      setChatRooms(sortedRooms);
+    } catch (error) {
+      console.error("Error fetching chat rooms: ", error);
+      toast({ title: "Hata", description: "Sohbet odaları yüklenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+  
   useEffect(() => {
     document.title = 'Sohbet Odaları - HiweWalk';
-    const currentTime = Timestamp.now();
-    const q = query(
-      collection(db, "chatRooms"),
-      where("expiresAt", ">", currentTime),
-      orderBy("expiresAt", "asc"),
-      limit(50)
-    );
-
-    const fetchRooms = async () => {
-      setLoading(true);
-      try {
-        const querySnapshot = await getDocs(q);
-        const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
-          const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
-          if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
-            let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
-            try {
-              const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
-              const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
-              const voiceSnapshot = await getDocs(voiceQuery);
-              voiceSnapshot.forEach(vpDoc => {
-                const vpData = vpDoc.data();
-                voicePreviews.push({
-                  uid: vpDoc.id,
-                  photoURL: vpData.photoURL || null,
-                  displayName: vpData.displayName || null,
-                });
-              });
-            } catch (error) {
-              console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
-            }
-            return { 
-                id: docSnapshot.id, 
-                ...roomData, 
-                voiceParticipantPreviews: voicePreviews,
-                // creatorIsPremium ve isPremiumRoom alanlarını varsayılan olarak false ayarlayalım,
-                // eğer Firestore'da bu alanlar varsa onlar kullanılır.
-                creatorIsPremium: roomData.creatorIsPremium || false,
-                isPremiumRoom: roomData.isPremiumRoom || false,
-            } as ChatRoom;
-          }
-          return null;
-        });
-
-        const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
-        const sortedRooms = resolvedRooms.sort((a,b) => {
-          // Önce premium odalar
-          if (a.isPremiumRoom && !b.isPremiumRoom) return -1;
-          if (!a.isPremiumRoom && b.isPremiumRoom) return 1;
-          // Sonra katılımcı sayısı
-          const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
-          if (participantDiff !== 0) return participantDiff;
-          // Sonra oluşturulma tarihi
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-          return timeB - timeA;
-        });
-        setChatRooms(sortedRooms);
-      } catch (error) {
-        console.error("Error fetching chat rooms: ", error);
-        toast({ title: "Hata", description: "Sohbet odaları yüklenirken bir sorun oluştu.", variant: "destructive" });
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchRooms();
-  }, [toast]);
+  }, [fetchRooms]);
 
   const resetCreateRoomForm = () => {
     setNewRoomName("");
@@ -236,9 +232,9 @@ export default function ChatRoomsPage() {
       return;
     }
 
-    const userIsCurrentlyPremium = isCurrentUserPremium();
+    const userIsCreatorPremium = isCurrentUserPremium();
 
-    if (!userIsCurrentlyPremium && (userData.diamonds ?? 0) < ROOM_CREATION_COST) {
+    if (!userIsCreatorPremium && (userData.diamonds ?? 0) < ROOM_CREATION_COST) {
       toast({
         title: "Yetersiz Elmas!",
         description: (
@@ -269,7 +265,7 @@ export default function ChatRoomsPage() {
     const currentTime = new Date();
     const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
-    const roomMaxParticipants = userIsCurrentlyPremium ? PREMIUM_USER_ROOM_CAPACITY : MAX_PARTICIPANTS_PER_ROOM;
+    const roomMaxParticipants = userIsCreatorPremium ? PREMIUM_USER_ROOM_CAPACITY : MAX_PARTICIPANTS_PER_ROOM;
 
 
     const roomDataToCreate: any = {
@@ -277,8 +273,8 @@ export default function ChatRoomsPage() {
       description: newRoomDescription.trim(),
       creatorId: currentUser.uid,
       creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
-      creatorIsPremium: userIsCurrentlyPremium, // Eklendi
-      isPremiumRoom: userIsCurrentlyPremium, // Eklendi: Premium kullanıcı oda oluşturuyorsa, oda premium'dur
+      creatorIsPremium: userIsCreatorPremium,
+      isPremiumRoom: userIsCreatorPremium, 
       createdAt: serverTimestamp(),
       expiresAt: Timestamp.fromDate(expiresAtDate),
       image: imageUrl,
@@ -300,7 +296,7 @@ export default function ChatRoomsPage() {
 
     try {
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
-      if (!userIsCurrentlyPremium) {
+      if (!userIsCreatorPremium) {
         await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
         toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       } else {
@@ -308,29 +304,7 @@ export default function ChatRoomsPage() {
       }
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
-      // Oda listesini yenilemek için fetchRooms çağrılabilir veya state'e eklenebilir. Şimdilik Firestore dinleyicisi yok.
-      // Ancak, kullanıcı deneyimi için yeni odanın hemen görünmesi daha iyi olur.
-      // Basitlik adına, bu adımda listeyi yeniden çekmiyoruz, kullanıcı sayfayı yenilediğinde görür.
-      // Daha iyi bir UX için, yeni odayı doğrudan chatRooms state'ine ekleyebilir veya fetchRooms'u çağırabiliriz.
-      // Şimdilik, yeni bir oda oluşturulduğunda listeyi yenilemek için fetchRooms çağırıyorum.
-      // Bu, onSnapshot'a geçiş yapıldığında gereksiz olabilir.
-      const updatedRooms = await getDocs(query(collection(db, "chatRooms"), where("expiresAt", ">", Timestamp.now()), orderBy("expiresAt", "asc"), limit(50)));
-      const roomsPromises = updatedRooms.docs.map(async (docSnapshot) => {
-          const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
-          if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
-            return { id: docSnapshot.id, ...roomData } as ChatRoom;
-          }
-          return null;
-        });
-        const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
-        const sortedRooms = resolvedRooms.sort((a,b) => {
-          const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
-          if (participantDiff !== 0) return participantDiff;
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-          return timeB - timeA;
-        });
-        setChatRooms(sortedRooms);
+      fetchRooms();
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -345,9 +319,9 @@ export default function ChatRoomsPage() {
         toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için lütfen giriş yapın.", variant: "destructive" });
         return;
     }
-    const userIsCurrentlyPremium = isCurrentUserPremium();
+    const userIsCreatorPremium = isCurrentUserPremium();
 
-    if (!userIsCurrentlyPremium && (userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
+    if (!userIsCreatorPremium && (userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
         toast({
           title: "Yetersiz Elmas!",
           description: (
@@ -424,7 +398,7 @@ export default function ChatRoomsPage() {
       </div>
     );
   }
-  const userIsCurrentlyPremiumForDialog = isCurrentUserPremium();
+  const isCreatorPremiumForDialog = isCurrentUserPremium();
   const hasEnoughDiamonds = (userData?.diamonds ?? 0) >= ROOM_CREATION_COST;
 
   return (
@@ -484,7 +458,7 @@ export default function ChatRoomsPage() {
               disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
               Yeni Oda Oluştur
-               {userIsCurrentlyPremiumForDialog && (
+               {isCreatorPremiumForDialog && (
                 <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
               )}
             </Button>
@@ -495,7 +469,7 @@ export default function ChatRoomsPage() {
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
                   Odanız için bir ad ve açıklama belirleyin.
-                  {userIsCurrentlyPremiumForDialog
+                  {isCreatorPremiumForDialog
                     ? ` Premium kullanıcı olduğunuz için oda oluşturmak ücretsizdir ve ${PREMIUM_USER_ROOM_CAPACITY} katılımcı limitine sahip olacaktır.`
                     : ` Oda oluşturmak ${ROOM_CREATION_COST} elmasa mal olur, ${MAX_PARTICIPANTS_PER_ROOM} katılımcı limiti ve ${ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalma süresi olur.`}
                   Mevcut elmasınız: {userData?.diamonds ?? 0}
@@ -527,7 +501,7 @@ export default function ChatRoomsPage() {
                   />
                 </div>
 
-                {!userIsCurrentlyPremiumForDialog && !hasEnoughDiamonds && currentUser && (
+                {!isCreatorPremiumForDialog && !hasEnoughDiamonds && currentUser && (
                   <Card className="mt-4 border-destructive/50 bg-destructive/10 p-4">
                     <CardHeader className="p-0 mb-2">
                       <CardTitle className="text-base text-destructive-foreground dark:text-destructive">Elmasların Yetersiz!</CardTitle>
@@ -566,7 +540,7 @@ export default function ChatRoomsPage() {
                     isCreatingRoom ||
                     !currentUser ||
                     !userData ||
-                    (!userIsCurrentlyPremiumForDialog && !hasEnoughDiamonds)
+                    (!isCreatorPremiumForDialog && !hasEnoughDiamonds)
                   }
                 >
                   {isCreatingRoom && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -595,7 +569,7 @@ export default function ChatRoomsPage() {
                     disabled={!currentUser || isUserLoading || isUserDataLoading }
                   >
                     Hemen Yeni Oda Oluştur!
-                    {userIsCurrentlyPremiumForDialog && (
+                    {isCreatorPremiumForDialog && (
                         <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
                     )}
                   </Button>
@@ -604,12 +578,15 @@ export default function ChatRoomsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {chatRooms.map((room) => (
+          {chatRooms.map((room) => {
+            const isFull = (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants);
+            return (
             <Card
               key={room.id}
-              className={`flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl bg-card border hover:border-primary/50 dark:hover:border-primary/60 group ${
+              className={cn(
+                "flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl border hover:border-primary/50 dark:hover:border-primary/60 group",
                 room.isPremiumRoom ? 'border-yellow-500 dark:border-yellow-400 ring-1 ring-yellow-500/50 dark:ring-yellow-400/50 bg-gradient-to-br from-yellow-500/5 via-card to-yellow-500/10 dark:from-yellow-400/10 dark:via-card dark:to-yellow-400/15' : 'border-border/30 dark:border-border/20'
-              }`}
+              )}
             >
               <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
                 <div className="flex items-center justify-between">
@@ -678,21 +655,23 @@ export default function ChatRoomsPage() {
               <CardFooter className="p-3 sm:p-4 border-t bg-muted/20 dark:bg-card/30 mt-auto">
                 <Button
                   asChild
-                  className={`w-full text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105 ${
+                  className={cn(
+                    "w-full text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105",
                     isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' : 
                     room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' : 
                     'bg-primary hover:bg-primary/80 text-primary-foreground'
-                  }`}
-                  disabled={(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants)}
+                  )}
+                  disabled={isFull}
+                  aria-disabled={isFull}
                 >
-                  <Link href={`/chat/${room.id}`}>
+                  <Link href={!isFull ? `/chat/${room.id}` : '#'}>
                     <LogIn className="mr-2 h-4 w-4" />
-                    {(room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants ? "Oda Dolu" : "Sohbete Katıl")}
+                    {isFull ? "Oda Dolu" : "Sohbete Katıl"}
                   </Link>
                 </Button>
               </CardFooter>
             </Card>
-          ))}
+          )})}
         </div>
       )}
     </div>
