@@ -159,14 +159,17 @@ export default function ChatRoomsPage() {
       collection(db, "chatRooms"),
       where("expiresAt", ">", currentTime),      
       orderBy("expiresAt", "asc"),             
-      orderBy("participantCount", "desc"),   
-      orderBy("createdAt", "desc")           
+      // participantCount ve createdAt sıralamaları, ana sıralama (expiresAt) sonrası client-side'da yapılacak
+      // Firestore birden fazla inequality filter ve farklı bir alanda orderBy desteklemez (expiresAt > ve participantCount desc gibi)
+      // Ya da birden fazla orderBy için composite index gerekir, şimdilik client-side sort.
+      limit(50) // Fetch a reasonable number for client-side sort
     );
 
     const unsubscribe = onSnapshot(q, async (querySnapshot) => {
       const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
-        if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
+        // expiresAt kontrolü Firestore sorgusunda yapıldı, burada tekrar gerekmeyebilir ama garanti için kalabilir.
+        if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) { 
           
           let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
           try {
@@ -192,10 +195,15 @@ export default function ChatRoomsPage() {
 
       const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
       
+      // Sort client-side
       const sortedRooms = resolvedRooms.sort((a,b) => {
         const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
         if (participantDiff !== 0) return participantDiff;
-        return b.createdAt.toMillis() - a.createdAt.toMillis();
+
+        const timeA = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0;
+        
+        return timeB - timeA;
       });
       setChatRooms(sortedRooms);
       setLoading(false);
@@ -219,7 +227,11 @@ export default function ChatRoomsPage() {
       toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için giriş yapmalısınız.", variant: "destructive" });
       return;
     }
-    if ((userData.diamonds ?? 0) < ROOM_CREATION_COST) {
+    
+    const isPremiumUser = userData.premiumStatus && userData.premiumStatus !== 'none' && 
+                          (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+
+    if (!isPremiumUser && (userData.diamonds ?? 0) < ROOM_CREATION_COST) {
       toast({
         title: "Yetersiz Elmas!",
         description: (
@@ -250,8 +262,6 @@ export default function ChatRoomsPage() {
     const currentTime = new Date();
     const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
-    const isPremiumUser = userData.premiumStatus && userData.premiumStatus !== 'none' && 
-                          (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
     const roomMaxParticipants = isPremiumUser ? PREMIUM_USER_ROOM_CAPACITY : MAX_PARTICIPANTS_PER_ROOM;
 
 
@@ -281,7 +291,7 @@ export default function ChatRoomsPage() {
 
     try {
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
-      if (!isPremiumUser) { // Sadece normal kullanıcılar oda oluşturma bedeli öder
+      if (!isPremiumUser) { 
         await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
         toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
       } else {
@@ -321,7 +331,7 @@ export default function ChatRoomsPage() {
           variant: "destructive",
           duration: 10000,
         });
-        return; // Yeterli elmas yoksa ve premium değilse modalı açma
+        return; 
     }
     setIsCreateModalOpen(true);
 };
@@ -659,5 +669,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
-    
