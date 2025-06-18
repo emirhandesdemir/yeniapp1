@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import { Flame, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { isPast } from 'date-fns';
+import { v4 as uuidv4 } from 'uuid'; // For unique filenames if needed
 
 const INITIAL_DIAMONDS = 30;
 
@@ -57,7 +58,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; newPhotoFile?: File; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -421,9 +422,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [router, toast]);
 
-  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoFile?: File; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
+      setIsUserLoading(false);
       return false;
     }
     setIsUserLoading(true);
@@ -432,29 +434,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
-    let finalPhotoURL: string | null | undefined = undefined; 
+    let finalPhotoURL: string | null | undefined = undefined;
 
     try {
-      if (updates.newPhotoFile) {
-        console.log("[AuthContext] updateUserProfile: Handling newPhotoFile");
-        const photoFile = updates.newPhotoFile;
-        const fileExtension = photoFile.name.split('.').pop()?.toLowerCase();
-
-        if (!fileExtension) {
-            toast({ title: "Dosya Hatası", description: "Geçersiz dosya türü veya dosya adı uzantısı yok.", variant: "destructive" });
-            setIsUserLoading(false);
-            return false;
-        }
+      if (updates.newPhotoBlob) {
+        console.log("[AuthContext] updateUserProfile: Handling newPhotoBlob");
+        const photoBlob = updates.newPhotoBlob;
+        // Determine file extension from blob type, default to png
+        const fileExtension = photoBlob.type.split('/')[1] || 'png';
         const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
         if (!validExtensions.includes(fileExtension)) {
-            toast({ title: "Dosya Hatası", description: `Desteklenmeyen dosya uzantısı: .${fileExtension}. Lütfen ${validExtensions.join(', ')} uzantılı bir dosya seçin.`, variant: "destructive" });
+            toast({ title: "Dosya Hatası", description: `Desteklenmeyen dosya türü: ${photoBlob.type}. Lütfen ${validExtensions.join(', ')} uzantılı bir dosya seçin.`, variant: "destructive" });
             setIsUserLoading(false);
             return false;
         }
-
+        
+        // Use a consistent filename like profileImage.extension
         const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
-        console.log("[AuthContext] updateUserProfile: Before uploadBytes");
-        await uploadBytes(photoRef, photoFile);
+        console.log("[AuthContext] updateUserProfile: Before uploadBytes with blob");
+        await uploadBytes(photoRef, photoBlob);
         console.log("[AuthContext] updateUserProfile: After uploadBytes, Before getDownloadURL");
         finalPhotoURL = await getDownloadURL(photoRef);
         console.log("[AuthContext] updateUserProfile: After getDownloadURL", finalPhotoURL);
@@ -464,10 +463,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const currentPhotoURL = userData?.photoURL || auth.currentUser?.photoURL;
         if (currentPhotoURL) {
           try {
-            const oldPhotoRef = storageRef(storage, currentPhotoURL);
-            console.log("[AuthContext] updateUserProfile: Attempting to delete old photo", currentPhotoURL);
-            await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error (ignored):", e));
-            console.log("[AuthContext] updateUserProfile: Old photo deletion attempt finished.");
+            // Try to delete the old photo, but don't fail the whole update if this part fails
+            const oldPhotoFileName = currentPhotoURL.split('/').pop()?.split('?')[0];
+            if (oldPhotoFileName && oldPhotoFileName.includes("profileImage.")) { // Only delete if it seems to be our standard named file
+                 const oldPhotoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/${decodeURIComponent(oldPhotoFileName)}`);
+                 console.log("[AuthContext] updateUserProfile: Attempting to delete old photo", oldPhotoRef.fullPath);
+                 await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error (ignored):", e.message));
+                 console.log("[AuthContext] updateUserProfile: Old photo deletion attempt finished.");
+            } else {
+                console.warn("[AuthContext] updateUserProfile: Old photo URL doesn't match expected pattern, skipping deletion:", currentPhotoURL);
+            }
           } catch (e) {
             console.warn("Could not delete old profile picture from storage (error caught but ignored):", e);
           }
@@ -511,8 +516,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
-        // setIsUserLoading(false) will be handled by finally
-        return true; 
+        setIsUserLoading(false);
+        return true;
       }
 
       if (hasAuthUpdates && auth.currentUser) {
@@ -528,16 +533,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       
       // Update local userData state
-      const newLocalUserData = { ...userData } as UserData; // Type assertion
-        if (firestoreUpdates.displayName !== undefined) newLocalUserData.displayName = firestoreUpdates.displayName;
-        if (firestoreUpdates.photoURL !== undefined) newLocalUserData.photoURL = firestoreUpdates.photoURL;
+      const newLocalUserData = { ...userData } as UserData; 
+        if (authUpdates.displayName !== undefined) newLocalUserData.displayName = authUpdates.displayName;
+        if (authUpdates.photoURL !== undefined) newLocalUserData.photoURL = authUpdates.photoURL;
         if (firestoreUpdates.bio !== undefined) newLocalUserData.bio = firestoreUpdates.bio;
         if (firestoreUpdates.privacySettings !== undefined) newLocalUserData.privacySettings = firestoreUpdates.privacySettings;
       
-      if (Object.keys(newLocalUserData).length > 0) { // Check if there are actual changes to local data
+      if (Object.keys(newLocalUserData).length > 0 && userData !== newLocalUserData) { 
         setUserData(newLocalUserData);
       }
-
 
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
       console.log("[AuthContext] updateUserProfile: Try block finished, returning true");
