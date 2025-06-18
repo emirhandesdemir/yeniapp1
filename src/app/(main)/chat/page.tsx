@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, Mic, SearchCode } from "lucide-react"; // SearchCode eklendi
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode } from "lucide-react"; // SearchCode eklendi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
@@ -59,7 +59,7 @@ const MAX_PARTICIPANTS_PER_ROOM = 7;
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
-const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk'; // Anahtar güncellendi
+const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk'; 
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
@@ -82,6 +82,11 @@ const cardVariants = {
     marginBottom: 0,
     transition: { duration: 0.3, ease: "easeInOut" }
   }
+};
+
+const itemVariants = { 
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
 };
 
 
@@ -379,7 +384,7 @@ export default function ChatRoomsPage() {
             exit="exit"
           >
             <Card className="shadow-lg bg-card border border-border/30 rounded-xl overflow-hidden">
-              <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-secondary/70 to-muted/70 dark:from-secondary/50 dark:to-muted/50">
+              <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-primary/5 via-card to-accent/5 dark:from-primary/10 dark:via-card dark:to-accent/10">
                 <motion.div
                   className="flex items-center gap-3"
                   variants={itemVariants}
