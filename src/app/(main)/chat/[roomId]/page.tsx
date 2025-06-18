@@ -324,7 +324,7 @@ export default function ChatRoomPage() {
            resetPeerJSState();
         }
     };
-  }, [currentUser, roomId, isCurrentUserInVoiceChatRef.current]); // Depend on isCurrentUserInVoiceChatRef.current to re-init if user rejoins.
+  }, [currentUser, roomId, isCurrentUserInVoiceChatRef.current, resetPeerJSState, toast]); // Depend on isCurrentUserInVoiceChatRef.current to re-init if user rejoins.
 
   const handleJoinVoiceChat = useCallback(async () => {
     if (!currentUser || !userData || !roomId || !roomDetails || isProcessingVoiceJoinLeave) return;

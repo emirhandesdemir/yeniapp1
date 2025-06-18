@@ -59,7 +59,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
-  - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar.
+  - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar. PeerJS ID'lerini içerir.
     - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
     - **Alanlar:**
       - `uid`: (String) Kullanıcının UID'si
@@ -69,14 +69,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `isMuted`: (Boolean) Kullanıcının kendi mikrofonunu kapatıp kapatmadığı (Varsayılan: `false`)
       - `isMutedByAdmin`: (Boolean) Oda yöneticisi tarafından susturulup susturulmadığı (Varsayılan: `false`)
       - `isSpeaking`: (Boolean) Kullanıcının o anda konuşup konuşmadığı (Prototipte simüle edilebilir, Varsayılan: `false`)
-  - `webrtcSignals`: WebRTC sinyalleşme mesajlarını saklar (offer, answer, ICE candidates).
-    - **Yol:** `/chatRooms/{roomId}/webrtcSignals/{signalId}`
-    - **Alanlar:**
-      - `fromUid`: (String) Sinyali gönderen kullanıcının UID'si
-      - `toUid`: (String) Sinyali alan kullanıcının UID'si
-      - `type`: (String) Sinyal tipi ("offer", "answer", "candidate")
-      - `data`: (Object) Sinyal içeriği (SDP veya ICE adayı nesnesi)
-      - `createdAt`: (Timestamp) Sinyalin oluşturulduğu zaman
+      - `peerJsId`: (String, nullable) PeerJS bağlantısı için kullanıcının Peer ID'si.
 - **Gerekli İndeksler:**
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
@@ -96,9 +89,6 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını ve Karttaki Önizlemeleri Sıralama:**
     - Koleksiyon Grubu: `voiceParticipants`
     - Alanlar: `joinedAt` (Artan)
-  - **WebRTC Sinyallerini Dinleme (`src/app/(main)/chat/[roomId]/page.tsx`):**
-    - Koleksiyon Grubu: `webrtcSignals`
-    - Alanlar: `toUid` (Artan), `createdAt` (Artan)
 
 
 ## `directMessages`
@@ -214,5 +204,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-    
