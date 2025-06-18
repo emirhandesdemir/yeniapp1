@@ -241,9 +241,9 @@ export default function ChatRoomPage() {
 
   const resetWebRTCState = useCallback(() => { console.log("[WebRTC] Resetting WebRTC state..."); Object.keys(peerConnectionsRef.current).forEach(peerId => { cleanupPeerConnection(peerId); }); peerConnectionsRef.current = {}; if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(track => track.stop()); localStreamRef.current = null; console.log("[WebRTC] Local stream stopped and cleared."); } setRemoteStreams({}); console.log("[WebRTC] WebRTC state reset complete."); }, [cleanupPeerConnection]);
   
-  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean): RTCPeerConnection | null => {
+  const createPeerConnection = useCallback((peerId: string): RTCPeerConnection | null => {
     if (!currentUser) return null;
-    console.log(`[WebRTC] createPeerConnection for ${peerId}. Initiator: ${isInitiator}. localStream available: ${!!localStreamRef.current}`);
+    console.log(`[WebRTC] createPeerConnection for ${peerId}. localStream available: ${!!localStreamRef.current}`);
     if (peerConnectionsRef.current[peerId]) {
       console.log(`[WebRTC] Peer connection for ${peerId} already exists.`);
       return peerConnectionsRef.current[peerId];
@@ -252,17 +252,19 @@ export default function ChatRoomPage() {
     const pc = new RTCPeerConnection(STUN_SERVERS);
     peerConnectionsRef.current[peerId] = pc;
 
-    if (localStreamRef.current) {
+    if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
       localStreamRef.current.getTracks().forEach(track => {
-        try {
-          pc.addTrack(track, localStreamRef.current!);
-          console.log(`[WebRTC] Added local track (${track.kind}) to PC for ${peerId} during creation`);
-        } catch (e) {
-          console.error(`[WebRTC] Error adding track to PC for ${peerId} during creation:`, e);
+        if (!pc.getSenders().find(s => s.track === track)) {
+            try {
+                pc.addTrack(track, localStreamRef.current!);
+                console.log(`[WebRTC] Added local track (${track.kind}) to PC for ${peerId} during creation`);
+            } catch (e) {
+                console.error(`[WebRTC] Error adding track to PC for ${peerId} during creation:`, e);
+            }
         }
       });
     } else {
-      console.log(`[WebRTC] Local stream not available when creating PC for ${peerId}. Tracks will be added later if user joins voice.`);
+      console.log(`[WebRTC] Local stream not available or has no tracks when creating PC for ${peerId}. Tracks will be added later if user joins voice.`);
     }
 
     pc.onicecandidate = (event) => { if (event.candidate) { sendSignalMessage(peerId, 'candidate', event.candidate.toJSON()); } };
@@ -289,46 +291,34 @@ export default function ChatRoomPage() {
         console.log(`[WebRTC] onnegotiationneeded triggered for ${peerId}. Signaling state: ${pc.signalingState}. Creating offer.`);
         try {
           const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          sendSignalMessage(peerId, 'offer', offer);
+          await pc.setLocalDescription(offer); // This is where the error in the screenshot occurs
+          sendSignalMessage(peerId, 'offer', pc.localDescription!.toJSON());
         } catch (err: any) {
-          console.error(`[WebRTC] Error in onnegotiationneeded for ${peerId}:`, err);
+          console.error(`[WebRTC] Error in onnegotiationneeded for ${peerId} (creating/setting offer):`, err);
           toast({ title: "WebRTC Hatası", description: `On-negotiation-needed sırasında hata (${peerId}): ${err.message}`, variant: "destructive" });
         }
       } else {
-        console.log(`[WebRTC] onnegotiationneeded for ${peerId} but state is ${pc.signalingState} (expected stable), or self, or no currentUser. Offer not sent.`);
+        console.log(`[WebRTC] onnegotiationneeded for ${peerId} but signalingState is '${pc.signalingState}' (expected 'stable'), or self, or no currentUser. Offer not created.`);
       }
     };
     return pc;
   }, [currentUser, sendSignalMessage, cleanupPeerConnection, toast]);
 
-  const initiatePeerConnection = useCallback(async (peerId: string, isInitiator: boolean) => {
+  const initiatePeerConnection = useCallback(async (peerId: string) => {
     if (!currentUser || !localStreamRef.current || peerId === currentUser.uid) {
       console.log(`[WebRTC] Cannot initiatePeerConnection for ${peerId}. currentUser: ${!!currentUser}, localStream: ${!!localStreamRef.current}, not self: ${peerId !== currentUser?.uid}`);
       return;
     }
-    console.log(`[WebRTC] Initiating peer connection with ${peerId}. Is initiator: ${isInitiator}`);
-    const pc = createPeerConnection(peerId, isInitiator);
+    console.log(`[WebRTC] Initiating peer connection with ${peerId}.`);
+    const pc = createPeerConnection(peerId); // Create PC (adds tracks if localStream exists)
     if (!pc) {
       console.error(`[WebRTC] Failed to create/get PC for ${peerId} in initiatePeerConnection`);
       return;
     }
+    // Rely on onnegotiationneeded to send the offer after tracks are added in createPeerConnection
+    console.log(`[WebRTC] PC for ${peerId} created/retrieved. onnegotiationneeded should handle offer.`);
 
-    if (isInitiator && pc.signalingState === 'stable') {
-      console.log(`[WebRTC] initiatePeerConnection: PC for ${peerId} is stable, attempting to create offer.`);
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignalMessage(peerId, 'offer', offer);
-        console.log(`[WebRTC] Offer sent to ${peerId} from initiatePeerConnection`);
-      } catch (error: any) {
-        console.error(`[WebRTC] Error creating offer for ${peerId} in initiatePeerConnection:`, error);
-        toast({ title: "WebRTC Hatası (Initiate)", description: `Offer oluşturulurken hata (${peerId}): ${error.message}`, variant: "destructive" });
-      }
-    } else if (isInitiator && pc.signalingState !== 'stable') {
-        console.log(`[WebRTC] initiatePeerConnection for ${peerId}: signalingState is ${pc.signalingState}, not creating offer immediately. onnegotiationneeded should handle it.`);
-    }
-  }, [currentUser, createPeerConnection, sendSignalMessage, toast]);
+  }, [currentUser, createPeerConnection]);
 
   const handleIncomingSignal = useCallback(async (signal: WebRTCSignal) => {
     if (!currentUser || !roomId) return;
@@ -336,11 +326,11 @@ export default function ChatRoomPage() {
     console.log(`[WebRTC] Received signal from ${fromUid}: type ${type}`);
     let pc = peerConnectionsRef.current[fromUid];
     
-    if (!pc && type === 'offer') {
-      console.log(`[WebRTC] PC not found for ${fromUid} on offer, creating... (isInitiator: false)`);
-      pc = createPeerConnection(fromUid, false); // Explicitly false as we are responding
+    if (!pc && (type === 'offer' || type === 'answer')) { // Create PC if it doesn't exist for offer/answer
+      console.log(`[WebRTC] PC not found for ${fromUid} on ${type}, creating...`);
+      pc = createPeerConnection(fromUid); 
       if (!pc) {
-        console.error(`[WebRTC] Failed to create peer connection for incoming offer from ${fromUid}`);
+        console.error(`[WebRTC] Failed to create peer connection for incoming ${type} from ${fromUid}`);
         return;
       }
     }
@@ -351,29 +341,28 @@ export default function ChatRoomPage() {
 
     try {
       if (type === 'offer') {
-        if (localStreamRef.current) { 
+        if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) { 
           localStreamRef.current.getTracks().forEach(track => {
-            const sender = pc.getSenders().find(s => s.track === track);
-            if (!sender) {
-              try {
-                pc.addTrack(track, localStreamRef.current!);
-                console.log(`[WebRTC] Added local track to PC for ${fromUid} before setting remote offer.`);
-              } catch (e) {
-                console.error(`[WebRTC] Error adding track to PC for ${fromUid} when handling offer:`, e);
-              }
+            if (!pc.getSenders().find(s => s.track === track)) {
+                try {
+                    pc.addTrack(track, localStreamRef.current!);
+                    console.log(`[WebRTC] Added local track to PC for ${fromUid} before setting remote offer.`);
+                } catch (e) {
+                    console.error(`[WebRTC] Error adding track to PC for ${fromUid} when handling offer:`, e);
+                }
             }
           });
         }
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        sendSignalMessage(fromUid, 'answer', answer);
+        sendSignalMessage(fromUid, 'answer', pc.localDescription!.toJSON());
         console.log(`[WebRTC] Answer sent to ${fromUid}`);
       } else if (type === 'answer') {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         console.log(`[WebRTC] Remote description (answer) set from ${fromUid}`);
       } else if (type === 'candidate') {
-        if (pc.remoteDescription) { // Only add candidate if remote description is set
+        if (pc.remoteDescription) { 
           await pc.addIceCandidate(new RTCIceCandidate(data));
           console.log(`[WebRTC] ICE candidate added from ${fromUid}`);
         } else {
@@ -635,7 +624,7 @@ export default function ChatRoomPage() {
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                     console.log(`[WebRTC] New participant ${p.displayName || p.id} detected by ${currentUser.displayName}. Initiating connection.`);
-                    initiatePeerConnection(p.id, true); 
+                    initiatePeerConnection(p.id); 
                 }
             });
             const currentConnectedPeerIds = Object.keys(peerConnectionsRef.current);
@@ -865,10 +854,10 @@ export default function ChatRoomPage() {
     if (!currentUser || !userData || !roomId || !roomDetails || isProcessingVoiceJoinLeave) return;
     if (isCurrentUserInVoiceChat) { toast({ title: "Bilgi", description: "Zaten sesli sohbettesiniz." }); return; }
 
-    const currentVoiceParticipants = roomDetails.voiceParticipantCount ?? 0;
+    const currentVoiceParticipantsCount = roomDetails.voiceParticipantCount ?? 0;
     const maxAllowedParticipants = roomDetails.maxParticipants;
 
-    if (currentVoiceParticipants >= maxAllowedParticipants) {
+    if (currentVoiceParticipantsCount >= maxAllowedParticipants) {
         toast({ title: "Sesli Sohbet Dolu", description: "Bu odadaki sesli sohbet maksimum katılımcı sayısına ulaşmış.", variant: "destructive" });
         return;
     }
@@ -884,35 +873,37 @@ export default function ChatRoomPage() {
       setSelfMuted(false);
       toast({ title: "Sesli Sohbete Katıldın!" });
 
-      if (localStreamRef.current) {
+      if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
         console.log("[WebRTC] Ensuring local tracks are added to all existing peer connections post-join.");
-        Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
-            const pc = peerConnectionsRef.current[existingPeerId];
-            if (pc && pc.signalingState !== 'closed') {
-                localStreamRef.current!.getTracks().forEach(track => {
-                    const senderExists = pc.getSenders().find(s => s.track === track);
-                    if (!senderExists) {
-                        try {
-                            console.log(`[WebRTC] Adding track ${track.kind} to existing PC for ${existingPeerId} in handleJoinVoiceChat`);
-                            pc.addTrack(track, localStreamRef.current!);
-                        } catch (e) {
-                            console.error(`[WebRTC] Error adding track ${track.kind} to existing PC for ${existingPeerId}:`, e);
-                        }
-                    }
-                });
+        
+        // Add tracks to existing peer connections
+        activeVoiceParticipants.forEach(p => {
+          if (p.id !== currentUser.uid && peerConnectionsRef.current[p.id]) {
+            const pc = peerConnectionsRef.current[p.id];
+            if (pc.signalingState !== 'closed') {
+              localStreamRef.current!.getTracks().forEach(track => {
+                if (!pc.getSenders().find(s => s.track === track)) {
+                  try {
+                    console.log(`[WebRTC] Adding track ${track.kind} to existing PC for ${p.id} in handleJoinVoiceChat`);
+                    pc.addTrack(track, localStreamRef.current!);
+                  } catch (e) {
+                    console.error(`[WebRTC] Error adding track ${track.kind} to existing PC for ${p.id}:`, e);
+                  }
+                }
+              });
             }
+          }
+        });
+        
+        // For participants in Firestore voice list but for whom we don't have a PC yet, create and initiate
+        const existingPeerIdsWithPC = Object.keys(peerConnectionsRef.current);
+        activeVoiceParticipants.forEach(p => {
+          if (p.id !== currentUser.uid && !existingPeerIdsWithPC.includes(p.id)) {
+            console.log(`[WebRTC] Joining: Initiating connection to existing participant ${p.displayName} for whom PC did not exist.`);
+            initiatePeerConnection(p.id); 
+          }
         });
       }
-      
-      const currentVoiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`));
-      const currentVoiceParticipantsSnap = await getDocs(currentVoiceParticipantsQuery);
-      currentVoiceParticipantsSnap.forEach(docSnap => {
-        if (docSnap.id !== currentUser.uid) { 
-            console.log(`[WebRTC] Joining: Initiating/Verifying connection to existing participant ${docSnap.data().displayName}`);
-            initiatePeerConnection(docSnap.id, true); 
-        }
-      });
-
     } catch (error: any) {
       console.error("Error joining voice chat / getting media:", error);
       toast({ title: "Hata", description: `Sesli sohbete katılırken bir sorun oluştu: ${error.message || 'Medya erişimi reddedildi.'}`, variant: "destructive" });
@@ -934,7 +925,7 @@ export default function ChatRoomPage() {
     } finally {
       setIsProcessingVoiceJoinLeave(false);
     }
-  }, [currentUser, userData, roomId, roomDetails, isCurrentUserInVoiceChat, isProcessingVoiceJoinLeave, toast, resetWebRTCState, initiatePeerConnection]);
+  }, [currentUser, userData, roomId, roomDetails, isCurrentUserInVoiceChat, isProcessingVoiceJoinLeave, toast, resetWebRTCState, initiatePeerConnection, activeVoiceParticipants]);
 
 
   const toggleSelfMute = async () => {
@@ -1062,3 +1053,5 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
+    
