@@ -2,7 +2,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   type User,
   onAuthStateChanged,
@@ -14,7 +14,7 @@ import {
   signInWithPopup,
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc } from "firebase/firestore"; // collection ve addDoc eklendi
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction } from "firebase/firestore";
 import { useRouter } from 'next/navigation';
 import { Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -40,8 +40,8 @@ export interface UserData {
   privacySettings?: PrivacySettings;
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
-  reportCount?: number; // Yeni alan: Şikayet sayısı
-  isBanned?: boolean; // Yeni alan: Ban durumu
+  reportCount?: number;
+  isBanned?: boolean;
 }
 
 interface AuthContextType {
@@ -58,8 +58,8 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
   setIsAdminPanelOpen: (isOpen: boolean) => void;
-  reportUser: (reportedUserId: string, reason?: string) => Promise<void>; // Yeni fonksiyon
-  blockUser: (blockedUserId: string) => Promise<void>; // Yeni fonksiyon
+  reportUser: (reportedUserId: string, reason?: string) => Promise<void>;
+  blockUser: (blockedUserId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -91,29 +91,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log("[AuthContext] onAuthStateChanged triggered. User:", user ? user.uid : null);
       setCurrentUser(user);
       if (user) {
-        if (userData?.isBanned) { // Eğer kullanıcı banlıysa Auth state'i temizle ve çıkışa zorla
-            console.log(`[AuthContext] User ${user.uid} is banned. Forcing logout.`);
+        // Firestore'dan kullanıcı verisini çekmeden önce, eğer yerel userData'da isBanned varsa ve true ise hemen çıkış yaptır.
+        // Bu, özellikle banlandıktan sonra sayfa yenilemesi gibi durumlarda hızlı tepki verir.
+        if (userData && userData.uid === user.uid && userData.isBanned) {
+            console.log(`[AuthContext] Local userData indicates user ${user.uid} is banned. Forcing logout immediately.`);
             await signOut(auth);
-            setUserData(null);
+            setUserData(null); // Yerel userData'yı da temizle
             setIsUserDataLoading(false);
             setLoading(false);
-            router.push('/login?reason=banned');
+            router.push('/login?reason=banned_local_check');
             toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
             return;
         }
+
         setIsUserDataLoading(true);
         const userDocRef = doc(db, "users", user.uid);
         try {
             const docSnap = await getDoc(userDocRef);
             if (docSnap.exists()) {
                 const existingData = docSnap.data() as UserData;
-                if (existingData.isBanned) { // Firestore'dan gelen ban durumunu kontrol et
+                if (existingData.isBanned) {
                     console.log(`[AuthContext] Firestore check: User ${user.uid} is banned. Forcing logout.`);
                     await signOut(auth);
                     setUserData(null);
                     setIsUserDataLoading(false);
                     setLoading(false);
-                    router.push('/login?reason=banned');
+                    router.push('/login?reason=banned_firestore_check');
                     toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
                     return;
                 }
@@ -141,7 +144,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     photoURL: user.photoURL,
                     diamonds: INITIAL_DIAMONDS,
                     role: "user",
-                    createdAt: Timestamp.now(),
+                    createdAt: Timestamp.now(), // serverTimestamp() client-side setDoc'ta hemen çözülmez, bu yüzden geçici Timestamp.now()
                     bio: "",
                     gender: "belirtilmemiş",
                     privacySettings: {
@@ -165,7 +168,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUserData(freshSnap.data() as UserData);
                     } else {
                         console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
-                        setUserData(dataToSet);
+                        setUserData(dataToSet); // fallback to data with client-side timestamp
                         toast({
                             title: "Kullanıcı Verisi Senkronizasyonu",
                             description: "Kullanıcı bilgileriniz oluşturuldu ancak anlık senkronizasyonda bir gecikme olabilir.",
@@ -199,9 +202,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
     return unsubscribe;
-  }, [toast, router]); // userData'yı bağımlılıktan çıkardık, döngüye sebep oluyordu. Ban kontrolünü onAuthStateChanged içinde yaptık.
+  }, [toast, router]);
 
-  const createUserDocument = async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
+
+  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = user.photoURL;
     const dataToSetForLog: Partial<UserData> & {createdAt: string} = {
@@ -270,9 +274,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.error(`[AuthContext] CRITICAL: Error in createUserDocument for ${user.uid}:`, error.message, error.code, error.stack);
         toast({ title: "Hesap Detayı Kayıt Hatası", description: `Kullanıcı detayları veritabanına kaydedilemedi (Hata: ${error.message}).`, variant: "destructive" });
     }
-  };
+  }, [toast]);
 
-  const signUp = async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
+  const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
     setIsUserLoading(true);
     console.log(`[AuthContext] Attempting signUp for email: ${email}, username: ${username}, gender: ${gender}`);
     try {
@@ -298,9 +302,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  };
+  }, [createUserDocument, router, toast]);
 
-  const logIn = async (email: string, password: string) => {
+  const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
     console.log(`[AuthContext] Attempting logIn for email: ${email}`);
     try {
@@ -310,7 +314,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (docSnap.exists() && docSnap.data().isBanned) {
         await signOut(auth);
         toast({ title: "Erişim Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive" });
-        router.push('/login?reason=banned');
+        router.push('/login?reason=banned_login_check');
         setIsUserLoading(false);
         return;
       }
@@ -328,9 +332,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  };
+  }, [router, toast]);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     setIsUserLoading(true);
     const provider = new GoogleAuthProvider();
     console.log("[AuthContext] Attempting signInWithGoogle.");
@@ -348,7 +352,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
          if (firestoreData.isBanned) {
             await signOut(auth);
             toast({ title: "Erişim Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive" });
-            router.push('/login?reason=banned');
+            router.push('/login?reason=banned_google_check');
             setIsUserLoading(false);
             return;
         }
@@ -420,9 +424,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  };
+  }, [createUserDocument, router, toast]);
 
-  const logOut = async () => {
+  const logOut = useCallback(async () => {
     setIsUserLoading(true);
     console.log("[AuthContext] Attempting logOut.");
     try {
@@ -437,9 +441,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  };
+  }, [router, toast]);
 
-  const updateUserProfile = async (updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoURL?: string | null; bio?: string; privacySettings?: PrivacySettings }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return false;
@@ -452,7 +456,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
 
     try {
-      const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
+      const currentLocalUserData = userData; // Mevcut userData state'ini al
+
+      const currentDisplayName = currentLocalUserData?.displayName || auth.currentUser.displayName || "";
       if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
           if(updates.displayName.trim().length < 3){
               toast({ title: "Hata", description: "Kullanıcı adı en az 3 karakter olmalıdır.", variant: "destructive" });
@@ -464,7 +470,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           firestoreUpdates.displayName = updates.displayName.trim();
       }
 
-      const currentPhotoURL = userData?.photoURL || auth.currentUser.photoURL || null;
+      const currentPhotoURL = currentLocalUserData?.photoURL || auth.currentUser.photoURL || null;
       if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) {
           console.log("[AuthContext] Fotoğraf URL güncellemesi sağlandı:", updates.newPhotoURL);
           authUpdates.photoURL = updates.newPhotoURL;
@@ -472,7 +478,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
 
-      const currentBio = userData?.bio || "";
+      const currentBio = currentLocalUserData?.bio || "";
       if (updates.bio !== undefined && updates.bio.trim() !== currentBio) {
           console.log("[AuthContext] Bio güncellemesi sağlandı:", updates.bio);
           firestoreUpdates.bio = updates.bio.trim();
@@ -481,7 +487,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (updates.privacySettings) {
         console.log("[AuthContext] Gizlilik ayarları güncellemesi sağlandı:", updates.privacySettings);
         firestoreUpdates.privacySettings = {
-            ...(userData?.privacySettings || {
+            ...(currentLocalUserData?.privacySettings || {
                 postsVisibleToFriendsOnly: false,
                 activeRoomsVisibleToFriendsOnly: false,
                 feedShowsEveryone: true,
@@ -510,10 +516,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(userDocRef, firestoreUpdates);
       }
 
-      const updatedDocSnap = await getDoc(userDocRef);
-      if (updatedDocSnap.exists()) {
-        setUserData(updatedDocSnap.data() as UserData);
+      // Set local userData state immediately with the applied changes
+      if (hasFirestoreUpdates) {
+        setUserData(prev => prev ? { ...prev, ...firestoreUpdates } : null);
       }
+
 
       console.log("[AuthContext] Profil güncelleme başarılı.");
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
@@ -531,9 +538,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log("[AuthContext] Profil güncelleme işlemi bitti. isUserLoading false olarak ayarlanıyor.");
       setIsUserLoading(false);
     }
-  };
+  }, [toast, userData]);
 
-  const updateUserDiamonds = async (newDiamondCount: number) => {
+  const updateUserDiamonds = useCallback(async (newDiamondCount: number) => {
     if (!currentUser || !userData) {
       toast({ title: "Hata", description: "Elmaslar güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       return Promise.reject("Kullanıcı bulunamadı");
@@ -548,30 +555,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
       toast({ title: "Elmas Güncelleme Hatası", description: "Elmaslar güncellenirken bir sorun oluştu.", variant: "destructive" });
       return Promise.reject(error);
     }
-  };
+  }, [currentUser, userData, toast]);
 
-  const reportUser = async (reportedUserId: string, reason: string = "DM üzerinden şikayet") => {
-    if (!currentUser) {
+  const reportUser = useCallback(async (reportedUserId: string, reason: string = "DM üzerinden şikayet") => {
+    if (!currentUser || !userData) {
       toast({ title: "Giriş Gerekli", description: "Kullanıcıyı şikayet etmek için giriş yapmalısınız.", variant: "destructive" });
+      return;
+    }
+    if (currentUser.uid === reportedUserId) {
+      toast({ title: "Hata", description: "Kendinizi şikayet edemezsiniz.", variant: "destructive" });
       return;
     }
     try {
       await addDoc(collection(db, "reports"), {
         reporterId: currentUser.uid,
-        reporterName: userData?.displayName || currentUser.displayName,
+        reporterName: userData.displayName || currentUser.displayName,
         reportedUserId: reportedUserId,
         reason: reason,
         timestamp: serverTimestamp(),
-        status: "pending_review", // admin incelemesi için
+        status: "pending_review",
       });
-      toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir. Gerekli incelemeler yapılacaktır." });
-    } catch (error) {
-      console.error("Error reporting user:", error);
-      toast({ title: "Hata", description: "Kullanıcı şikayet edilirken bir sorun oluştu.", variant: "destructive" });
-    }
-  };
 
-  const blockUser = async (blockedUserId: string) => {
+      const reportedUserRef = doc(db, "users", reportedUserId);
+      await runTransaction(db, async (transaction) => {
+        const reportedUserSnap = await transaction.get(reportedUserRef);
+        if (!reportedUserSnap.exists()) {
+          throw "Şikayet edilen kullanıcı bulunamadı!";
+        }
+        const currentReportCount = reportedUserSnap.data().reportCount || 0;
+        const newReportCount = currentReportCount + 1;
+        transaction.update(reportedUserRef, { reportCount: newReportCount });
+
+        if (newReportCount >= 3) {
+          transaction.update(reportedUserRef, { isBanned: true });
+          console.log(`[AuthContext] User ${reportedUserId} has been automatically banned due to reaching ${newReportCount} reports.`);
+          toast({ title: "Kullanıcı Banlandı (Simülasyon)", description: `${reportedUserId} ID'li kullanıcı ${newReportCount} şikayete ulaştığı için otomatik olarak banlandı. Bu bir ön yüz simülasyonudur, gerçek banlama için admin onayı gerekebilir.`, variant: "destructive", duration: 7000 });
+          // Burada admin'e bildirim gönderme veya loglama gibi ek işlemler yapılabilir.
+        }
+      });
+
+      toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir. Gerekli incelemeler yapılacaktır." });
+    } catch (error: any) {
+      console.error("Error reporting user:", error);
+      toast({ title: "Hata", description: `Kullanıcı şikayet edilirken bir sorun oluştu: ${error.message || error}`, variant: "destructive" });
+    }
+  }, [currentUser, userData, toast]);
+
+  const blockUser = useCallback(async (blockedUserId: string) => {
     if (!currentUser) {
       toast({ title: "Giriş Gerekli", description: "Kullanıcıyı engellemek için giriş yapmalısınız.", variant: "destructive" });
       return;
@@ -584,17 +614,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const blockRef = doc(db, `users/${currentUser.uid}/blockedUsers`, blockedUserId);
       await setDoc(blockRef, {
         blockedAt: serverTimestamp(),
+        displayName: "Bilinmiyor", // Engellenen kullanıcının adı buraya eklenebilir, ancak ekstra okuma gerektirir.
+        photoURL: null,        // Şimdilik temel tutalım.
       });
-      toast({ title: "Kullanıcı Engellendi", description: "Bu kullanıcı engellenmiştir. İçerik filtreleme özelliği yakında aktif olacaktır." });
-      // Gerçek filtreleme için ek mantık (query'leri güncelleme vb.) gereklidir.
+      toast({ title: "Kullanıcı Engellendi", description: "Bu kullanıcı engellenmiştir. Engellenen kullanıcıların içeriklerini görmemeniz için gerekli güncellemeler zamanla aktif olacaktır." });
+      // TODO: Gerçek filtreleme için ek mantık (query'leri güncelleme vb.) gereklidir.
     } catch (error) {
       console.error("Error blocking user:", error);
       toast({ title: "Hata", description: "Kullanıcı engellenirken bir sorun oluştu.", variant: "destructive" });
     }
-  };
+  }, [currentUser, toast]);
 
 
-  if (loading || (currentUser && isUserDataLoading && !userData?.isBanned)) { // Banlı değilse yükleme ekranı
+  if (loading || (currentUser && isUserDataLoading && !(userData && userData.uid === currentUser.uid && userData.isBanned))) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-4">

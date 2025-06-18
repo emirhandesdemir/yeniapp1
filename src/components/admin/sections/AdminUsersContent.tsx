@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, Timestamp, doc, updateDoc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, Timestamp, doc, updateDoc, query, orderBy, runTransaction } from "firebase/firestore";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star, Users } from "lucide-react"; 
+import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star, Users, Ban, CheckCircle, AlertOctagon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,8 +24,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { addDays, format } from 'date-fns'; 
-import { tr } from 'date-fns/locale'; 
+import { Switch } from "@/components/ui/switch";
+import { addDays, format } from 'date-fns';
+import { tr } from 'date-fns/locale';
 
 export default function AdminUsersContent() {
   const [users, setUsers] = useState<UserData[]>([]);
@@ -36,10 +37,14 @@ export default function AdminUsersContent() {
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isEditRoleDialogOpen, setIsEditRoleDialogOpen] = useState(false);
   const [isEditDiamondsDialogOpen, setIsEditDiamondsDialogOpen] = useState(false);
-  const [isEditPremiumDialogOpen, setIsEditPremiumDialogOpen] = useState(false); 
+  const [isEditPremiumDialogOpen, setIsEditPremiumDialogOpen] = useState(false);
+  const [isModerateUserDialogOpen, setIsModerateUserDialogOpen] = useState(false);
+
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
-  const [newPremiumStatus, setNewPremiumStatus] = useState<'none' | 'weekly' | 'monthly'>('none'); 
+  const [newPremiumStatus, setNewPremiumStatus] = useState<'none' | 'weekly' | 'monthly'>('none');
   const [diamondAdjustment, setDiamondAdjustment] = useState<number>(0);
+  const [moderateUserIsBanned, setModerateUserIsBanned] = useState(false);
+  const [moderateUserReportCount, setModerateUserReportCount] = useState(0);
   const [processingAction, setProcessingAction] = useState(false);
 
 
@@ -54,7 +59,7 @@ export default function AdminUsersContent() {
         const usersCollectionRef = collection(db, "users");
         const q = query(usersCollectionRef, orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
-        const usersList = querySnapshot.docs.map(docSnapshot => ({ 
+        const usersList = querySnapshot.docs.map(docSnapshot => ({
           uid: docSnapshot.id,
           ...docSnapshot.data(),
         } as UserData));
@@ -73,30 +78,37 @@ export default function AdminUsersContent() {
 
     if (adminUserData?.role === 'admin') {
         fetchUsers();
-    } else if (adminUserData !== undefined) { 
+    } else if (adminUserData !== undefined) {
         setLoading(false);
     }
   }, [adminUserData, toast]);
-  
-  const handleOpenEditRoleDialog = (user: UserData) => {
+
+  const handleOpenEditRoleDialog = useCallback((user: UserData) => {
     setSelectedUser(user);
     setNewRole(user.role || 'user');
     setIsEditRoleDialogOpen(true);
-  };
+  }, []);
 
-  const handleOpenEditDiamondsDialog = (user: UserData) => {
+  const handleOpenEditDiamondsDialog = useCallback((user: UserData) => {
     setSelectedUser(user);
-    setDiamondAdjustment(0); 
+    setDiamondAdjustment(0);
     setIsEditDiamondsDialogOpen(true);
-  };
+  }, []);
 
-  const handleOpenEditPremiumDialog = (user: UserData) => {
+  const handleOpenEditPremiumDialog = useCallback((user: UserData) => {
     setSelectedUser(user);
     setNewPremiumStatus(user.premiumStatus || 'none');
     setIsEditPremiumDialogOpen(true);
-  };
+  }, []);
 
-  const handleUpdateRole = async () => {
+  const handleOpenModerateUserDialog = useCallback((user: UserData) => {
+    setSelectedUser(user);
+    setModerateUserIsBanned(user.isBanned || false);
+    setModerateUserReportCount(user.reportCount || 0);
+    setIsModerateUserDialogOpen(true);
+  }, []);
+
+  const handleUpdateRole = useCallback(async () => {
     if (!selectedUser || !newRole) return;
     setProcessingAction(true);
     try {
@@ -112,15 +124,15 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  };
+  }, [selectedUser, newRole, toast]);
 
-  const handleUpdateDiamonds = async () => {
+  const handleUpdateDiamonds = useCallback(async () => {
     if (!selectedUser || typeof diamondAdjustment !== 'number') return;
     setProcessingAction(true);
     try {
       const userDocRef = doc(db, "users", selectedUser.uid);
       const currentDiamonds = selectedUser.diamonds || 0;
-      const updatedDiamonds = Math.max(0, currentDiamonds + diamondAdjustment); 
+      const updatedDiamonds = Math.max(0, currentDiamonds + diamondAdjustment);
 
       await updateDoc(userDocRef, { diamonds: updatedDiamonds });
       setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, diamonds: updatedDiamonds } : u));
@@ -133,9 +145,9 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  };
+  }, [selectedUser, diamondAdjustment, toast]);
 
-  const handleUpdatePremiumStatus = async () => {
+  const handleUpdatePremiumStatus = useCallback(async () => {
     if (!selectedUser || !newPremiumStatus) return;
     setProcessingAction(true);
     try {
@@ -148,12 +160,12 @@ export default function AdminUsersContent() {
         newExpiryDate = Timestamp.fromDate(addDays(new Date(), 30));
       }
 
-      await updateDoc(userDocRef, { 
+      await updateDoc(userDocRef, {
         premiumStatus: newPremiumStatus,
-        premiumExpiryDate: newExpiryDate 
+        premiumExpiryDate: newExpiryDate
       });
-      
-      setUsers(prevUsers => prevUsers.map(u => 
+
+      setUsers(prevUsers => prevUsers.map(u =>
         u.uid === selectedUser.uid ? { ...u, premiumStatus: newPremiumStatus, premiumExpiryDate: newExpiryDate } : u
       ));
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının premium durumu güncellendi.` });
@@ -165,19 +177,46 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  };
+  }, [selectedUser, newPremiumStatus, toast]);
+
+  const handleModerateUser = useCallback(async () => {
+    if (!selectedUser) return;
+    setProcessingAction(true);
+    try {
+      const userDocRef = doc(db, "users", selectedUser.uid);
+      const updates: Partial<UserData> = {
+        isBanned: moderateUserIsBanned,
+        reportCount: moderateUserIsBanned ? selectedUser.reportCount : moderateUserReportCount // Ban kaldırılırsa şikayet sayısı da güncellenebilir
+      };
+      // Eğer ban kaldırılıyorsa ve admin şikayet sayısını sıfırlamak istiyorsa (bu UI'da henüz yok ama mantık eklenebilir)
+      // if (!moderateUserIsBanned && /* resetReportCountCheckbox.checked */ false) {
+      // updates.reportCount = 0;
+      // }
+
+      await updateDoc(userDocRef, updates);
+      setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, ...updates } : u));
+      toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının moderasyon durumu güncellendi.` });
+      setIsModerateUserDialogOpen(false);
+      setSelectedUser(null);
+    } catch (error) {
+      console.error("Error moderating user:", error);
+      toast({ title: "Hata", description: "Kullanıcı moderasyon durumu güncellenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setProcessingAction(false);
+    }
+  }, [selectedUser, moderateUserIsBanned, moderateUserReportCount, toast]);
 
 
-  const getAvatarFallbackText = (name?: string | null, email?: string | null) => {
+  const getAvatarFallbackText = useCallback((name?: string | null, email?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (email) return email.substring(0, 2).toUpperCase();
     return "PN";
-  };
+  }, []);
 
-  const formatPremiumExpiry = (timestamp: Timestamp | null | undefined) => {
+  const formatPremiumExpiry = useCallback((timestamp: Timestamp | null | undefined) => {
     if (!timestamp) return "Yok";
     return format(timestamp.toDate(), "dd MMM yyyy, HH:mm", { locale: tr });
-  };
+  }, []);
 
   if (adminUserData === undefined || adminUserData === null && loading) {
      return (
@@ -201,8 +240,8 @@ export default function AdminUsersContent() {
       </div>
     );
   }
-  
-  if (loading) { 
+
+  if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -220,7 +259,7 @@ export default function AdminUsersContent() {
             <Users className="h-7 w-7 text-primary" />
             <CardTitle className="text-2xl font-headline">Kullanıcı Yönetimi</CardTitle>
           </div>
-          <CardDescription>Uygulamadaki tüm kullanıcıları görüntüleyin ve rollerini/elmaslarını/premium durumlarını yönetin.</CardDescription>
+          <CardDescription>Uygulamadaki tüm kullanıcıları görüntüleyin ve yönetin.</CardDescription>
         </CardHeader>
         <CardContent>
           {users.length === 0 && !loading ? (
@@ -236,14 +275,15 @@ export default function AdminUsersContent() {
                     <TableHead className="text-center">Elmas</TableHead>
                     <TableHead className="text-center">Rol</TableHead>
                     <TableHead className="text-center">Premium</TableHead>
-                    <TableHead>Premium Bitiş</TableHead>
+                    <TableHead className="text-center">Şikayet</TableHead>
+                    <TableHead className="text-center">Banlı</TableHead>
                     <TableHead>Kayıt Tarihi</TableHead>
                     <TableHead className="text-right">Eylemler</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users.map((user) => (
-                    <TableRow key={user.uid}>
+                    <TableRow key={user.uid} className={user.isBanned ? 'bg-destructive/10' : ''}>
                       <TableCell>
                         <Avatar className="h-9 w-9 sm:h-10 sm:w-10 rounded-md">
                           <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar list" />
@@ -263,20 +303,34 @@ export default function AdminUsersContent() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge 
-                          variant={user.premiumStatus && user.premiumStatus !== 'none' ? 'default' : 'outline'} 
+                        <Badge
+                          variant={user.premiumStatus && user.premiumStatus !== 'none' ? 'default' : 'outline'}
                           className={user.premiumStatus && user.premiumStatus !== 'none' ? 'bg-yellow-500 text-black dark:text-yellow-950 text-xs' : 'text-xs'}
                         >
                           {user.premiumStatus === 'weekly' ? 'Haftalık' : user.premiumStatus === 'monthly' ? 'Aylık' : 'Yok'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs">{formatPremiumExpiry(user.premiumExpiryDate)}</TableCell>
+                       <TableCell className="text-center">
+                        <Badge variant={ (user.reportCount ?? 0) > 0 ? "destructive" : "outline"} className="text-xs">
+                          {user.reportCount ?? 0}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {user.isBanned ? (
+                          <Badge variant="destructive" className="text-xs">Evet</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">Hayır</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs">
-                        {user.createdAt instanceof Timestamp 
+                        {user.createdAt instanceof Timestamp
                           ? user.createdAt.toDate().toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })
                           : user.createdAt ? new Date(user.createdAt as any).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Bilinmiyor'}
                       </TableCell>
                       <TableCell className="text-right space-x-0.5 sm:space-x-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenModerateUserDialog(user)} aria-label="Kullanıcıyı Moderasyon" className="hover:text-orange-500 h-7 w-7 sm:h-8 sm:w-8" disabled={user.uid === adminAuthUser?.uid || processingAction}>
+                          <AlertOctagon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEditRoleDialog(user)} aria-label="Rolü Düzenle" className="hover:text-primary h-7 w-7 sm:h-8 sm:w-8" disabled={user.uid === adminAuthUser?.uid || processingAction}>
                           <AdminUserCogIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
@@ -336,7 +390,7 @@ export default function AdminUsersContent() {
             <DialogTitle>Kullanıcı Elmaslarını Düzenle</DialogTitle>
             {selectedUser && (
               <DialogDescription>
-                <span className="font-medium text-foreground">{selectedUser.displayName || selectedUser.email || selectedUser.uid}</span> kullanıcısının elmas sayısını düzenle. 
+                <span className="font-medium text-foreground">{selectedUser.displayName || selectedUser.email || selectedUser.uid}</span> kullanıcısının elmas sayısını düzenle.
                 Mevcut: <span className="font-semibold text-yellow-500">{selectedUser.diamonds ?? 0}</span>.
               </DialogDescription>
             )}
@@ -350,6 +404,7 @@ export default function AdminUsersContent() {
               onChange={(e) => setDiamondAdjustment(parseInt(e.target.value, 10) || 0)}
               placeholder="Örn: 10 (ekle) veya -5 (çıkar)"
               className="h-9"
+              disabled={processingAction}
             />
             {selectedUser && (
                 <p className="text-xs text-muted-foreground">
@@ -385,7 +440,7 @@ export default function AdminUsersContent() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <Label htmlFor="premium-status-select" className="text-sm">Premium Durumu</Label>
-            <Select value={newPremiumStatus} onValueChange={(value) => setNewPremiumStatus(value as 'none' | 'weekly' | 'monthly')}>
+            <Select value={newPremiumStatus} onValueChange={(value) => setNewPremiumStatus(value as 'none' | 'weekly' | 'monthly')} disabled={processingAction}>
               <SelectTrigger id="premium-status-select" className="h-9">
                 <SelectValue placeholder="Premium Durumu Seçin" />
               </SelectTrigger>
@@ -413,7 +468,62 @@ export default function AdminUsersContent() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isModerateUserDialogOpen} onOpenChange={setIsModerateUserDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kullanıcıyı Moderasyon</DialogTitle>
+            {selectedUser && (
+              <DialogDescription>
+                <span className="font-medium text-foreground">{selectedUser.displayName || selectedUser.email || selectedUser.uid}</span> kullanıcısının ban durumunu ve şikayet sayısını yönetin.
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          {selectedUser && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label htmlFor="isBannedSwitch" className="text-base font-medium">
+                    Kullanıcı Banlı
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Aktif edilirse kullanıcı hesabı askıya alınır.
+                  </p>
+                </div>
+                <Switch
+                  id="isBannedSwitch"
+                  checked={moderateUserIsBanned}
+                  onCheckedChange={setModerateUserIsBanned}
+                  disabled={processingAction}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reportCountInput" className="text-sm">Şikayet Sayısı</Label>
+                <Input
+                  id="reportCountInput"
+                  type="number"
+                  value={moderateUserReportCount}
+                  onChange={(e) => setModerateUserReportCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  disabled={processingAction || moderateUserIsBanned} // Banlı ise şikayet sayısı değiştirilemez
+                  className="h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Kullanıcının aldığı toplam şikayet sayısı. {moderateUserIsBanned && "Kullanıcı banlıyken bu sayı değiştirilemez."}
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={processingAction} size="sm">İptal</Button>
+            </DialogClose>
+            <Button onClick={handleModerateUser} disabled={processingAction || !selectedUser} size="sm">
+              {processingAction && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
-    
