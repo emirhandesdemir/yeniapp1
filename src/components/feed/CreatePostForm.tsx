@@ -4,7 +4,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp } from "firebase/firestore";
@@ -19,8 +18,9 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogClose,
-  DialogFooter, // Added DialogFooter import
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 const MAX_POST_LENGTH = 280;
 
@@ -132,105 +132,112 @@ export default function CreatePostForm() {
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "HW"; // HiweWalk için HW
+    return "HW"; 
   };
 
   const remainingChars = MAX_POST_LENGTH - content.length;
 
   return (
-    <Card className="shadow-lg">
-      <CardHeader>
-        <CardTitle className="text-xl font-headline">Ne düşünüyorsun?</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex items-start space-x-3">
-            <Avatar className="h-10 w-10 mt-1">
-              <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
-              <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
-            </Avatar>
-            <Textarea
-              placeholder="Düşüncelerini paylaş..."
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={3}
-              maxLength={MAX_POST_LENGTH}
-              className="flex-1 resize-none"
-              disabled={isSubmitting || !currentUser}
-            />
-          </div>
+    <div className="p-4 rounded-lg bg-card/60 dark:bg-card/40 border border-border/30 backdrop-blur-sm shadow-sm">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="flex items-start space-x-3">
+          <Avatar className="h-10 w-10 mt-1 flex-shrink-0">
+            <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
+            <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
+          </Avatar>
+          <Textarea
+            placeholder="Ne düşünüyorsun, HiweWalk'er?"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={3}
+            maxLength={MAX_POST_LENGTH}
+            className="flex-1 resize-none bg-background/70 dark:bg-background/50 border-border/50 focus:border-primary"
+            disabled={isSubmitting || !currentUser}
+          />
+        </div>
 
-          {selectedRoom && (
-            <div className="p-2.5 bg-primary/10 rounded-md flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2 text-primary">
-                <LinkIcon className="h-4 w-4" />
-                <span className="font-medium">Paylaşılacak Oda: {selectedRoom.name}</span>
-              </div>
-              <Button type="button" variant="ghost" size="icon" onClick={handleClearSelectedRoom} className="h-6 w-6 text-muted-foreground hover:text-destructive">
-                <XCircle className="h-4 w-4" />
-              </Button>
+        {selectedRoom && (
+          <div className="p-2 bg-primary/5 dark:bg-primary/10 rounded-md flex items-center justify-between text-sm border border-primary/20">
+            <div className="flex items-center gap-2 text-primary/90 dark:text-primary/80">
+              <LinkIcon className="h-4 w-4" />
+              <span className="font-medium truncate" title={selectedRoom.name}>Paylaşılacak Oda: {selectedRoom.name}</span>
             </div>
-          )}
-
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-                <Dialog open={isRoomSelectorOpen} onOpenChange={setIsRoomSelectorOpen}>
-                <DialogTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" disabled={isSubmitting || !currentUser}>
-                        <MessageSquarePlus className="mr-1.5 h-4 w-4" />
-                        Oda Paylaş
-                    </Button>
-                </DialogTrigger>
-                <DialogContent>
-                    <DialogHeader>
-                    <DialogTitle>Aktif Odanı Paylaş</DialogTitle>
-                    <DialogDescription>
-                        Gönderine eklemek için oluşturduğun aktif bir sohbet odası seç.
-                    </DialogDescription>
-                    </DialogHeader>
-                    {loadingUserRooms ? (
-                    <div className="flex justify-center items-center h-20">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </div>
-                    ) : userActiveRooms.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">Paylaşılacak aktif odanız bulunmuyor.</p>
-                    ) : (
-                    <div className="space-y-2 max-h-60 overflow-y-auto py-2">
-                        {userActiveRooms.map(room => (
-                        <Button
-                            key={room.id}
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => handleSelectRoom(room)}
-                        >
-                            <List className="mr-2 h-4 w-4 text-muted-foreground"/> {room.name}
-                        </Button>
-                        ))}
-                    </div>
-                    )}
-                    <DialogFooter>
-                        <DialogClose asChild>
-                            <Button type="button" variant="outline">Kapat</Button>
-                        </DialogClose>
-                    </DialogFooter>
-                </DialogContent>
-                </Dialog>
-
-                <p className={`text-xs ${remainingChars < 20 ? (remainingChars < 0 ? 'text-destructive' : 'text-orange-500') : 'text-muted-foreground'}`}>
-                {remainingChars}
-                </p>
-            </div>
-            <Button type="submit" disabled={isSubmitting || !content.trim() || !currentUser || remainingChars < 0}>
-              {isSubmitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Paylaş
+            <Button type="button" variant="ghost" size="icon" onClick={handleClearSelectedRoom} className="h-6 w-6 text-muted-foreground hover:text-destructive">
+              <XCircle className="h-4 w-4" />
             </Button>
           </div>
-        </form>
-      </CardContent>
-    </Card>
+        )}
+
+        <div className="flex justify-between items-center pt-1">
+          <div className="flex items-center gap-2">
+              <Dialog open={isRoomSelectorOpen} onOpenChange={setIsRoomSelectorOpen}>
+              <DialogTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" disabled={isSubmitting || !currentUser} className="text-muted-foreground hover:text-primary">
+                      <MessageSquarePlus className="mr-1.5 h-4 w-4" />
+                      Oda Paylaş
+                  </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                  <DialogTitle>Aktif Odanı Paylaş</DialogTitle>
+                  <DialogDescription>
+                      Gönderine eklemek için oluşturduğun aktif bir sohbet odası seç.
+                  </DialogDescription>
+                  </DialogHeader>
+                  {loadingUserRooms ? (
+                  <div className="flex justify-center items-center h-20">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                  ) : userActiveRooms.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">Paylaşılacak aktif odanız bulunmuyor.</p>
+                  ) : (
+                  <div className="space-y-1 max-h-60 overflow-y-auto py-2 pr-2 -mr-2">
+                      {userActiveRooms.map(room => (
+                      <Button
+                          key={room.id}
+                          variant="ghost"
+                          className="w-full justify-start text-left h-auto py-1.5 px-2"
+                          onClick={() => handleSelectRoom(room)}
+                      >
+                          <List className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0"/> 
+                          <span className="truncate">{room.name}</span>
+                      </Button>
+                      ))}
+                  </div>
+                  )}
+                  <DialogFooter className="mt-4">
+                      <DialogClose asChild>
+                          <Button type="button" variant="outline">Kapat</Button>
+                      </DialogClose>
+                  </DialogFooter>
+              </DialogContent>
+              </Dialog>
+
+              <p className={cn(
+                "text-xs",
+                remainingChars < 0 ? "text-destructive font-medium" : 
+                remainingChars < 20 ? "text-orange-500" : 
+                "text-muted-foreground"
+              )}>
+              {remainingChars}
+              </p>
+          </div>
+          <Button 
+            type="submit" 
+            disabled={isSubmitting || !content.trim() || !currentUser || remainingChars < 0}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            size="sm"
+          >
+            {isSubmitting ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-1.5 h-4 w-4" />
+            )}
+            Paylaş
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }
+
