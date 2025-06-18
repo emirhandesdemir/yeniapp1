@@ -206,7 +206,7 @@ export default function ChatRoomPage() {
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
     if (!currentUser || !roomId) return;
-    console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type);
+    // console.log(`[WebRTC] Sending signal to ${toUid}:`, signal.type, signal.sdp ? `SDP (first 30): ${signal.sdp.substring(0, 30)}...` : (signal.candidate ? `Candidate: ${signal.candidate.candidate?.substring(0,30)}...` : "No SDP/Candidate"));
     try {
       const signalWithTimestampAndSender: WebRTCSignal = {
         ...signal,
@@ -223,25 +223,27 @@ export default function ChatRoomPage() {
   const cleanupPeerConnection = useCallback((targetUid: string) => {
     const pc = peerConnectionsRef.current[targetUid];
     if (pc) {
-      pc.getSenders().forEach(sender => {
-        if (sender.track) {
-          // sender.track.stop(); // Yerel paylaşılan track'i burada durdurma, sadece PC'den kaldır.
-          try {
-            pc.removeTrack(sender);
-            console.log(`[WebRTC] Track/Sender removed for ${targetUid}`);
-          } catch (e) {
-            console.warn(`[WebRTC] Error removing track/sender for ${targetUid}:`, e);
-          }
-        }
-      });
+      console.log(`[WebRTC] Cleaning up PeerConnection for ${targetUid}. Current state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
       pc.onicecandidate = null;
       pc.ontrack = null;
       pc.onnegotiationneeded = null;
       pc.onconnectionstatechange = null;
       pc.onsignalingstatechange = null;
+      pc.oniceconnectionstatechange = null; 
+
+      pc.getSenders().forEach(sender => {
+        if (sender.track) {
+          try {
+            pc.removeTrack(sender); 
+            console.log(`[WebRTC] Sender's track removed from PC for ${targetUid}`);
+          } catch (e) {
+            console.warn(`[WebRTC] Error removing track/sender for ${targetUid} during cleanup:`, e);
+          }
+        }
+      });
       pc.close();
       delete peerConnectionsRef.current[targetUid];
-      console.log(`[WebRTC] Peer connection with ${targetUid} closed and cleaned up.`);
+      console.log(`[WebRTC] Peer connection with ${targetUid} closed and deleted.`);
     }
     if (remoteStreamsRef.current[targetUid]) {
       remoteStreamsRef.current[targetUid].getTracks().forEach(track => track.stop());
@@ -255,18 +257,20 @@ export default function ChatRoomPage() {
     negotiatingRef.current[targetUid] = false;
   }, []);
 
-  const createPeerConnection = useCallback((targetUid: string, isInitiator: boolean): RTCPeerConnection => {
-    console.log(`[WebRTC] Creating PeerConnection for ${targetUid}. Initiator: ${isInitiator}`);
+  const createPeerConnection = useCallback((targetUid: string): RTCPeerConnection => {
+    console.log(`[WebRTC] Attempting to create PeerConnection for ${targetUid}.`);
     if (peerConnectionsRef.current[targetUid]) {
-      console.warn(`[WebRTC] PeerConnection for ${targetUid} already exists. Reusing.`);
+      console.warn(`[WebRTC] PeerConnection for ${targetUid} already exists. Reusing. State: ${peerConnectionsRef.current[targetUid].connectionState}`);
       return peerConnectionsRef.current[targetUid];
     }
 
     const pc = new RTCPeerConnection(STUN_SERVERS);
+    peerConnectionsRef.current[targetUid] = pc; 
+    console.log(`[WebRTC] PeerConnection created for ${targetUid}.`);
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`[WebRTC] ICE candidate for ${targetUid}:`, event.candidate.candidate.substring(0, 30) + "...");
+        // console.log(`[WebRTC] ICE candidate for ${targetUid}:`, event.candidate.candidate?.substring(0, 30) + "...");
         sendSignalMessage(targetUid, { type: 'candidate', candidate: event.candidate.toJSON() });
       } else {
         console.log(`[WebRTC] All ICE candidates have been sent for ${targetUid}`);
@@ -274,7 +278,7 @@ export default function ChatRoomPage() {
     };
 
     pc.ontrack = (event) => {
-      console.log(`[WebRTC] Track received from ${targetUid}. Stream ID: ${event.streams[0]?.id}, Number of tracks: ${event.streams[0]?.getTracks().length}`);
+      console.log(`[WebRTC] Track received from ${targetUid}. Stream ID: ${event.streams[0]?.id}, Tracks in stream: ${event.streams[0]?.getTracks().length}`);
       if (event.streams && event.streams[0]) {
         remoteStreamsRef.current[targetUid] = event.streams[0];
         setActiveRemoteStreams(prev => ({ ...prev, [targetUid]: event.streams[0] }));
@@ -285,10 +289,15 @@ export default function ChatRoomPage() {
         console.warn(`[WebRTC] Received track from ${targetUid} but no stream associated.`);
       }
     };
+    
+    pc.oniceconnectionstatechange = () => {
+        console.log(`[WebRTC] ICE connection state with ${targetUid}: ${pc.iceConnectionState}`);
+    };
 
     pc.onconnectionstatechange = () => {
       console.log(`[WebRTC] Connection state with ${targetUid}: ${pc.connectionState}`);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+      if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+        console.warn(`[WebRTC] Connection with ${targetUid} is ${pc.connectionState}. Cleaning up.`);
         cleanupPeerConnection(targetUid);
       }
     };
@@ -298,7 +307,7 @@ export default function ChatRoomPage() {
     };
 
     pc.onnegotiationneeded = async () => {
-      console.log(`[WebRTC] Negotiation needed for ${targetUid}. Signaling state: ${pc.signalingState}, Negotiating flag: ${negotiatingRef.current[targetUid]}`);
+      console.log(`[WebRTC] Negotiation needed for ${targetUid}. Current signaling state: ${pc.signalingState}, Negotiating flag: ${negotiatingRef.current[targetUid]}`);
       if (negotiatingRef.current[targetUid]) {
         console.log(`[WebRTC] Negotiation for ${targetUid} already in progress. Skipping onnegotiationneeded.`);
         return;
@@ -309,81 +318,99 @@ export default function ChatRoomPage() {
           console.log(`[WebRTC] Creating offer for ${targetUid} due to onnegotiationneeded.`);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
+          console.log(`[WebRTC] Local description (offer) set for ${targetUid} from onnegotiationneeded. SDP (first 30): ${offer.sdp?.substring(0,30)}...`);
           sendSignalMessage(targetUid, { type: 'offer', sdp: pc.localDescription!.sdp });
         } else {
-           console.log(`[WebRTC] Negotiation needed for ${targetUid} but signaling state is ${pc.signalingState}. Skipping offer creation.`);
+           console.log(`[WebRTC] Negotiation needed for ${targetUid} but signaling state is ${pc.signalingState} (not 'stable'). Skipping offer creation in onnegotiationneeded.`);
         }
       } catch (error) {
         console.error(`[WebRTC] Error in onnegotiationneeded for ${targetUid}:`, error);
-        toast({ title: "WebRTC Anlaşma Hatası", description: `Bağlantı anlaşması (onnegotiationneeded) sırasında hata (${targetUid}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
+        toast({ title: "WebRTC Müzakere Hatası", description: `Bağlantı anlaşması (onnegotiationneeded) sırasında hata (${targetUid}). Detaylar konsolda.`, variant: "destructive" });
       } finally {
-        negotiatingRef.current[targetUid] = false;
+        negotiatingRef.current[targetUid] = false; 
       }
     };
     
-    if (localStreamRef.current) {
+    if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
+      console.log(`[WebRTC] Adding ${localStreamRef.current.getTracks().length} local tracks to new PC for ${targetUid}.`);
       localStreamRef.current.getTracks().forEach(track => {
-        if (!pc.getSenders().find(s => s.track === track)) {
-           pc.addTrack(track, localStreamRef.current!);
-           console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) added to PC for ${targetUid}`);
-        } else {
-           console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) already exists on PC for ${targetUid}. Not adding again.`);
+        try {
+            if (!pc.getSenders().find(s => s.track === track)) {
+                 pc.addTrack(track, localStreamRef.current!);
+                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) added to PC for ${targetUid}.`);
+            } else {
+                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) already on PC for ${targetUid}. Not re-adding.`);
+            }
+        } catch (e) {
+            console.error(`[WebRTC] Error adding local track ${track.kind} to PC for ${targetUid}:`, e);
         }
       });
     } else {
-       console.warn(`[WebRTC] createPeerConnection for ${targetUid}: Local stream not available yet.`);
+       console.warn(`[WebRTC] createPeerConnection for ${targetUid}: Local stream not available or has no tracks when PC created.`);
     }
 
-    peerConnectionsRef.current[targetUid] = pc;
     return pc;
   }, [sendSignalMessage, toast, cleanupPeerConnection]);
 
 
   const handleIncomingSignal = useCallback(async (signal: WebRTCSignal, fromUid: string) => {
-    console.log(`[WebRTC] Received signal from ${fromUid}:`, signal.type, "Current signaling state:", peerConnectionsRef.current[fromUid]?.signalingState);
+    console.log(`[WebRTC] Received signal from ${fromUid}:`, signal.type, "Current signaling state for peer:", peerConnectionsRef.current[fromUid]?.signalingState);
     let pc = peerConnectionsRef.current[fromUid];
 
-    if (!pc && (signal.type === 'offer')) {
-        console.log(`[WebRTC] No PC for ${fromUid}, creating one as non-initiator for offer.`);
-        pc = createPeerConnection(fromUid, false);
+    if (!pc && signal.type === 'offer') {
+        console.log(`[WebRTC] No PC for ${fromUid} for incoming offer, creating one as non-initiator.`);
+        pc = createPeerConnection(fromUid); 
     } else if (!pc) {
-        console.warn(`[WebRTC] Received ${signal.type} from ${fromUid} but no PC exists. Ignoring.`);
+        console.warn(`[WebRTC] Received ${signal.type} from ${fromUid} but no PC exists and signal is not an offer. Ignoring.`);
         return;
     }
 
     try {
         if (signal.type === 'offer') {
-            if (pc.signalingState !== "stable" && pc.signalingState !== "have-remote-offer") {
-                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition or race.`);
+            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer") { 
+                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition.`);
             }
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
-            console.log(`[WebRTC] Remote description (offer) set for ${fromUid}. Creating answer.`);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendSignalMessage(fromUid, { type: 'answer', sdp: pc.localDescription!.sdp });
-            negotiatingRef.current[fromUid] = false;
+            if (signal.sdp) {
+                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
+                console.log(`[WebRTC] Remote description (offer) set for ${fromUid}. Creating answer.`);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                console.log(`[WebRTC] Local description (answer) set for ${fromUid}. SDP (first 30): ${answer.sdp?.substring(0,30)}...`);
+                sendSignalMessage(fromUid, { type: 'answer', sdp: pc.localDescription!.sdp });
+            } else {
+                 console.error(`[WebRTC] Received offer from ${fromUid} without SDP.`);
+            }
+            negotiatingRef.current[fromUid] = false; 
         } else if (signal.type === 'answer') {
-            if (pc.signalingState !== 'have-local-offer') {
-                 console.warn(`[WebRTC] Received answer from ${fromUid} but signaling state is ${pc.signalingState}. Expected 'have-local-offer'.`);
-            }
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
-            console.log(`[WebRTC] Remote description (answer) set for ${fromUid}. Connection should be established.`);
-            negotiatingRef.current[fromUid] = false;
-        } else if (signal.type === 'candidate') {
-            if (pc.remoteDescription && signal.candidate) { 
-                try {
-                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-                    console.log(`[WebRTC] ICE candidate added for ${fromUid}`);
-                } catch (e) {
-                     console.warn(`[WebRTC] Error adding ICE candidate for ${fromUid}:`, e, "Candidate:", signal.candidate);
+            if (pc.signalingState === 'have-local-offer') {
+                if (signal.sdp) {
+                    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
+                    console.log(`[WebRTC] Remote description (answer) set for ${fromUid}. Connection should be established.`);
+                } else {
+                    console.error(`[WebRTC] Received answer from ${fromUid} without SDP.`);
                 }
             } else {
-                console.warn(`[WebRTC] Received candidate from ${fromUid} but remote description not set or candidate is null. Buffering or ignoring.`);
+                 console.warn(`[WebRTC] Received answer from ${fromUid} but local signaling state is ${pc.signalingState} (expected 'have-local-offer'). Ignoring answer.`);
+            }
+            negotiatingRef.current[fromUid] = false; 
+        } else if (signal.type === 'candidate') {
+            if (signal.candidate) { 
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    // console.log(`[WebRTC] ICE candidate added for ${fromUid}`);
+                } catch (e: any) {
+                     console.warn(`[WebRTC] Error adding ICE candidate for ${fromUid} (State: ${pc.signalingState}):`, e.message, "Candidate:", signal.candidate);
+                     if (!pc.remoteDescription && (e.message.includes("remote description is not set") || e.name === "InvalidStateError")) {
+                        console.log(`[WebRTC] ICE candidate for ${fromUid} arrived before remote description was set. This is usually handled by the browser queueing the candidate.`);
+                     }
+                }
+            } else {
+                console.warn(`[WebRTC] Received null/empty candidate from ${fromUid}.`);
             }
         }
     } catch (error) {
-        console.error(`[WebRTC] Error handling signal from ${fromUid} (${signal.type}):`, error);
-        toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Hata: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
+        console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${signal.type}):`, error);
+        toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Detaylar konsolda.`, variant: "destructive" });
         negotiatingRef.current[fromUid] = false; 
     }
   }, [createPeerConnection, sendSignalMessage, toast]);
@@ -395,7 +422,7 @@ export default function ChatRoomPage() {
     let unsubscribe: Unsubscribe | null = null;
     const setupListener = () => {
         if (unsubscribe) unsubscribe();
-        console.log(`[WebRTC] Setting up signal listener for ${currentUser.uid} in room ${roomId}. Last processed timestamp:`, lastProcessedSignalTimestampRef.current);
+        // console.log(`[WebRTC] Setting up signal listener for ${currentUser.uid} in room ${roomId}. Last processed timestamp:`, lastProcessedSignalTimestampRef.current);
         let q = query(
           collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`),
           orderBy("signalTimestamp", "asc")
@@ -414,14 +441,14 @@ export default function ChatRoomPage() {
               }
               const signalId = change.doc.id;
               if (senderOfSignal === currentUser.uid) {
-                  console.log(`[WebRTC] Ignoring own signal: ${signalId}`);
+                  // console.log(`[WebRTC] Ignoring own signal: ${signalId}`);
                   return;
               }
               if (!isCurrentUserInVoiceChatRef.current) {
-                  console.log(`[WebRTC] User not in voice chat, ignoring signal from ${senderOfSignal}`);
+                  // console.log(`[WebRTC] User not in voice chat, ignoring signal from ${senderOfSignal}`);
                   return;
               }
-              console.log(`[WebRTC] New signal doc received: ${signalId} from: ${senderOfSignal}, type: ${signalData.type}`);
+              // console.log(`[WebRTC] New signal doc received: ${signalId} from: ${senderOfSignal}, type: ${signalData.type}`);
               handleIncomingSignal(signalData, senderOfSignal);
               if (signalData.signalTimestamp) {
                   lastProcessedSignalTimestampRef.current = signalData.signalTimestamp;
@@ -433,22 +460,22 @@ export default function ChatRoomPage() {
           toast({ title: "Sinyal Dinleme Hatası", description: "Diğer kullanıcılardan sinyal alınırken hata.", variant: "destructive" });
         });
     };
-    if (isCurrentUserInVoiceChatRef.current) {
+    if (isCurrentUserInVoiceChat) { // Use state here to re-trigger effect
         setupListener();
     } else {
         if (unsubscribe) {
-            console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} as user left voice chat.`);
+            // console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} as user left voice chat.`);
             unsubscribe();
             unsubscribe = null;
         }
     }
     return () => {
       if (unsubscribe) {
-        console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} on component unmount or re-run.`);
+        // console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} on component unmount or re-run.`);
         unsubscribe();
       }
     };
-  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChatRef]);
+  }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChat]);
 
 
   const handleJoinVoiceChat = useCallback(async () => {
@@ -463,14 +490,18 @@ export default function ChatRoomPage() {
         return;
     }
     setIsProcessingVoiceJoinLeave(true);
+    console.log("[WebRTC] Attempting to join voice chat. Getting user media...");
     try {
-      console.log("[WebRTC] Attempting to get user media (audio).");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      console.log("[WebRTC] Got user media stream:", stream);
+      console.log("[WebRTC] Got user media stream:", stream, "Number of tracks:", stream.getTracks().length);
+      if (stream.getTracks().length === 0) {
+        console.error("[WebRTC] GetUserMedia returned a stream with no tracks!");
+        toast({title: "Medya Hatası", description: "Mikrofonunuza erişilemedi veya boş bir medya akışı alındı.", variant: "destructive"});
+        throw new Error("No tracks in media stream");
+      }
       localStreamRef.current = stream;
-      setIsCurrentUserInVoiceChat(true); 
-      isCurrentUserInVoiceChatRef.current = true;
-
+      
+      // Update Firestore for self
       await setDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), {
         uid: currentUser.uid,
         displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
@@ -482,15 +513,20 @@ export default function ChatRoomPage() {
       });
       await updateDoc(doc(db, "chatRooms", roomId), { voiceParticipantCount: increment(1) });
       
+      setIsCurrentUserInVoiceChat(true); 
+      isCurrentUserInVoiceChatRef.current = true;
       setSelfMuted(false);
       toast({ title: "Sesli Sohbete Katıldın!" });
       
-      const voiceParticipantsSnap = await getDocs(query(collection(db, `chatRooms/${roomId}/voiceParticipants`)));
+      // Connect to existing participants after setting self in voice
+      const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`));
+      const voiceParticipantsSnap = await getDocs(voiceParticipantsQuery);
+      
       voiceParticipantsSnap.forEach(docSnap => {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
-          console.log(`[WebRTC] Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          createPeerConnection(participantData.id, true); // isInitiator = true
+          console.log(`[WebRTC] Joining: Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
+          createPeerConnection(participantData.id); // Create PC. onnegotiationneeded should trigger offer.
         }
       });
 
@@ -504,7 +540,6 @@ export default function ChatRoomPage() {
       }
       setIsCurrentUserInVoiceChat(false); 
       isCurrentUserInVoiceChatRef.current = false;
-      setSelfMuted(false);
       try { 
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
         const voiceParticipantSnap = await getDoc(voiceParticipantRef);
@@ -524,7 +559,7 @@ export default function ChatRoomPage() {
 
   const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
     if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) {
-      console.log("[WebRTC] handleLeaveVoiceChat called but conditions not met. CurrentUser:", !!currentUser, "RoomID:", roomId, "InVoiceChat:", isCurrentUserInVoiceChatRef.current);
+      // console.log("[WebRTC] handleLeaveVoiceChat called but conditions not met. CurrentUser:", !!currentUser, "RoomID:", roomId, "InVoiceChat:", isCurrentUserInVoiceChatRef.current);
       return Promise.resolve();
     }
     if (!isPageUnload) setIsProcessingVoiceJoinLeave(true);
@@ -533,10 +568,11 @@ export default function ChatRoomPage() {
     Object.keys(peerConnectionsRef.current).forEach(peerUid => {
       cleanupPeerConnection(peerUid);
     });
+    peerConnectionsRef.current = {}; // Important: Clear the ref after closing all PCs
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
-        console.log(`[WebRTC] Stopping local track: ${track.kind} - ${track.label}`);
+        // console.log(`[WebRTC] Stopping local track: ${track.kind} - ${track.label}`);
         track.stop();
       });
       localStreamRef.current = null;
@@ -545,26 +581,32 @@ export default function ChatRoomPage() {
         console.log("[WebRTC] localStreamRef was already null when trying to leave voice chat.");
     }
 
-    setIsCurrentUserInVoiceChat(false);
+    setIsCurrentUserInVoiceChat(false); // This will trigger signal listener cleanup
     isCurrentUserInVoiceChatRef.current = false; 
 
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
       const roomRef = doc(db, "chatRooms", roomId);
       
-      const signalsRef = collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`);
-      const signalsSnap = await getDocs(signalsRef);
+      const signalsCollectionRef = collection(db, `chatRooms/${roomId}/webrtcSignals/${currentUser.uid}/signals`);
+      const signalsSnap = await getDocs(signalsCollectionRef);
 
       const batch = writeBatch(db);
-      batch.delete(voiceParticipantRef);
-      signalsSnap.forEach(signalDoc => batch.delete(signalDoc.ref));
       
-      const roomDocSnap = await getDoc(roomRef);
-      if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
-        batch.update(roomRef, { voiceParticipantCount: increment(-1) });
-      } else if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) === 0) {
-        console.warn("[WebRTC] Voice participant count is already 0 in Firestore. Not decrementing.");
+      const voiceParticipantDocSnap = await getDoc(voiceParticipantRef);
+      if (voiceParticipantDocSnap.exists()) {
+        batch.delete(voiceParticipantRef);
+        const roomDocSnap = await getDoc(roomRef);
+        if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
+          batch.update(roomRef, { voiceParticipantCount: increment(-1) });
+        } else if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) === 0) {
+          // console.warn("[WebRTC] Voice participant count is already 0 in Firestore. Not decrementing.");
+        }
+      } else {
+        // console.warn(`[WebRTC] Tried to leave, but voice participant doc for ${currentUser.uid} not found. Perhaps already removed.`);
       }
+      
+      signalsSnap.forEach(signalDoc => batch.delete(signalDoc.ref));
       
       await batch.commit();
       if (!isPageUnload) toast({ title: "Sesli Sohbetten Ayrıldın" });
@@ -590,19 +632,21 @@ export default function ChatRoomPage() {
         const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
 
         if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
-            console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}`);
-            toast({ title: "Bağlantı Kesildi", description: "Sesli sohbetten çıkarıldınız veya bağlantınızda bir sorun oluştu.", variant: "destructive" });
-            handleLeaveVoiceChat(true); // Attempt to force leave without UI processing state
+            // console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}`);
+            // toast({ title: "Bağlantı Kesildi", description: "Sesli sohbetten çıkarıldınız veya bağlantınızda bir sorun oluştu.", variant: "destructive" });
+            // handleLeaveVoiceChat(true); 
             return; 
         }
         
         if (isCurrentUserInVoiceChatRef.current && localStreamRef.current) {
+            // Connect to new participants who joined
             newVoiceParticipantsData.forEach(p => {
                 if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
-                    console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Initiating connection.`);
-                    createPeerConnection(p.id, true); // isInitiator = true
+                    console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
+                    createPeerConnection(p.id); // Create PC. onnegotiationneeded should trigger offer.
                 }
             });
+            // Cleanup connections for participants who left
             Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
                 if (!newVoiceParticipantsData.find(p => p.id === existingPeerId)) {
                     console.log(`[WebRTC Voice Listener] Participant ${existingPeerId} detected as left. Cleaning up connection.`);
@@ -610,7 +654,10 @@ export default function ChatRoomPage() {
                 }
             });
         }
-    }, (error) => { console.error("[WebRTC] Error fetching voice participants:", error); toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" }); });
+    }, (error) => { 
+      console.error("[WebRTC] Error fetching voice participants:", error); 
+      // toast({ title: "Hata", description: "Sesli sohbet katılımcıları yüklenirken bir sorun oluştu.", variant: "destructive" }); 
+    });
     
     return () => unsubscribeVoice();
   }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave]);
@@ -1155,6 +1202,8 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
+    
 
     
 
