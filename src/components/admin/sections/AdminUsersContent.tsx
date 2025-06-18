@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star } from "lucide-react"; // Star ikonu eklendi
+import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star } from "lucide-react"; 
 import {
   Dialog,
   DialogContent,
@@ -24,8 +24,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { addDays, format } from 'date-fns'; // format eklendi
-import { tr } from 'date-fns/locale'; // Türkçe lokalizasyon için
+import { addDays, format } from 'date-fns'; 
+import { tr } from 'date-fns/locale'; 
 
 export default function AdminUsersContent() {
   const [users, setUsers] = useState<UserData[]>([]);
@@ -36,9 +36,9 @@ export default function AdminUsersContent() {
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isEditRoleDialogOpen, setIsEditRoleDialogOpen] = useState(false);
   const [isEditDiamondsDialogOpen, setIsEditDiamondsDialogOpen] = useState(false);
-  const [isEditPremiumDialogOpen, setIsEditPremiumDialogOpen] = useState(false); // Yeni state
+  const [isEditPremiumDialogOpen, setIsEditPremiumDialogOpen] = useState(false); 
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
-  const [newPremiumStatus, setNewPremiumStatus] = useState<'none' | 'weekly' | 'monthly'>('none'); // Yeni state
+  const [newPremiumStatus, setNewPremiumStatus] = useState<'none' | 'weekly' | 'monthly'>('none'); 
   const [diamondAdjustment, setDiamondAdjustment] = useState<number>(0);
   const [processingAction, setProcessingAction] = useState(false);
 
@@ -76,7 +76,7 @@ export default function AdminUsersContent() {
     } else if (adminUserData !== undefined) { 
         setLoading(false);
     }
-  }, [toast, adminUserData]); 
+  }, [adminUserData, toast]); // toast bağımlılıktan kaldırıldı
   
   const handleOpenEditRoleDialog = (user: UserData) => {
     setSelectedUser(user);
@@ -412,6 +412,4 @@ export default function AdminUsersContent() {
     </div>
   );
 }
-
-
     

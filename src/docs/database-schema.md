@@ -56,9 +56,11 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı), `mentionedUserIds` (Array<String>, isteğe bağlı)
+    - **Not:** `timestamp` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve mesajları sıralamak için kullanılır.
   - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
+    - **Not:** `joinedAt` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve katılımcıları sıralamak için kullanılır.
   - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
     - **Alanlar:**
@@ -69,6 +71,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `isMuted`: (Boolean) Kullanıcının kendi mikrofonunu kapatıp kapatmadığı (Varsayılan: `false`)
       - `isMutedByAdmin`: (Boolean) Oda yöneticisi tarafından susturulup susturulmadığı (Varsayılan: `false`)
       - `isSpeaking`: (Boolean) Kullanıcının o anda konuşup konuşmadığı (Prototipte simüle edilebilir, Varsayılan: `false`)
+    - **Not:** `joinedAt` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve katılımcıları sıralamak için kullanılır.
   - `webrtcSignals`: Kullanıcılar arasında WebRTC sinyallerini (offer, answer, ICE candidate) iletmek için kullanılır. Her kullanıcı kendi UID'si altında bir belgeye sahip olur ve bu belge altında gelen sinyalleri saklayan bir `signals` alt koleksiyonu bulunur.
     - **Yol:** `/chatRooms/{roomId}/webrtcSignals/{userId}/signals/{signalId}`
     - **Alanlar:**
@@ -77,6 +80,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `sdp`: (String, isteğe bağlı) Offer veya Answer için SDP.
       - `candidate`: (Object, isteğe bağlı) ICE adayı nesnesi.
       - `signalTimestamp`: (Timestamp) Sinyalin Firestore'a yazıldığı zaman.
+    - **Not:** `signalTimestamp` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve sinyalleri sıralamak için kullanılır.
 - **Gerekli İndeksler:**
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
@@ -90,16 +94,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - **Tüm Odaları Oluşturulma Tarihine Göre Listeleme (Admin Paneli):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `createdAt` (Azalan)
-  - **Sohbet Odası İçindeki Metin Sohbeti Katılımcılarını Sıralama:**
-    - Koleksiyon Grubu: `participants`
-    - Alanlar: `joinedAt` (Artan)
-  - **Sohbet Odası İçindeki Sesli Sohbet Katılımcılarını ve Karttaki Önizlemeleri Sıralama:**
-    - Koleksiyon Grubu: `voiceParticipants`
-    - Alanlar: `joinedAt` (Artan)
-  - **WebRTC Sinyallerini Sıralama ve Filtreleme:**
+  - **WebRTC Sinyallerini Genel Olarak Sorgulamak (Opsiyonel, Debug/Admin için):**
     - Koleksiyon Grubu: `signals` (Tüm `webrtcSignals` içindeki `signals` alt koleksiyonlarını hedefler)
     - Alanlar: `signalTimestamp` (Artan)
-
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -116,6 +113,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp)
+    - **Not:** `timestamp` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve mesajları sıralamak için kullanılır.
 - **Gerekli İndeksler:**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
     - *Sorgu:* `src/app/(main)/direct-messages/page.tsx`
@@ -212,6 +210,7 @@ Kullanıcıların paylaştığı gönderileri saklar.
       - `userAvatar`: (String, nullable) Yorumu yapan kullanıcının avatar URL'si
       - `content`: (String) Yorumun metin içeriği
       - `createdAt`: (Timestamp) Yorumun oluşturulduğu zaman
+    - **Not:** `createdAt` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve yorumları sıralamak için kullanılır.
 - **Gerekli İndeksler:**
   - Akış sayfasında gönderileri en yeniden eskiye sıralamak için (`src/app/page.tsx`):
     - Koleksiyon: `posts`
@@ -219,9 +218,6 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - **Kullanıcının gönderilerini profil sayfasında listelemek için (`src/app/(main)/profile/[userId]/page.tsx`):**
     - **Koleksiyon:** `posts`
     - **Alanlar:** `userId` (Artan), `createdAt` (Azalan)
-  - Bir gönderinin yorumlarını sıralamak için (`src/components/feed/PostCard.tsx`):
-    - Koleksiyon Grubu: `comments` (Tüm `posts` koleksiyonlarındaki `comments` alt koleksiyonlarını hedefler)
-    - Alanlar: `createdAt` (Artan)
 
 ## `appSettings`
 Genel uygulama ayarlarını saklar.

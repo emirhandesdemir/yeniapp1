@@ -96,7 +96,7 @@ export default function AdminGameSettingsContent() {
     } else if (adminUserData !== undefined) {
       setLoadingSettings(false);
     }
-  }, [toast, adminUserData]);
+  }, [adminUserData, toast]); // toast bağımlılıktan kaldırıldı
 
   useEffect(() => {
     if (adminUserData?.role !== 'admin') {
@@ -118,7 +118,7 @@ export default function AdminGameSettingsContent() {
       setLoadingQuestions(false);
     });
     return () => unsubscribe();
-  }, [adminUserData?.role, toast]);
+  }, [adminUserData?.role, toast]); // toast bağımlılıktan kaldırıldı
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -125,9 +125,6 @@ const FIXED_GAME_REWARD = 1;
 const HINT_COST = 1;
 const GAME_ANSWER_TIMEOUT_SECONDS = 15;
 
-// HARDCODED_QUESTIONS artık kullanılmayacak, sorular Firestore'dan çekilecek.
-// const HARDCODED_QUESTIONS: GameQuestion[] = [ ... ];
-
 const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
@@ -171,7 +168,6 @@ export default function ChatRoomPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Oyun Sistemi State'leri
   const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
   const [activeGameQuestion, setActiveGameQuestion] = useState<GameQuestion | null>(null);
   const [showGameQuestionCard, setShowGameQuestionCard] = useState(false);
@@ -180,7 +176,7 @@ export default function ChatRoomPage() {
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
   const countdownDisplayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [questionAnswerCountdown, setQuestionAnswerCountdown] = useState<number | null>(null);
-  const [loadingGameAssets, setLoadingGameAssets] = useState(true); // Oyun ayarları ve soruları için yükleme durumu
+  const [loadingGameAssets, setLoadingGameAssets] = useState(true); 
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<{ [key: string]: RTCPeerConnection }>({});
@@ -560,6 +556,7 @@ export default function ChatRoomPage() {
     peerConnectionsRef.current = {}; 
     negotiatingRef.current = {};
     setActiveRemoteStreams({});
+    lastProcessedSignalTimestampRef.current = null; 
 
 
     if (localStreamRef.current) {
@@ -574,8 +571,6 @@ export default function ChatRoomPage() {
     }
 
     setIsCurrentUserInVoiceChat(false); 
-
-    lastProcessedSignalTimestampRef.current = null; 
 
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -626,8 +621,8 @@ export default function ChatRoomPage() {
         const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
 
         if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
-            console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}`);
-            handleLeaveVoiceChat(true); // Force local cleanup
+            console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
+            handleLeaveVoiceChat(true); 
             return; 
         }
         
@@ -652,12 +647,10 @@ export default function ChatRoomPage() {
     return () => unsubscribeVoice();
   }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave]);
 
-  // Oyun Sistemi ile ilgili useEffect'ler
   useEffect(() => {
     const fetchGameAssets = async () => {
       setLoadingGameAssets(true);
       try {
-        // Fetch game settings
         const settingsDocRef = doc(db, "appSettings", "gameConfig");
         const settingsSnap = await getDoc(settingsDocRef);
         if (settingsSnap.exists()) {
@@ -666,7 +659,6 @@ export default function ChatRoomPage() {
           setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 });
         }
 
-        // Fetch game questions
         const questionsQuery = query(collection(db, "gameQuestions"), orderBy("createdAt", "desc"));
         const questionsSnap = await getDocs(questionsQuery);
         const fetchedQuestions: GameQuestion[] = [];
@@ -677,7 +669,7 @@ export default function ChatRoomPage() {
 
       } catch (error) {
         console.error("[GameSystem] Error fetching game assets:", error);
-        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); // Fallback
+        setGameSettings({ isGameEnabled: false, questionIntervalSeconds: 180 }); 
         setAvailableGameQuestions([]);
         toast({ title: "Oyun Hatası", description: "Oyun verileri yüklenemedi.", variant: "destructive" });
       } finally {
@@ -770,7 +762,6 @@ export default function ChatRoomPage() {
       const randomIndex = Math.floor(Math.random() * availableGameQuestions.length); const nextQuestion = availableGameQuestions[randomIndex];
         if (!nextQuestion) {
             console.warn("[GameSystem] No available question found to ask.");
-            // Optionally schedule another attempt or notify admin
             if (gameSettings?.questionIntervalSeconds) {
                  await updateDoc(roomDocRef, {
                     nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds))
@@ -797,7 +788,7 @@ export default function ChatRoomPage() {
         if (roomDetails.nextGameQuestionTimestamp && isPast(roomDetails.nextGameQuestionTimestamp.toDate()) && !roomDetails.currentGameQuestionId && !roomDetails.currentGameAnswerDeadline) {
           attemptToAskNewQuestion();
         }
-      }, 5000); // Check every 5 seconds
+      }, 5000); 
     }
     return () => { if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current); };
   }, [gameSettings, roomDetails, attemptToAskNewQuestion, loadingGameAssets]);
@@ -844,7 +835,7 @@ export default function ChatRoomPage() {
   }, [currentUser, roomId, updateUserTypingStatus, userData?.displayName]);
 
   const handleJoinRoom = useCallback(async () => {
-    if (!currentUser || !userData || !roomId || !roomDetails || loadingGameAssets) return; // Oyun ayarları yüklenene kadar bekle
+    if (!currentUser || !userData || !roomId || !roomDetails || loadingGameAssets) return; 
     setIsProcessingJoinLeave(true);
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
@@ -859,7 +850,6 @@ export default function ChatRoomPage() {
       batch.set(participantRef, { joinedAt: serverTimestamp(), displayName: userData.displayName || currentUser.displayName || "Bilinmeyen", photoURL: userData.photoURL || currentUser.photoURL || null, uid: currentUser.uid, isTyping: false });
       batch.update(roomRef, { participantCount: increment(1) });
       
-      // Oda için oyun başlatılmamışsa ve genel oyun ayarları etkinse, oyun alanlarını başlat
       if (gameSettings?.isGameEnabled && !currentRoomData.gameInitialized && !currentRoomData.nextGameQuestionTimestamp && !currentRoomData.currentGameQuestionId && !currentRoomData.currentGameAnswerDeadline) { 
         batch.update(roomRef, { 
             gameInitialized: true, 
@@ -945,7 +935,8 @@ export default function ChatRoomPage() {
     const currentGameAnswerDeadlineTimer = gameAnswerDeadlineTimerRef.current;
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
-      handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true);
+      handleLeaveRoom(true); 
+      if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true);
       if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
       if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
       if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
@@ -1251,3 +1242,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
