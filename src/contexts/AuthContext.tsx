@@ -86,147 +86,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
   const { toast } = useToast();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log("[AuthContext] onAuthStateChanged triggered. User:", user ? user.uid : null);
-      setCurrentUser(user);
-      if (user) {
-        if (userData && userData.uid === user.uid && userData.isBanned) {
-            console.log(`[AuthContext] Local userData indicates user ${user.uid} is banned. Forcing logout immediately.`);
-            await signOut(auth);
-            setUserData(null);
-            setIsUserDataLoading(false);
-            setLoading(false);
-            router.push('/login?reason=banned_local_check');
-            toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
-            return;
-        }
-
-        setIsUserDataLoading(true);
-        const userDocRef = doc(db, "users", user.uid);
-        try {
-            const docSnap = await getDoc(userDocRef);
-            if (docSnap.exists()) {
-                const existingData = docSnap.data() as UserData;
-                if (existingData.isBanned) {
-                    console.log(`[AuthContext] Firestore check: User ${user.uid} is banned. Forcing logout.`);
-                    await signOut(auth);
-                    setUserData(null);
-                    setIsUserDataLoading(false);
-                    setLoading(false);
-                    router.push('/login?reason=banned_firestore_check');
-                    toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
-                    return;
-                }
-
-                console.log(`[AuthContext] User document found for ${user.uid}. Data:`, existingData);
-                const updatedData: UserData = {
-                    ...existingData,
-                    displayName: existingData.displayName !== undefined ? existingData.displayName : (user.displayName || null),
-                    photoURL: existingData.photoURL !== undefined ? existingData.photoURL : (user.photoURL || null),
-                    email: existingData.email !== undefined ? existingData.email : (user.email || null),
-                    diamonds: existingData.diamonds ?? INITIAL_DIAMONDS,
-                    role: existingData.role ?? "user",
-                    bio: existingData.bio ?? "",
-                    gender: existingData.gender ?? "belirtilmemiş",
-                    privacySettings: {
-                        postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
-                        activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
-                        feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true,
-                    },
-                    premiumStatus: existingData.premiumStatus ?? 'none',
-                    premiumExpiryDate: existingData.premiumExpiryDate ?? null,
-                    reportCount: existingData.reportCount ?? 0,
-                    isBanned: existingData.isBanned ?? false,
-                };
-
-                let needsFirestoreUpdate = false;
-                if (updatedData.displayName !== existingData.displayName || 
-                    updatedData.photoURL !== existingData.photoURL ||
-                    updatedData.email !== existingData.email) {
-                    needsFirestoreUpdate = true;
-                }
-                
-                if (needsFirestoreUpdate) {
-                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo for ${user.uid} to Firestore.`);
-                    await updateDoc(userDocRef, {
-                        displayName: updatedData.displayName,
-                        photoURL: updatedData.photoURL,
-                        email: updatedData.email,
-                    }).catch(err => console.error("Error syncing auth profile to firestore:", err));
-                }
-                setUserData(updatedData);
-
-            } else {
-                console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
-                const dataToSet: UserData = {
-                    uid: user.uid,
-                    email: user.email,
-                    displayName: user.displayName,
-                    photoURL: user.photoURL,
-                    diamonds: INITIAL_DIAMONDS,
-                    role: "user",
-                    createdAt: Timestamp.now(), 
-                    bio: "",
-                    gender: "belirtilmemiş",
-                    privacySettings: {
-                        postsVisibleToFriendsOnly: false,
-                        activeRoomsVisibleToFriendsOnly: false,
-                        feedShowsEveryone: true,
-                    },
-                    premiumStatus: 'none',
-                    premiumExpiryDate: null,
-                    reportCount: 0,
-                    isBanned: false,
-                };
-
-                try {
-                    await setDoc(userDocRef, { ...dataToSet, createdAt: serverTimestamp() });
-                    console.log(`[AuthContext] Successfully initiated user document creation for ${user.uid}. Fetching document after creation...`);
-
-                    const freshSnap = await getDoc(userDocRef);
-                    if (freshSnap.exists()) {
-                        console.log(`[AuthContext] User document for ${user.uid} confirmed exists after creation. Data:`, freshSnap.data());
-                        setUserData(freshSnap.data() as UserData);
-                    } else {
-                        console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc. This is unexpected. Using fallback with client-side timestamp.`);
-                        setUserData(dataToSet); 
-                        toast({
-                            title: "Kullanıcı Verisi Senkronizasyonu",
-                            description: "Kullanıcı bilgileriniz oluşturuldu ancak anlık senkronizasyonda bir gecikme olabilir.",
-                        });
-                    }
-                } catch (creationError: any) {
-                    console.error(`[AuthContext] CRITICAL: Failed to create user document for ${user.uid} in onAuthStateChanged:`, creationError.message, creationError.code, creationError.stack);
-                    toast({
-                        title: "Veritabanı Kayıt Hatası",
-                        description: `Kullanıcı bilgileriniz veritabanına kaydedilemedi (Hata: ${creationError.message}). Lütfen tekrar deneyin veya destek ile iletişime geçin.`,
-                        variant: "destructive",
-                    });
-                    setUserData(null);
-                }
-            }
-        } catch (error: any) {
-             console.error("[AuthContext] Error fetching/creating user document on auth state change:", error.message, error.code, error.stack);
-             toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
-             setUserData(null);
-        } finally {
-            console.log(`[AuthContext] Finished processing user data for ${user ? user.uid : 'null user'}. Setting isUserDataLoading to false.`);
-            setIsUserDataLoading(false);
-        }
-      } else {
-        console.log("[AuthContext] No user authenticated. Clearing user data.");
-        setUserData(null);
-        setIsUserDataLoading(false);
-        setIsAdminPanelOpen(false);
-      }
-      console.log("[AuthContext] Auth state processing finished. Setting loading to false.");
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, [toast, router, userData]); // userData added to dependency array for local ban check
-
-
   const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = user.photoURL;
@@ -297,6 +156,94 @@ export function AuthProvider({ children }: AuthProviderProps) {
         toast({ title: "Hesap Detayı Kayıt Hatası", description: `Kullanıcı detayları veritabanına kaydedilemedi (Hata: ${error.message}).`, variant: "destructive" });
     }
   }, [toast]);
+
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log("[AuthContext] onAuthStateChanged triggered. User:", user ? user.uid : null);
+      setCurrentUser(user);
+      if (user) {
+        // Yerel ban kontrolü kaldırıldı. Güvenilir kontrol Firestore'dan veri çekildikten sonra yapılacak.
+        setIsUserDataLoading(true);
+        const userDocRef = doc(db, "users", user.uid);
+        try {
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+                const existingData = docSnap.data() as UserData;
+                if (existingData.isBanned) {
+                    console.log(`[AuthContext] Firestore check: User ${user.uid} is banned. Forcing logout.`);
+                    await signOut(auth);
+                    // setUserData(null); // onAuthStateChanged tekrar tetikleneceği için burada state güncellemeye gerek yok
+                    // setIsUserDataLoading(false); // onAuthStateChanged tekrar tetikleneceği için burada state güncellemeye gerek yok
+                    // setLoading(false); // onAuthStateChanged tekrar tetikleneceği için burada state güncellemeye gerek yok
+                    router.push('/login?reason=banned_firestore_check');
+                    toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
+                    return; // Banlı kullanıcı için işlem burada sonlanır.
+                }
+
+                console.log(`[AuthContext] User document found for ${user.uid}. Data:`, existingData);
+                const updatedData: UserData = {
+                    ...existingData,
+                    displayName: existingData.displayName !== undefined ? existingData.displayName : (user.displayName || null),
+                    photoURL: existingData.photoURL !== undefined ? existingData.photoURL : (user.photoURL || null),
+                    email: existingData.email !== undefined ? existingData.email : (user.email || null),
+                    diamonds: existingData.diamonds ?? INITIAL_DIAMONDS,
+                    role: existingData.role ?? "user",
+                    bio: existingData.bio ?? "",
+                    gender: existingData.gender ?? "belirtilmemiş",
+                    privacySettings: {
+                        postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
+                        activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
+                        feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true,
+                    },
+                    premiumStatus: existingData.premiumStatus ?? 'none',
+                    premiumExpiryDate: existingData.premiumExpiryDate ?? null,
+                    reportCount: existingData.reportCount ?? 0,
+                    isBanned: existingData.isBanned ?? false,
+                };
+
+                let needsFirestoreUpdate = false;
+                if (updatedData.displayName !== existingData.displayName || 
+                    updatedData.photoURL !== existingData.photoURL ||
+                    updatedData.email !== existingData.email) {
+                    needsFirestoreUpdate = true;
+                }
+                
+                if (needsFirestoreUpdate) {
+                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo for ${user.uid} to Firestore.`);
+                    await updateDoc(userDocRef, {
+                        displayName: updatedData.displayName,
+                        photoURL: updatedData.photoURL,
+                        email: updatedData.email,
+                    }).catch(err => console.error("Error syncing auth profile to firestore:", err));
+                }
+                setUserData(updatedData);
+
+            } else {
+                console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
+                // createUserDocument, kendi içinde setUserData çağrısını yapacak
+                await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
+            }
+        } catch (error: any) {
+             console.error("[AuthContext] Error fetching/creating user document on auth state change:", error.message, error.code, error.stack);
+             toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
+             setUserData(null);
+        } finally {
+            console.log(`[AuthContext] Finished processing user data for ${user ? user.uid : 'null user'}. Setting isUserDataLoading to false.`);
+            setIsUserDataLoading(false);
+        }
+      } else {
+        console.log("[AuthContext] No user authenticated. Clearing user data.");
+        setUserData(null);
+        setIsUserDataLoading(false);
+        setIsAdminPanelOpen(false);
+      }
+      console.log("[AuthContext] Auth state processing finished. Setting loading to false.");
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, [router, toast, createUserDocument]); // Bağımlılık dizisinden userData çıkarıldı.
+
 
   const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
     setIsUserLoading(true);
@@ -497,7 +444,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           firestoreUpdates.displayName = updates.displayName.trim();
       }
 
-      const currentPhotoURL = currentLocalUserData?.photoURL || auth.currentUser.photoURL || null;
+      const currentPhotoURL = currentLocalUserData?.photoURL || auth.currentUser?.photoURL || null;
       if (updates.newPhotoURL !== undefined && updates.newPhotoURL !== currentPhotoURL) { 
           console.log("[AuthContext] Fotoğraf URL güncellemesi sağlandı:", updates.newPhotoURL);
           authUpdates.photoURL = updates.newPhotoURL; 
@@ -719,4 +666,3 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
-
