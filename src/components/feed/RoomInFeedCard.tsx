@@ -30,14 +30,14 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
     : "Yakın zamanda";
 
   return (
-    <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl border border-accent/20 dark:border-accent/30 bg-gradient-to-br from-card via-accent/5 to-accent/10 dark:via-accent/10 dark:to-accent/15 group">
+    <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl border border-border/30 dark:border-border/40 bg-card group">
       <CardHeader className="p-4 pb-2">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-accent/20 rounded-full">
-                    <Compass className="h-5 w-5 text-accent dark:text-accent" />
+                <div className="p-1.5 bg-primary/10 dark:bg-primary/15 rounded-full">
+                    <Compass className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle className="text-base sm:text-lg font-semibold text-accent dark:text-accent group-hover:text-accent/80 dark:group-hover:text-accent/80 transition-colors">
+                <CardTitle className="text-base sm:text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
                     {room.name}
                 </CardTitle>
             </div>
@@ -53,15 +53,15 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
             <Users className="h-4 w-4" />
             <span>{room.participantCount ?? 0} / {room.maxParticipants} Katılımcı</span>
           </div>
-          <p className="text-xs font-medium text-accent/90">
+          <p className="text-xs font-medium text-primary/90">
             Yeni bir maceraya atıl!
           </p>
         </div>
       </CardContent>
-      <CardFooter className="p-4 pt-2 border-t border-accent/10 dark:border-accent/15">
+      <CardFooter className="p-4 pt-2 border-t border-border/20 dark:border-border/25">
         <Button
           asChild
-          className={`w-full ${isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' : 'bg-accent hover:bg-accent/80 text-accent-foreground'}`}
+          className={`w-full ${isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}
           disabled={isFull}
           aria-disabled={isFull}
         >
@@ -76,3 +76,4 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
 });
 RoomInFeedCard.displayName = 'RoomInFeedCard';
 export default RoomInFeedCard;
+
