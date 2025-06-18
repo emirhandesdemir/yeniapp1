@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent } from "react";
+import { useState, useEffect, type ChangeEvent, useRef } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag } from "lucide-react"; // ShoppingBag eklendi
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle } from "lucide-react"; // MicIcon, PauseCircle, PlayCircle eklendi
 import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -58,13 +58,18 @@ export default function ProfilePage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
-  const [previewImage, setPreviewImage] = useState<string | null>(null); // Bu, düzenleme sırasında seçilen veya mevcut avatarı tutar
+  const [previewImage, setPreviewImage] = useState<string | null>(null); 
 
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
     postsVisibleToFriendsOnly: false,
     activeRoomsVisibleToFriendsOnly: false,
     feedShowsEveryone: true,
   });
+
+  const [isTestingMic, setIsTestingMic] = useState(false);
+  const [micTestStream, setMicTestStream] = useState<MediaStream | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
+  const audioPlaybackRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     document.title = 'Profilim - HiweWalk';
@@ -93,10 +98,9 @@ export default function ProfilePage() {
     }
   }, [currentUser, userData]);
 
-  // userData güncellendiğinde previewImage ve diğer ayarları tekrar senkronize et
   useEffect(() => {
     if (userData) {
-      if (!isEditing) { // Sadece düzenleme modunda değilken senkronize et, kullanıcının anlık seçimlerini bozmamak için
+      if (!isEditing) { 
         setPreviewImage(userData.photoURL || null);
         setTempProfile(prev => ({...prev, bio: userData.bio || ""}));
       }
@@ -109,15 +113,23 @@ export default function ProfilePage() {
     }
   }, [userData, isEditing]);
 
+  // Cleanup mic test stream on component unmount
+  useEffect(() => {
+    return () => {
+      if (micTestStream) {
+        micTestStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [micTestStream]);
 
   const handleEditToggle = () => {
-    if (isEditing) { // Düzenlemeden çıkılıyorsa (Vazgeç)
+    if (isEditing) { 
       if (currentUser && userData) {
         setTempProfile({
             username: userData.displayName || currentUser.displayName || "",
             bio: userData.bio || ""
         });
-        setPreviewImage(userData.photoURL || currentUser.photoURL || null); // Orijinal fotoğrafa dön
+        setPreviewImage(userData.photoURL || currentUser.photoURL || null); 
         setPrivacySettings({
             postsVisibleToFriendsOnly: userData.privacySettings?.postsVisibleToFriendsOnly ?? false,
             activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
@@ -128,9 +140,9 @@ export default function ProfilePage() {
         setPreviewImage(currentUser.photoURL || null);
         setPrivacySettings({ postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true });
       }
-    } else { // Düzenlemeye giriliyorsa
+    } else { 
        if (currentUser && userData) {
-        setPreviewImage(userData.photoURL || currentUser.photoURL || null); // Mevcut fotoğrafla başla
+        setPreviewImage(userData.photoURL || currentUser.photoURL || null); 
        }
     }
     setIsEditing(!isEditing);
@@ -172,8 +184,8 @@ export default function ProfilePage() {
     }
 
     const originalPhotoURL = userData?.photoURL || currentUser?.photoURL || null;
-    if (previewImage !== originalPhotoURL) { // previewImage, düzenleme sırasında seçilen URL'yi tutar
-        updates.newPhotoURL = previewImage; // Bu null olabilir (kullanıcı "Avatarı Kaldır" seçtiyse)
+    if (previewImage !== originalPhotoURL) { 
+        updates.newPhotoURL = previewImage; 
         profileChanged = true;
     }
 
@@ -209,8 +221,54 @@ export default function ProfilePage() {
     const nameToUse = isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName);
     if (nameToUse) return nameToUse.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
-    return "HW"; // HiweWalk için HW
+    return "HW";
   };
+
+  const startMicTest = async () => {
+    setMicError(null);
+    if (micTestStream) { // Eğer test zaten çalışıyorsa, önce durdur
+      micTestStream.getTracks().forEach(track => track.stop());
+      setMicTestStream(null);
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      setMicTestStream(stream);
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.srcObject = stream;
+        // Note: For direct playback, audio element should not be muted.
+        // Consider adding a volume control or a clear instruction for headphones.
+      }
+      setIsTestingMic(true);
+      toast({ title: "Mikrofon Testi Başladı", description: "Kendi sesinizi duyuyor olmalısınız." });
+    } catch (err) {
+      console.error("Error starting mic test:", err);
+      setMicError("Mikrofona erişilemedi. Lütfen tarayıcı izinlerini kontrol edin.");
+      toast({ title: "Mikrofon Hatası", description: "Mikrofona erişilemedi.", variant: "destructive" });
+      setIsTestingMic(false);
+    }
+  };
+
+  const stopMicTest = () => {
+    if (micTestStream) {
+      micTestStream.getTracks().forEach(track => track.stop());
+    }
+    setMicTestStream(null);
+    if (audioPlaybackRef.current) {
+      audioPlaybackRef.current.srcObject = null;
+    }
+    setIsTestingMic(false);
+    setMicError(null);
+    toast({ title: "Mikrofon Testi Durduruldu" });
+  };
+
+  const handleToggleMicTest = () => {
+    if (isTestingMic) {
+      stopMicTest();
+    } else {
+      startMicTest();
+    }
+  };
+
 
   if (isUserLoading && !currentUser && !userData) {
     return (
@@ -244,7 +302,7 @@ export default function ProfilePage() {
                     src={displayPhotoUrlToShow}
                     alt={tempProfile.username || "Kullanıcı"}
                     data-ai-hint="user portrait"
-                    key={displayPhotoUrlToShow} // Key değişikliği yeniden render'ı tetikler
+                    key={displayPhotoUrlToShow} 
                   />
               ) : null }
               <AvatarFallback>{getAvatarFallbackText()}</AvatarFallback>
@@ -255,7 +313,7 @@ export default function ProfilePage() {
                 variant="outline"
                 size="icon"
                 className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-card hover:bg-muted shadow-md"
-                onClick={() => { /* Avatar seçiciyi açmak için bir modal veya popover tetiklenebilir veya doğrudan aşağıda gösterilebilir */ }}
+                onClick={() => { }}
                 aria-label="Avatar seç"
                 disabled={isUserLoading}
               >
@@ -304,7 +362,7 @@ export default function ProfilePage() {
                       className={cn(
                         "aspect-square rounded-full border-2 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
                         previewImage === avatarUrl ? "border-primary ring-2 ring-primary scale-110" : "border-transparent hover:border-primary/50",
-                        !avatarUrl && "flex items-center justify-center bg-muted hover:bg-muted/80" // "Avatarı Kaldır" için stil
+                        !avatarUrl && "flex items-center justify-center bg-muted hover:bg-muted/80" 
                       )}
                       aria-label={avatarUrl ? `Avatar ${index + 1} seç` : "Avatarı kaldır"}
                     >
@@ -411,6 +469,28 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <MicIcon className="h-6 w-6 text-primary" />
+            <CardTitle className="text-xl sm:text-2xl">Mikrofon Testi</CardTitle>
+          </div>
+          <CardDescription>Mikrofonunuzun çalışıp çalışmadığını ve sesinizin nasıl duyulduğunu test edin.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={handleToggleMicTest} disabled={isUserLoading || isEditing} className="w-full sm:w-auto">
+            {isTestingMic ? <PauseCircle className="mr-2 h-4 w-4" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+            {isTestingMic ? "Testi Durdur" : "Mikrofon Testini Başlat"}
+          </Button>
+          {/* Sesin çalınacağı gizli audio elementi */}
+          <audio ref={audioPlaybackRef} autoPlay className={isTestingMic ? "block w-full mt-2 rounded-md" : "hidden"} controls={isTestingMic}></audio>
+          {micError && <p className="text-sm text-destructive">{micError}</p>}
+          {!micError && isTestingMic && <p className="text-sm text-muted-foreground">Şu anda mikrofonunuzdan gelen sesi duyuyor olmalısınız. Testi bitirmek için "Testi Durdur" butonuna basın.</p>}
+           {!isTestingMic && !micError && <p className="text-sm text-muted-foreground">Mikrofonunuzu test etmek için yukarıdaki butona tıklayın.</p>}
+        </CardContent>
+      </Card>
+
+
       {!isEditing && (
         <Card>
             <CardHeader>
@@ -501,3 +581,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
