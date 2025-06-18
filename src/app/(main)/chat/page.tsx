@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode } from "lucide-react"; // SearchCode eklendi
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic } from "lucide-react"; // Mic eklendi
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
@@ -55,7 +55,8 @@ interface GameSettings {
 
 const ROOM_CREATION_COST = 10;
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
-const MAX_PARTICIPANTS_PER_ROOM = 7;
+const MAX_PARTICIPANTS_PER_ROOM = 7; // Normal kullanıcılar için varsayılan
+const PREMIUM_USER_ROOM_CAPACITY = 50; // Premium kullanıcılar için kapasite
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
@@ -249,6 +250,11 @@ export default function ChatRoomsPage() {
     const currentTime = new Date();
     const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
+    const isPremiumUser = userData.premiumStatus && userData.premiumStatus !== 'none' && 
+                          (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+    const roomMaxParticipants = isPremiumUser ? PREMIUM_USER_ROOM_CAPACITY : MAX_PARTICIPANTS_PER_ROOM;
+
+
     const roomDataToCreate: any = {
       name: newRoomName.trim(),
       description: newRoomDescription.trim(),
@@ -260,7 +266,7 @@ export default function ChatRoomsPage() {
       imageAiHint: imageHint,
       participantCount: 0,
       voiceParticipantCount: 0,
-      maxParticipants: MAX_PARTICIPANTS_PER_ROOM,
+      maxParticipants: roomMaxParticipants,
       gameInitialized: false, 
       currentGameQuestionId: null,
       nextGameQuestionTimestamp: null,
@@ -275,9 +281,12 @@ export default function ChatRoomsPage() {
 
     try {
       await addDoc(collection(db, "chatRooms"), roomDataToCreate);
-      await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
-
-      toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
+      if (!isPremiumUser) { // Sadece normal kullanıcılar oda oluşturma bedeli öder
+        await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
+        toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
+      } else {
+        toast({ title: "Başarılı", description: `Premium kullanıcı olduğunuz için "${newRoomName}" odası ücretsiz oluşturuldu! (${roomMaxParticipants} kişilik)` });
+      }
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
     } catch (error: any) {
@@ -293,7 +302,10 @@ export default function ChatRoomsPage() {
         toast({ title: "Giriş Gerekli", description: "Oda oluşturmak için lütfen giriş yapın.", variant: "destructive" });
         return;
     }
-    if ((userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
+    const isPremiumUser = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+                          (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+
+    if (!isPremiumUser && (userData?.diamonds ?? 0) < ROOM_CREATION_COST) {
         toast({
           title: "Yetersiz Elmas!",
           description: (
@@ -309,6 +321,7 @@ export default function ChatRoomsPage() {
           variant: "destructive",
           duration: 10000,
         });
+        return; // Yeterli elmas yoksa ve premium değilse modalı açma
     }
     setIsCreateModalOpen(true);
 };
@@ -369,7 +382,8 @@ export default function ChatRoomsPage() {
       </div>
     );
   }
-
+  const isCreatorPremiumForDialog = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+                                    (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
   const hasEnoughDiamonds = (userData?.diamonds ?? 0) >= ROOM_CREATION_COST;
 
   return (
@@ -405,7 +419,7 @@ export default function ChatRoomsPage() {
                   className="text-sm text-muted-foreground"
                   variants={itemVariants}
                 >
-                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı {ROOM_CREATION_COST} elmas karşılığında oluşturabilirsiniz.
+                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı {isCreatorPremiumForDialog ? "ücretsiz (Premium)" : `${ROOM_CREATION_COST} elmas karşılığında`} oluşturabilirsiniz.
                 </motion.p>
               </CardContent>
             </Card>
@@ -429,10 +443,15 @@ export default function ChatRoomsPage() {
               disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
               Yeni Oda Oluştur
-              <span className="ml-1.5 flex items-center text-xs text-yellow-300 dark:text-yellow-400 font-semibold">
-                {ROOM_CREATION_COST}
-                <Gem className="ml-1 h-3.5 w-3.5" />
-              </span>
+              {!isCreatorPremiumForDialog && (
+                <span className="ml-1.5 flex items-center text-xs text-yellow-300 dark:text-yellow-400 font-semibold">
+                  {ROOM_CREATION_COST}
+                  <Gem className="ml-1 h-3.5 w-3.5" />
+                </span>
+              )}
+               {isCreatorPremiumForDialog && (
+                <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
+              )}
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[480px]">
@@ -440,8 +459,11 @@ export default function ChatRoomsPage() {
               <DialogHeader>
                 <DialogTitle>Yeni Sohbet Odası Oluştur</DialogTitle>
                 <DialogDescription>
-                  Odanız için bir ad ve açıklama belirleyin. Oda oluşturmak {ROOM_CREATION_COST} elmasa mal olur ve {ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalır.
-                  Maksimum katılımcı sayısı {MAX_PARTICIPANTS_PER_ROOM} kişidir. Mevcut elmasınız: {userData?.diamonds ?? 0}
+                  Odanız için bir ad ve açıklama belirleyin. 
+                  {isCreatorPremiumForDialog 
+                    ? ` Premium kullanıcı olduğunuz için oda oluşturmak ücretsizdir ve ${PREMIUM_USER_ROOM_CAPACITY} katılımcı limitine sahip olacaktır.` 
+                    : ` Oda oluşturmak ${ROOM_CREATION_COST} elmasa mal olur, ${MAX_PARTICIPANTS_PER_ROOM} katılımcı limiti ve ${ROOM_DEFAULT_DURATION_MINUTES} dakika aktif kalma süresi olur.`}
+                  Mevcut elmasınız: {userData?.diamonds ?? 0}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -470,7 +492,7 @@ export default function ChatRoomsPage() {
                   />
                 </div>
 
-                {!hasEnoughDiamonds && currentUser && (
+                {!isCreatorPremiumForDialog && !hasEnoughDiamonds && currentUser && (
                   <Card className="mt-4 border-destructive/50 bg-destructive/10 p-4">
                     <CardHeader className="p-0 mb-2">
                       <CardTitle className="text-base text-destructive-foreground dark:text-destructive">Elmasların Yetersiz!</CardTitle>
@@ -509,7 +531,7 @@ export default function ChatRoomsPage() {
                     isCreatingRoom ||
                     !currentUser ||
                     !userData ||
-                    !hasEnoughDiamonds
+                    (!isCreatorPremiumForDialog && !hasEnoughDiamonds)
                   }
                 >
                   {isCreatingRoom && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -538,10 +560,15 @@ export default function ChatRoomsPage() {
                     disabled={!currentUser || isUserLoading || isUserDataLoading }
                   >
                     Hemen Yeni Oda Oluştur!
-                    <span className="ml-1.5 flex items-center text-sm text-yellow-300 dark:text-yellow-200 font-semibold">
-                      {ROOM_CREATION_COST}
-                      <Gem className="ml-1 h-4 w-4" />
-                    </span>
+                    {!isCreatorPremiumForDialog && (
+                      <span className="ml-1.5 flex items-center text-sm text-yellow-300 dark:text-yellow-200 font-semibold">
+                        {ROOM_CREATION_COST}
+                        <Gem className="ml-1 h-4 w-4" />
+                      </span>
+                    )}
+                    {isCreatorPremiumForDialog && (
+                        <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
+                    )}
                   </Button>
                 </div>
             </CardContent>
@@ -581,7 +608,7 @@ export default function ChatRoomsPage() {
               </CardHeader>
               <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                  <Badge variant="secondary" className="flex items-center gap-1.5 shadow-sm px-2.5 py-1">
+                  <Badge variant="secondary" className="flex items-center justify-center gap-1.5 shadow-sm px-2.5 py-1">
                     <UsersRound className="h-3.5 w-3.5 text-primary/80" />
                     <span className="font-medium">{room.participantCount ?? 0} / {room.maxParticipants}</span>
                   </Badge>
@@ -632,3 +659,5 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+
+    

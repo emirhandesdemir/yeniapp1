@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -128,11 +128,13 @@ const GAME_ANSWER_TIMEOUT_SECONDS = 15;
 const ROOM_EXTENSION_COST = 2;
 const ROOM_EXTENSION_DURATION_MINUTES = 20;
 const TYPING_DEBOUNCE_DELAY = 1500;
-const MAX_VOICE_PARTICIPANTS_CONST = 7;
 
 const MAX_MESSAGES_PER_WINDOW = 3;
 const MESSAGE_WINDOW_SECONDS = 5;
 
+const CAPACITY_INCREASE_COST = 5;
+const CAPACITY_INCREASE_SLOTS = 1;
+const PREMIUM_USER_ROOM_CAPACITY = 50; // Bu değer chat/page.tsx ile aynı olmalı
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -190,6 +192,8 @@ export default function ChatRoomPage() {
   const isHandlingTimeoutRef = useRef(false);
   const gameAnswerDeadlineTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCurrentUserInVoiceChatRef = useRef(isCurrentUserInVoiceChat);
+
+  const [isIncreasingCapacity, setIsIncreasingCapacity] = useState(false);
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
@@ -556,7 +560,7 @@ export default function ChatRoomPage() {
     peerConnectionsRef.current = {};
     negotiatingRef.current = {};
     setActiveRemoteStreams({});
-    lastProcessedSignalTimestampRef.current = null; // Reset last processed signal timestamp
+    lastProcessedSignalTimestampRef.current = null; 
 
 
     if (localStreamRef.current) {
@@ -625,7 +629,7 @@ export default function ChatRoomPage() {
 
           if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
               console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
-              handleLeaveVoiceChat(true); // Pass true to indicate it's an auto-cleanup, not user-initiated
+              handleLeaveVoiceChat(true); 
               return;
           }
 
@@ -649,7 +653,7 @@ export default function ChatRoomPage() {
       });
     };
 
-    setupVoiceParticipantsListener(); // Initial setup
+    setupVoiceParticipantsListener(); 
 
     return () => {
       if (unsubscribeVoiceParticipants) {
@@ -904,7 +908,7 @@ export default function ChatRoomPage() {
     const unsubscribeRoom = onSnapshot(roomDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const fetchedRoomDetails: ChatRoomDetails = { id: docSnap.id, name: data.name, description: data.description, creatorId: data.creatorId, participantCount: data.participantCount || 0, maxParticipants: data.maxParticipants || MAX_VOICE_PARTICIPANTS_CONST, expiresAt: data.expiresAt, currentGameQuestionId: data.currentGameQuestionId, nextGameQuestionTimestamp: data.nextGameQuestionTimestamp, gameInitialized: data.gameInitialized, voiceParticipantCount: data.voiceParticipantCount || 0, currentGameAnswerDeadline: data.currentGameAnswerDeadline };
+        const fetchedRoomDetails: ChatRoomDetails = { id: docSnap.id, name: data.name, description: data.description, creatorId: data.creatorId, participantCount: data.participantCount || 0, maxParticipants: data.maxParticipants || (PREMIUM_USER_ROOM_CAPACITY), expiresAt: data.expiresAt, currentGameQuestionId: data.currentGameQuestionId, nextGameQuestionTimestamp: data.nextGameQuestionTimestamp, gameInitialized: data.gameInitialized, voiceParticipantCount: data.voiceParticipantCount || 0, currentGameAnswerDeadline: data.currentGameAnswerDeadline };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
       setLoadingRoom(false);
@@ -1049,6 +1053,34 @@ export default function ChatRoomPage() {
     try { const currentExpiresAt = roomDetails.expiresAt.toDate(); const newExpiresAtDate = addMinutes(currentExpiresAt, ROOM_EXTENSION_DURATION_MINUTES); const roomDocRef = doc(db, "chatRooms", roomId); await updateDoc(roomDocRef, { expiresAt: Timestamp.fromDate(newExpiresAtDate) }); await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_EXTENSION_COST); toast({ title: "Başarılı", description: `Oda süresi ${ROOM_EXTENSION_DURATION_MINUTES} dakika uzatıldı. ${ROOM_EXTENSION_COST} elmas harcandı.` }); } catch (error) { console.error("Error extending room duration:", error); toast({ title: "Hata", description: "Süre uzatılırken bir sorun oluştu.", variant: "destructive" }); } finally { setIsExtending(false); }
   },[roomDetails, currentUser, userData, roomId, toast, updateUserDiamonds]);
 
+  const handleIncreaseCapacity = useCallback(async () => {
+    if (!roomDetails || !currentUser || !userData || roomDetails.creatorId !== currentUser.uid) {
+      toast({ title: "Hata", description: "Kapasite artırma işlemi yapılamadı.", variant: "destructive" });
+      return;
+    }
+    if ((userData.diamonds ?? 0) < CAPACITY_INCREASE_COST) {
+      toast({ title: "Yetersiz Elmas", description: `Kapasite artırmak için ${CAPACITY_INCREASE_COST} elmasa ihtiyacınız var.`, variant: "destructive" });
+      return;
+    }
+    if (roomDetails.maxParticipants >= PREMIUM_USER_ROOM_CAPACITY) {
+      toast({ title: "Limit Dolu", description: "Oda zaten maksimum premium kapasitesine ulaşmış.", variant: "default" });
+      return;
+    }
+    setIsIncreasingCapacity(true);
+    try {
+      const roomDocRef = doc(db, "chatRooms", roomId);
+      await updateDoc(roomDocRef, { maxParticipants: increment(CAPACITY_INCREASE_SLOTS) });
+      await updateUserDiamonds((userData.diamonds ?? 0) - CAPACITY_INCREASE_COST);
+      toast({ title: "Başarılı", description: `Oda kapasitesi ${CAPACITY_INCREASE_SLOTS} artırıldı. ${CAPACITY_INCREASE_COST} elmas harcandı.` });
+    } catch (error) {
+      console.error("Error increasing room capacity:", error);
+      toast({ title: "Hata", description: "Kapasite artırılırken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsIncreasingCapacity(false);
+    }
+  }, [roomDetails, currentUser, userData, roomId, toast, updateUserDiamonds]);
+
+
   const getPreciseExpiryInfo = useCallback((): string => {
     if (!roomDetails?.expiresAt) return "Süre bilgisi yok"; const expiryDate = roomDetails.expiresAt.toDate(); const now = currentTime;
     if (isPast(expiryDate)) return "Süresi Doldu"; const diffSeconds = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
@@ -1088,6 +1120,9 @@ export default function ChatRoomPage() {
   const handleDmAction = useCallback((targetUserId: string | undefined | null) => { if (!currentUser?.uid || !targetUserId) return; const dmId = generateDmChatId(currentUser.uid, targetUserId); router.push(`/dm/${dmId}`); setPopoverOpenForUserId(null); }, [currentUser?.uid, router]);
   const handleViewProfileAction = useCallback((targetUserId: string | undefined | null) => { if (!targetUserId) return; router.push(`/profile/${targetUserId}`); setPopoverOpenForUserId(null); }, [router]);
   const isCurrentUserRoomCreator = roomDetails?.creatorId === currentUser?.uid;
+  const isCurrentUserPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+                             (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+
 
   const toggleSelfMute = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current || !localStreamRef.current) return;
@@ -1235,7 +1270,32 @@ export default function ChatRoomPage() {
               </ScrollArea>
             </PopoverContent>
           </Popover>
-          {currentUser && roomDetails.creatorId === currentUser.uid && (<DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9"><MoreVertical className="h-5 w-5" /><span className="sr-only">Oda Seçenekleri</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{!isRoomExpired && roomDetails.expiresAt && (<DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading}>{isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Süre Uzat ({ROOM_EXTENSION_COST} <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)</DropdownMenuItem>)}<DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10"> <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil </DropdownMenuItem></DropdownMenuContent></DropdownMenu>)}
+          {currentUser && roomDetails.creatorId === currentUser.uid && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                  <MoreVertical className="h-5 w-5" /><span className="sr-only">Oda Seçenekleri</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {!isRoomExpired && roomDetails.expiresAt && (
+                  <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading || isIncreasingCapacity}>
+                    {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                    Süre Uzat ({ROOM_EXTENSION_COST} <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                  </DropdownMenuItem>
+                )}
+                {!isCurrentUserPremium && roomDetails.maxParticipants < PREMIUM_USER_ROOM_CAPACITY && (
+                   <DropdownMenuItem onClick={handleIncreaseCapacity} disabled={isIncreasingCapacity || isUserLoading || isExtending}>
+                    {isIncreasingCapacity ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                    Katılımcı Artır (+{CAPACITY_INCREASE_SLOTS}) ({CAPACITY_INCREASE_COST} <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                  <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </header>
       <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
@@ -1254,3 +1314,4 @@ export default function ChatRoomPage() {
   );
 }
 
+    

@@ -30,7 +30,7 @@ Kullanıcı profil bilgilerini saklar.
     - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `addedAt` (Timestamp)
   - `blockedUsers`: Kullanıcının engellediği diğer kullanıcıları saklar.
     - **Yol:** `/users/{userId}/blockedUsers/{blockedUserId}`
-    - **Alanlar:** `blockedAt` (Timestamp) - Engelleme zamanı
+    - **Alanlar:** `blockedAt` (Timestamp) - Engelleme zamanı, `displayName` (String, isteğe bağlı), `photoURL` (String, nullable, isteğe bağlı)
 - **Gerekli İndeksler:**
   - Admin panelinde kullanıcıları kayıt tarihine göre listelemek için (`src/components/admin/sections/AdminUsersContent.tsx`):
     - Koleksiyon: `users`
@@ -51,12 +51,12 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `imageAiHint`: (String) Odanın resmi için yapay zeka ipucu (Placeholder ile kullanılır)
   - `participantCount`: (Number) Metin sohbetindeki mevcut katılımcı sayısı (Başlangıç: 0)
   - `voiceParticipantCount`: (Number) Sesli sohbetteki mevcut katılımcı sayısı (Başlangıç: 0)
-  - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı (Varsayılan: 7, hem metin hem sesli sohbet için geçerli)
+  - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı. Premium kullanıcılar için bu değer daha yüksek (örn: 50) olabilirken, normal kullanıcılar için daha düşük bir varsayılan (örn: 7) ile başlar ve elmas karşılığında artırılabilir.
   - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir.
   - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
   - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
   - `currentGameAnswerDeadline`: (Timestamp, nullable) Mevcut oyun sorusu için son cevap verme zamanı.
-- **Not:** Oda oluşturma maliyeti varsayılan olarak **10 elmas**tır.
+- **Not:** Normal kullanıcılar için oda oluşturma maliyeti varsayılan olarak **10 elmas**tır. Premium kullanıcılar ücretsiz oluşturabilir.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
@@ -264,3 +264,5 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+    
