@@ -422,13 +422,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {!isChatPage && (
-        <header className="flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
-          <Button asChild variant="ghost" size="icon" className="rounded-full text-primary dark:text-primary hover:bg-primary/10 -ml-2 sm:ml-0 p-0 h-auto">
-            <Link href="/" aria-label="Anasayfa" className="flex items-center gap-2 p-2">
-              <Flame className="h-7 w-7" />
-              <span className="text-xl font-headline hidden sm:inline">HiweWalk</span>
-            </Link>
-          </Button>
+        <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4 sm:px-6 sticky top-0 z-30">
+          <Link href="/" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">
+            HiweWalk
+          </Link>
 
           <div className="flex items-center gap-1 sm:gap-1.5">
             <Link href="/direct-messages" passHref>
@@ -543,3 +540,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
