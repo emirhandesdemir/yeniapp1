@@ -17,16 +17,16 @@ import { cn } from '@/lib/utils';
 interface VoiceParticipantSlotProps {
   participant: ActiveVoiceParticipantData;
   isCurrentUser: boolean;
-  isRoomCreatorViewing: boolean; // The person viewing the grid is the room creator
-  isParticipantTheRoomCreator: boolean; // This specific participant is the room creator for the room they are in.
+  isRoomCreatorViewing: boolean;
+  isParticipantTheRoomCreator: boolean;
   onAdminKick: () => void;
   onAdminToggleMute: () => void;
   getAvatarFallbackText: (name?: string | null) => string;
   onClick: () => void;
-  isHostSlot?: boolean; // To make the avatar potentially larger
+  isHostSlot?: boolean;
 }
 
-const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = ({
+const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
   participant,
   isCurrentUser,
   isRoomCreatorViewing,
@@ -93,24 +93,26 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = ({
       )}
     </div>
   );
-};
+});
+VoiceParticipantSlot.displayName = 'VoiceParticipantSlot';
+
 
 const VoiceParticipantGrid: React.FC<{
   participants: ActiveVoiceParticipantData[];
   currentUserUid?: string;
-  isCurrentUserRoomCreator: boolean; // Person VIEWING is the room creator
-  roomCreatorId?: string; // Actual creatorId of the room for crown icon
-  maxSlots: number; // Max capacity of the room
+  isCurrentUserRoomCreator: boolean;
+  roomCreatorId?: string;
+  maxSlots: number;
   onAdminKickUser: (targetUserId: string) => void;
   onAdminToggleMuteUser: (targetUserId: string, currentMuteState?: boolean) => void;
   getAvatarFallbackText: (name?: string | null) => string;
   onSlotClick: (participantId: string | null) => void;
-}> = ({
+}> = React.memo(({
   participants,
   currentUserUid,
   isCurrentUserRoomCreator,
   roomCreatorId,
-  maxSlots, // Note: We will use this conceptually for layout but only render active participants
+  maxSlots,
   onAdminKickUser,
   onAdminToggleMuteUser,
   getAvatarFallbackText,
@@ -125,8 +127,6 @@ const VoiceParticipantGrid: React.FC<{
     );
   }
 
-  // Litmatch-style participant distribution
-  // Prioritize the room creator for the host slot if they are in the voice chat
   let hostParticipant: ActiveVoiceParticipantData | null = null;
   let remainingParticipants = [...participants];
 
@@ -138,18 +138,16 @@ const VoiceParticipantGrid: React.FC<{
     }
   }
 
-  // If room creator is not in voice or not defined, pick the first participant as host
   if (!hostParticipant && remainingParticipants.length > 0) {
     hostParticipant = remainingParticipants.shift() || null;
   }
 
 
-  const secondRowParticipants = remainingParticipants.slice(0, 2); // Max 2
-  const thirdRowParticipants = remainingParticipants.slice(2, 6);  // Max 4 (total 1+2+4 = 7 for maxSlots=7)
+  const secondRowParticipants = remainingParticipants.slice(0, 2);
+  const thirdRowParticipants = remainingParticipants.slice(2, 6);
 
   return (
     <div className="flex flex-col items-center gap-2 sm:gap-3 py-2 w-full">
-      {/* Host Slot */}
       {hostParticipant && (
         <div className="mb-1 sm:mb-2 transform scale-100">
           <VoiceParticipantSlot
@@ -166,7 +164,6 @@ const VoiceParticipantGrid: React.FC<{
         </div>
       )}
 
-      {/* Second Row (2 slots) */}
       {secondRowParticipants.length > 0 && (
         <div className="flex justify-center items-start gap-3 sm:gap-4 w-full px-2">
           {secondRowParticipants.map(p => (
@@ -185,7 +182,6 @@ const VoiceParticipantGrid: React.FC<{
         </div>
       )}
 
-      {/* Third Row (up to 4 slots) */}
       {thirdRowParticipants.length > 0 && (
         <div className="flex justify-center items-start gap-2 sm:gap-3 flex-wrap w-full px-1">
           {thirdRowParticipants.map(p => (
@@ -205,7 +201,6 @@ const VoiceParticipantGrid: React.FC<{
       )}
     </div>
   );
-};
-
+});
+VoiceParticipantGrid.displayName = 'VoiceParticipantGrid';
 export default VoiceParticipantGrid;
-

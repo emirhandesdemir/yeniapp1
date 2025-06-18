@@ -1,13 +1,13 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, FormEvent } from "react";
+import React, { useState, useEffect, useCallback, FormEvent } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone } from "lucide-react"; // Phone ikonu eklendi
+import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone } from "lucide-react";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import {
@@ -28,7 +28,7 @@ import {
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
-import { generateDmChatId } from "@/lib/utils"; 
+import { generateDmChatId } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 
@@ -38,9 +38,9 @@ interface Friend extends UserData {
 
 interface SearchResultUser extends UserData {
   isFriend?: boolean;
-  isRequestSent?: boolean; 
-  isRequestReceived?: boolean; 
-  outgoingRequestId?: string | null; 
+  isRequestSent?: boolean;
+  isRequestReceived?: boolean;
+  outgoingRequestId?: string | null;
 }
 
 export default function FriendsPage() {
@@ -51,10 +51,10 @@ export default function FriendsPage() {
   const [myFriends, setMyFriends] = useState<Friend[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultUser[]>([]);
-  
+
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [loadingSearch, setLoadingSearch] = useState(false);
-  const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({}); 
+  const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     document.title = 'Arkadaşlarım - HiweWalk';
@@ -68,7 +68,7 @@ export default function FriendsPage() {
     }
     setLoadingFriends(true);
     const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-    const q = query(friendsRef); 
+    const q = query(friendsRef);
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
@@ -76,23 +76,23 @@ export default function FriendsPage() {
         try {
             const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
             if (userProfileDoc.exists()) {
-            return { 
-                uid: friendDoc.id, 
-                ...userProfileDoc.data(), 
-                addedAt: friendData.addedAt 
+            return {
+                uid: friendDoc.id,
+                ...userProfileDoc.data(),
+                addedAt: friendData.addedAt
             } as Friend;
             }
         } catch (error) {
             console.error("Error fetching profile for friend:", friendDoc.id, error);
         }
-        return { 
+        return {
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
           photoURL: friendData.photoURL || null,
-          email: friendData.email || null, 
-          diamonds: friendData.diamonds || 0, 
+          email: friendData.email || null,
+          diamonds: friendData.diamonds || 0,
           role: friendData.role || 'user',
-          createdAt: friendData.addedAt || Timestamp.now(), 
+          createdAt: friendData.addedAt || Timestamp.now(),
           addedAt: friendData.addedAt
         } as Friend;
       });
@@ -114,7 +114,7 @@ export default function FriendsPage() {
   }, [currentUser?.uid, toast]);
 
 
-  const handleSearchUsers = async (e?: FormEvent) => {
+  const handleSearchUsers = useCallback(async (e?: FormEvent) => {
     if (e) e.preventDefault();
     if (!searchTerm.trim() || !currentUser) return;
     setLoadingSearch(true);
@@ -128,7 +128,7 @@ export default function FriendsPage() {
         getDocs(nameQuery),
         getDocs(emailQuery)
       ]);
-      
+
       const resultsMap = new Map<string, UserData>();
       nameSnapshot.forEach(doc => {
         if (doc.id !== currentUser.uid) resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData)
@@ -136,7 +136,7 @@ export default function FriendsPage() {
       emailSnapshot.forEach(doc => {
          if (doc.id !== currentUser.uid) resultsMap.set(doc.id, { uid: doc.id, ...doc.data() } as UserData)
       });
-      
+
       const rawResults = Array.from(resultsMap.values());
       const processedResults: SearchResultUser[] = [];
 
@@ -145,9 +145,9 @@ export default function FriendsPage() {
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
 
         if (!processedUser.isFriend) {
-          const outgoingQuery = query(collection(db, "friendRequests"), 
-            where("fromUserId", "==", currentUser.uid), 
-            where("toUserId", "==", user.uid), 
+          const outgoingQuery = query(collection(db, "friendRequests"),
+            where("fromUserId", "==", currentUser.uid),
+            where("toUserId", "==", user.uid),
             where("status", "==", "pending")
           );
           const outgoingSnap = await getDocs(outgoingQuery);
@@ -178,13 +178,13 @@ export default function FriendsPage() {
     } finally {
       setLoadingSearch(false);
     }
-  };
-  
-  const setActionLoading = (id: string, isLoading: boolean) => {
-    setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
-  };
+  }, [searchTerm, currentUser, myFriends, toast]);
 
-  const handleSendFriendRequest = async (targetUser: SearchResultUser) => {
+  const setActionLoading = useCallback((id: string, isLoading: boolean) => {
+    setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
+  }, []);
+
+  const handleSendFriendRequest = useCallback(async (targetUser: SearchResultUser) => {
     if (!currentUser || !userData || !targetUser.uid || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived) return;
     setActionLoading(targetUser.uid, true);
     try {
@@ -199,7 +199,7 @@ export default function FriendsPage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${targetUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
-      setSearchResults(prev => prev.map(u => 
+      setSearchResults(prev => prev.map(u =>
         u.uid === targetUser.uid ? {...u, isRequestSent: true, outgoingRequestId: newRequestRef.id } : u
       ));
     } catch (error) {
@@ -208,20 +208,20 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(targetUser.uid, false);
     }
-  };
-  
-  const handleCancelOutgoingRequest = async (targetUser: SearchResultUser) => {
+  }, [currentUser, userData, toast, setActionLoading]);
+
+  const handleCancelOutgoingRequest = useCallback(async (targetUser: SearchResultUser) => {
     if (!currentUser || !targetUser.outgoingRequestId) {
         toast({ title: "Hata", description: "İptal edilecek istek ID'si bulunamadı.", variant: "destructive" });
         return;
     }
     const requestId = targetUser.outgoingRequestId;
-    setActionLoading(requestId, true); 
+    setActionLoading(requestId, true);
     try {
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
-       setSearchResults(prev => prev.map(u => 
-        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u 
+       setSearchResults(prev => prev.map(u =>
+        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u
       ));
     } catch (error) {
       console.error("Error cancelling friend request:", error);
@@ -229,9 +229,9 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(requestId, false);
     }
-  };
+  }, [currentUser, toast, setActionLoading]);
 
-  const handleRemoveFriend = async (friendId: string, friendName: string) => {
+  const handleRemoveFriend = useCallback(async (friendId: string, friendName: string) => {
     if (!currentUser || !confirm(`${friendName} adlı kullanıcıyı arkadaşlıktan çıkarmak istediğinizden emin misiniz?`)) return;
     setActionLoading(friendId, true);
     try {
@@ -240,15 +240,15 @@ export default function FriendsPage() {
       batch.delete(myFriendRef);
       const theirFriendRef = doc(db, `users/${friendId}/confirmedFriends`, currentUser.uid);
       batch.delete(theirFriendRef);
-      
-      const requestQuery1 = query(collection(db, "friendRequests"), 
+
+      const requestQuery1 = query(collection(db, "friendRequests"),
         where("status", "==", "accepted"),
-        where("fromUserId", "==", currentUser.uid), 
+        where("fromUserId", "==", currentUser.uid),
         where("toUserId", "==", friendId)
       );
-      const requestQuery2 = query(collection(db, "friendRequests"), 
+      const requestQuery2 = query(collection(db, "friendRequests"),
         where("status", "==", "accepted"),
-        where("fromUserId", "==", friendId), 
+        where("fromUserId", "==", friendId),
         where("toUserId", "==", currentUser.uid)
       );
 
@@ -262,7 +262,7 @@ export default function FriendsPage() {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
-      setSearchResults(prevResults => prevResults.map(sr => 
+      setSearchResults(prevResults => prevResults.map(sr =>
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
     } catch (error) {
@@ -271,15 +271,15 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(friendId, false);
     }
-  };
+  }, [currentUser, toast, setActionLoading]);
 
-  const handleInitiateCall = async (targetFriend: Friend) => {
+  const handleInitiateCall = useCallback(async (targetFriend: Friend) => {
     if (!currentUser || !userData || !targetFriend.uid) {
       toast({ title: "Hata", description: "Arama başlatılamadı. Kullanıcı bilgileri eksik.", variant: "destructive" });
       return;
     }
     setActionLoading(`call-${targetFriend.uid}`, true);
-    const callId = doc(collection(db, "directCalls")).id; // Generate a new call ID
+    const callId = doc(collection(db, "directCalls")).id;
 
     try {
       const callDocRef = doc(db, "directCalls", callId);
@@ -303,14 +303,14 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(`call-${targetFriend.uid}`, false);
     }
-  };
+  }, [currentUser, userData, router, toast, setActionLoading]);
 
-  const getAvatarFallback = (name?: string | null) => {
+  const getAvatarFallback = useCallback((name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "??";
-  };
+  }, []);
 
 
-  if (isAuthLoading && !currentUser) { 
+  if (isAuthLoading && !currentUser) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -319,7 +319,7 @@ export default function FriendsPage() {
     );
   }
 
-  if (!currentUser) { 
+  if (!currentUser) {
      return (
       <div className="flex flex-1 items-center justify-center">
         <Card className="w-full max-w-md text-center p-6">
@@ -366,9 +366,9 @@ export default function FriendsPage() {
                         </div>
                       </Link>
                       <div className="flex gap-1 sm:gap-2 flex-shrink-0">
-                        <Button 
-                            variant="ghost" 
-                            size="icon" 
+                        <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8 sm:h-9 sm:w-9 text-green-500 hover:text-green-600 hover:bg-green-500/10"
                             onClick={() => handleInitiateCall(friend)}
                             disabled={performingAction[`call-${friend.uid}`]}
@@ -381,10 +381,10 @@ export default function FriendsPage() {
                              <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                           </Link>
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 sm:h-9 sm:w-9 hover:text-destructive" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 sm:h-9 sm:w-9 hover:text-destructive"
                           aria-label="Arkadaşlıktan Çıkar"
                           onClick={(e) => { e.stopPropagation(); handleRemoveFriend(friend.uid, friend.displayName || 'bu arkadaşı')}}
                           disabled={performingAction[friend.uid]}
@@ -403,15 +403,15 @@ export default function FriendsPage() {
                 <form onSubmit={handleSearchUsers} className="flex gap-2">
                   <div className="relative flex-grow">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
-                    <Input 
-                      placeholder="Kullanıcı adı veya e-posta ile ara..." 
+                    <Input
+                      placeholder="Kullanıcı adı veya e-posta ile ara..."
                       className="pl-10 h-9 sm:h-10"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
                   </div>
                   <Button type="submit" disabled={loadingSearch || !searchTerm.trim()} className="h-9 sm:h-10">
-                    {loadingSearch ? <Loader2 className="h-4 w-4 animate-spin"/> : <Search className="h-4 w-4" />} 
+                    {loadingSearch ? <Loader2 className="h-4 w-4 animate-spin"/> : <Search className="h-4 w-4" />}
                     <span className="hidden sm:inline ml-2">Ara</span>
                   </Button>
                 </form>
@@ -441,10 +441,10 @@ export default function FriendsPage() {
                                     <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
                                         <Send className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Gönderildi
                                     </Button>
-                                    {user.outgoingRequestId && 
-                                    <Button 
-                                        variant="ghost" 
-                                        size="xs" 
+                                    {user.outgoingRequestId &&
+                                    <Button
+                                        variant="ghost"
+                                        size="xs"
                                         className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
                                         onClick={(e) => { e.stopPropagation(); handleCancelOutgoingRequest(user)}}
                                         disabled={performingAction[user.outgoingRequestId]}
@@ -454,18 +454,18 @@ export default function FriendsPage() {
                                     }
                                 </div>
                             ) : user.isRequestReceived ? (
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                                disabled 
+                                disabled
                                 >
                                 <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi (Bildirimlerde)
                                 </Button>
                             ) : (
-                                <Button 
-                                    variant="outline" 
-                                    size="sm" 
+                                <Button
+                                    variant="outline"
+                                    size="sm"
                                     className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
                                     onClick={(e) => { e.stopPropagation(); handleSendFriendRequest(user)}}
                                     disabled={performingAction[user.uid]}
@@ -477,7 +477,7 @@ export default function FriendsPage() {
                       </li>
                     ))}
                   </ul>
-                ) : !searchTerm && !loadingSearch && ( 
+                ) : !searchTerm && !loadingSearch && (
                     <p className="text-muted-foreground text-center py-8">Arkadaş eklemek için kullanıcı adı veya e-posta ile arama yapın.</p>
                 )}
               </div>
@@ -488,6 +488,3 @@ export default function FriendsPage() {
     </div>
   );
 }
-
-
-    

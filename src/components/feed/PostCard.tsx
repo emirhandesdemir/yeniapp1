@@ -1,6 +1,7 @@
 
 "use client";
 
+import React, { useState, useEffect, useCallback } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
@@ -17,7 +18,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { useState, useEffect } from "react";
 import CommentForm from "./CommentForm";
 import CommentCard, { type CommentData } from "./CommentCard";
 import Link from "next/link";
@@ -36,7 +36,6 @@ export interface Post {
   sharedRoomId?: string;
   sharedRoomName?: string;
 
-  // Repost specific fields
   isRepost?: boolean;
   originalPostId?: string;
   originalPostUserId?: string;
@@ -52,7 +51,7 @@ interface PostCardProps {
   post: Post;
 }
 
-export default function PostCard({ post }: PostCardProps) {
+const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   const { currentUser, userData } = useAuth();
   const { toast } = useToast();
   const [isLiking, setIsLiking] = useState(false);
@@ -96,22 +95,22 @@ export default function PostCard({ post }: PostCardProps) {
   }, [showComments, post.id, toast]);
 
 
-  const getAvatarFallbackText = (name?: string | null) => {
+  const getAvatarFallbackText = useCallback((name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "HW"; // HiweWalk için HW
-  };
+    return "HW";
+  }, []);
 
-  const formattedDate = (timestamp?: Timestamp) => {
+  const formattedDate = useCallback((timestamp?: Timestamp) => {
     return timestamp
     ? formatDistanceToNow(timestamp.toDate(), { addSuffix: true, locale: tr })
     : "Yakın zamanda";
-  }
+  }, []);
 
 
   const isOwnPost = currentUser?.uid === post.userId;
   const hasLiked = currentUser ? post.likedBy.includes(currentUser.uid) : false;
 
-  const handleDeletePost = async () => {
+  const handleDeletePost = useCallback(async () => {
     if (!isOwnPost) return;
     if (!confirm("Bu gönderiyi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.")) return;
 
@@ -122,9 +121,9 @@ export default function PostCard({ post }: PostCardProps) {
       console.error("Error deleting post:", error);
       toast({ title: "Hata", description: "Gönderi silinirken bir sorun oluştu.", variant: "destructive" });
     }
-  };
+  }, [isOwnPost, post.id, toast]);
 
-  const handleLikePost = async () => {
+  const handleLikePost = useCallback(async () => {
     if (!currentUser || !userData) {
       toast({ title: "Giriş Gerekli", description: "Beğenmek için giriş yapmalısınız.", variant: "destructive" });
       return;
@@ -152,9 +151,9 @@ export default function PostCard({ post }: PostCardProps) {
     } finally {
       setIsLiking(false);
     }
-  };
+  }, [currentUser, userData, isLiking, post.id, hasLiked, toast]);
 
-  const handleRepost = async () => {
+  const handleRepost = useCallback(async () => {
     if (!currentUser || !userData) {
       toast({ title: "Giriş Gerekli", description: "Yeniden paylaşmak için giriş yapmalısınız.", variant: "destructive" });
       return;
@@ -163,7 +162,7 @@ export default function PostCard({ post }: PostCardProps) {
 
     setIsReposting(true);
 
-    const postToRepost = post.isRepost ? { 
+    const postToRepost = post.isRepost ? {
       id: post.originalPostId,
       userId: post.originalPostUserId,
       username: post.originalPostUsername,
@@ -172,7 +171,7 @@ export default function PostCard({ post }: PostCardProps) {
       createdAt: post.originalPostCreatedAt,
       sharedRoomId: post.originalPostSharedRoomId,
       sharedRoomName: post.originalPostSharedRoomName,
-    } : post; 
+    } : post;
 
     if (!postToRepost.id || !postToRepost.userId || !postToRepost.content) {
         toast({ title: "Hata", description: "Yeniden paylaşılacak orijinal gönderi bilgileri eksik.", variant: "destructive" });
@@ -206,18 +205,18 @@ export default function PostCard({ post }: PostCardProps) {
     } finally {
       setIsReposting(false);
     }
-  };
+  }, [currentUser, userData, isReposting, post, toast]);
 
 
-  const handleCommentAdded = () => {
+  const handleCommentAdded = useCallback(() => {
     setLocalCommentCount(prev => prev + 1);
-  };
+  }, []);
 
-  const handleCommentDeleted = () => {
+  const handleCommentDeleted = useCallback(() => {
     setLocalCommentCount(prev => Math.max(0, prev - 1));
-  };
+  }, []);
 
-  const renderOriginalPostContent = (originalPost: Partial<Post>) => (
+  const renderOriginalPostContent = useCallback((originalPost: Partial<Post>) => (
     <Card className="mt-2 mb-1 p-3 border-border/50 bg-muted/40 dark:bg-muted/25 shadow-inner rounded-lg">
       <CardHeader className="flex flex-row items-start gap-2.5 p-0 pb-2">
         <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0">
@@ -249,7 +248,7 @@ export default function PostCard({ post }: PostCardProps) {
         )}
       </CardContent>
     </Card>
-  );
+  ), [getAvatarFallbackText, formattedDate]);
 
 
   return (
@@ -336,11 +335,11 @@ export default function PostCard({ post }: PostCardProps) {
           <span className="text-xs">{localCommentCount}</span>
           {showComments ? <ChevronUp className="h-3.5 w-3.5 ml-1" /> : <ChevronDown className="h-3.5 w-3.5 ml-1" />}
         </Button>
-        <Button 
-            variant="ghost" 
-            size="sm" 
-            className="text-muted-foreground hover:text-green-500 px-2 py-1.5" 
-            onClick={handleRepost} 
+        <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-green-500 px-2 py-1.5"
+            onClick={handleRepost}
             disabled={isReposting || !currentUser}
         >
           {isReposting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Repeat className="h-4 w-4 mr-1.5" />}
@@ -382,4 +381,6 @@ export default function PostCard({ post }: PostCardProps) {
       )}
     </Card>
   );
-}
+});
+PostCard.displayName = 'PostCard';
+export default PostCard;

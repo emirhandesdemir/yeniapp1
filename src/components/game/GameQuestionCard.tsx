@@ -1,11 +1,10 @@
 
 "use client";
 
-import type { FC } from 'react';
+import React, { type FC, useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Gamepad2, Gem, X, Clock } from "lucide-react"; // Clock ikonu eklendi
-import { useEffect, useState } from 'react';
+import { Gamepad2, Gem, X, Clock } from "lucide-react";
 
 interface GameQuestion {
   id: string;
@@ -18,10 +17,10 @@ interface GameQuestionCardProps {
   question: GameQuestion;
   onClose: () => void;
   reward: number;
-  countdown: number | null; // Yeni prop: Soru cevaplama için kalan süre
+  countdown: number | null;
 }
 
-const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward, countdown }) => {
+const GameQuestionCard: FC<GameQuestionCardProps> = React.memo(({ question, onClose, reward, countdown }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -29,10 +28,10 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward
     return () => clearTimeout(timer);
   }, []);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsVisible(false);
     setTimeout(onClose, 300);
-  };
+  }, [onClose]);
 
   const formatCountdown = (seconds: number | null): string => {
     if (seconds === null || seconds < 0) return "00:00";
@@ -86,6 +85,6 @@ const GameQuestionCard: FC<GameQuestionCardProps> = ({ question, onClose, reward
       </Card>
     </div>
   );
-};
-
+});
+GameQuestionCard.displayName = 'GameQuestionCard';
 export default GameQuestionCard;

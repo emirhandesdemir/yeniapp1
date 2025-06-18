@@ -1,6 +1,7 @@
 
 "use client";
 
+import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Users, MessageSquare, LogIn, AlertCircle, Compass } from "lucide-react";
@@ -22,7 +23,7 @@ interface RoomInFeedCardProps {
   room: ChatRoomFeedDisplayData;
 }
 
-export default function RoomInFeedCard({ room }: RoomInFeedCardProps) {
+const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
   const isFull = room.participantCount != null && room.participantCount >= room.maxParticipants;
   const formattedDate = room.createdAt
     ? formatDistanceToNow(room.createdAt.toDate(), { addSuffix: true, locale: tr })
@@ -72,4 +73,6 @@ export default function RoomInFeedCard({ room }: RoomInFeedCardProps) {
       </CardFooter>
     </Card>
   );
-}
+});
+RoomInFeedCard.displayName = 'RoomInFeedCard';
+export default RoomInFeedCard;

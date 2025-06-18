@@ -40,8 +40,8 @@ interface ChatMessageItemProps {
   getAvatarFallbackText: (name?: string | null) => string;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
-  isCurrentUserRoomCreator: boolean; 
-  onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void; 
+  isCurrentUserRoomCreator: boolean;
+  onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
 }
 
 const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
@@ -65,7 +65,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   onKickParticipantFromTextChat,
 }) => {
 
-  const renderMessageWithMentions = (text: string, currentUsername?: string | null) => {
+  const renderMessageWithMentions = React.useCallback((text: string, currentUsername?: string | null) => {
     const parts = text.split(/(@[\w.-]+)/g); // Split by mentions, keeping the mention
     return parts.map((part, index) => {
       if (part.startsWith('@')) {
@@ -73,12 +73,11 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         if (username === currentUsername) {
           return <strong key={index} className="text-yellow-300 dark:text-yellow-400 bg-yellow-500/20 dark:bg-yellow-600/30 px-1 rounded">{part}</strong>;
         }
-        // Genel bahsetme vurgusu (isteğe bağlı, şimdilik sadece mevcut kullanıcıyı farklı vurguluyoruz)
         return <strong key={index} className="text-blue-400 dark:text-blue-300">{part}</strong>;
       }
       return part;
     });
-  };
+  }, []);
 
 
   if (msg.isGameMessage) {
@@ -103,13 +102,11 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
   if (isMentioned) {
     if (msg.isOwn) {
-      // Kullanıcı kendi kendini etiketledi (opsiyonel: daha hafif bir vurgu)
       bubbleClasses = "bg-primary/90 text-primary-foreground rounded-t-2xl rounded-l-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform";
       textClasses = "text-sm font-medium whitespace-pre-wrap break-words";
     } else {
-      // Kullanıcı başkası tarafından etiketlendi
       bubbleClasses = "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950 rounded-t-2xl rounded-r-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out";
-      textClasses = "text-sm font-semibold whitespace-pre-wrap break-words"; // Kalın ve biraz daha büyük
+      textClasses = "text-sm font-semibold whitespace-pre-wrap break-words"; 
     }
   }
 

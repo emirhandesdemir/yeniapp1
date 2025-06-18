@@ -1,17 +1,17 @@
 
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation"; // useRouter import edildi
+import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone } from "lucide-react"; // Phone import edildi
+import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone } from "lucide-react";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, onSnapshot, Timestamp, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"; // setDoc ve serverTimestamp import edildi
+import { collection, query, where, orderBy, onSnapshot, Timestamp, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -36,11 +36,11 @@ interface DirectMessageConversation {
 export default function DirectMessagesPage() {
   const { currentUser, userData, isUserLoading: isAuthLoading } = useAuth();
   const { toast } = useToast();
-  const router = useRouter(); // useRouter hook'u kullanıma alındı
+  const router = useRouter();
   const [conversations, setConversations] = useState<DirectMessageConversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [performingCallAction, setPerformingCallAction] = useState<string | null>(null); // Arama için yükleme durumu
+  const [performingCallAction, setPerformingCallAction] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = 'Direkt Mesajlar - HiweWalk';
@@ -78,9 +78,9 @@ export default function DirectMessagesPage() {
                 uid: otherUid,
                 displayName: data.participantInfo[otherUid].displayName,
                 photoURL: data.participantInfo[otherUid].photoURL,
-                email: null,
-                diamonds: 0,
-                createdAt: Timestamp.now(),
+                email: null, 
+                diamonds: 0, 
+                createdAt: Timestamp.now(), 
             };
         } else if (otherUid) {
             try {
@@ -116,9 +116,9 @@ export default function DirectMessagesPage() {
     return () => unsubscribe();
   }, [currentUser?.uid, isAuthLoading, toast]);
 
-  const getAvatarFallback = (name?: string | null) => {
+  const getAvatarFallback = useCallback((name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "PN";
-  };
+  }, []);
 
   const filteredConversations = useMemo(() => {
     if (!searchTerm.trim()) {
@@ -129,7 +129,7 @@ export default function DirectMessagesPage() {
     );
   }, [conversations, searchTerm]);
 
-  const handleInitiateCall = async (targetDmConv: DirectMessageConversation) => {
+  const handleInitiateCall = useCallback(async (targetDmConv: DirectMessageConversation) => {
     if (!currentUser || !userData || !targetDmConv.otherParticipant) {
       toast({ title: "Hata", description: "Arama başlatılamadı. Kullanıcı bilgileri eksik.", variant: "destructive" });
       return;
@@ -159,7 +159,7 @@ export default function DirectMessagesPage() {
     } finally {
       setPerformingCallAction(null);
     }
-  };
+  }, [currentUser, userData, router, toast]);
 
 
   if (isAuthLoading && !currentUser) {
@@ -288,4 +288,3 @@ export default function DirectMessagesPage() {
     </div>
   );
 }
-

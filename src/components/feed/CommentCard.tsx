@@ -1,6 +1,7 @@
 
 "use client";
 
+import React, { useState, useCallback } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Timestamp, doc, deleteDoc, updateDoc, increment } from "firebase/firestore";
@@ -10,7 +11,6 @@ import { Trash2, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
 import Link from "next/link";
 
 export interface CommentData {
@@ -25,18 +25,18 @@ export interface CommentData {
 interface CommentCardProps {
   comment: CommentData;
   postId: string;
-  onCommentDeleted: () => void; 
+  onCommentDeleted: () => void;
 }
 
-export default function CommentCard({ comment, postId, onCommentDeleted }: CommentCardProps) {
+const CommentCard: React.FC<CommentCardProps> = React.memo(({ comment, postId, onCommentDeleted }) => {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const getAvatarFallbackText = (name?: string | null) => {
+  const getAvatarFallbackText = useCallback((name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "HW"; // HiweWalk için HW
-  };
+    return "HW";
+  }, []);
 
   const formattedDate = comment.createdAt
     ? formatDistanceToNow(comment.createdAt.toDate(), { addSuffix: true, locale: tr })
@@ -44,7 +44,7 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
 
   const isOwnComment = currentUser?.uid === comment.userId;
 
-  const handleDeleteComment = async () => {
+  const handleDeleteComment = useCallback(async () => {
     if (!isOwnComment) return;
     if (!confirm("Bu yorumu silmek istediğinizden emin misiniz?")) return;
 
@@ -57,8 +57,8 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
       await updateDoc(postRef, {
         commentCount: increment(-1),
       });
-      
-      onCommentDeleted(); 
+
+      onCommentDeleted();
       toast({ title: "Başarılı", description: "Yorum silindi." });
     } catch (error) {
       console.error("Error deleting comment:", error);
@@ -66,7 +66,7 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, [isOwnComment, postId, comment.id, onCommentDeleted, toast]);
 
   return (
     <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-muted/30 dark:bg-muted/20 border border-border/50">
@@ -103,4 +103,6 @@ export default function CommentCard({ comment, postId, onCommentDeleted }: Comme
       </div>
     </div>
   );
-}
+});
+CommentCard.displayName = 'CommentCard';
+export default CommentCard;

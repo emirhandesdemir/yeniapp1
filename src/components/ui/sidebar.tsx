@@ -1,10 +1,8 @@
-
-"use client"
-// Bu Sidebar komponenti ve ilgili tüm alt komponentler (SidebarProvider, SidebarTrigger vb.)
+// Bu Sidebar komponenti ve ilgili tüm alt komponentler
 // mevcut alt navigasyon ve minimal üst bar tasarımına geçildiği için artık kullanılmamaktadır.
 // Proje yapısını temiz tutmak ve olası karışıklıkları önlemek amacıyla içeriği boşaltılmıştır.
+// Bu dosya artık gereksizdir ve projenizden güvenle silinebilir.
 // Firebase Studio'da dosya silemediğimiz için bu şekilde bir not bırakıyoruz.
-// İleride farklı bir sidebar ihtiyacı doğarsa, bu dosya yeniden düzenlenebilir veya silinebilir.
 
 import * as React from "react";
 

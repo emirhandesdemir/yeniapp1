@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-// OneSignal, global script aracılığıyla yüklenecek
 import {
   MessageSquare,
   Bell,
@@ -15,7 +14,7 @@ import {
   UserRound,
   Flame,
   Phone,
-  PhoneOff as PhoneOffIcon, // PhoneOff olarak yeniden adlandırıldı
+  PhoneOff as PhoneOffIcon,
   XCircle as CloseIcon,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -71,7 +70,7 @@ interface IncomingCallInfo {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home }, // Aktif ikon Home olarak değiştirildi
+  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home },
   { href: '/chat', label: 'Odalar', icon: MessageSquare, activeIcon: MessageSquare },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
@@ -128,13 +127,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
-  
+
   const [activeIncomingCall, setActiveIncomingCall] = useState<IncomingCallInfo | null>(null);
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
 
 
   useEffect(() => {
     setIsClient(true);
+  }, []);
+
+  const handleCloseOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+     try {
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+    } catch (error) {
+      console.warn("Failed to set onboarding flag in localStorage:", error);
+    }
   }, []);
 
   useEffect(() => {
@@ -154,14 +162,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
   }, [isClient, currentUser, userData, isUserDataLoading]);
 
-  const handleCloseOnboarding = () => {
-    setShowOnboarding(false);
-     try {
-      localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
-    } catch (error) {
-      console.warn("Failed to set onboarding flag in localStorage:", error);
-    }
-  };
 
   useEffect(() => {
     if (!currentUser?.uid) {
@@ -258,7 +258,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
 
   useEffect(() => {
-    if (!currentUser?.uid || !isClient) return; 
+    if (!currentUser?.uid || !isClient) return;
 
     const dmsQuery = query(
       collection(db, "directMessages"),
@@ -294,7 +294,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                                 }
                             } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
                         }
-                        
+
                         const newTimestamps = { ...lastShownDmTimestamps, [dmId]: lastMessageTimeMillis };
                         setLastShownDmTimestamps(newTimestamps);
                         try {
@@ -317,12 +317,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isClient || typeof window.OneSignal === 'undefined') return;
 
-    window.OneSignalDeferred.push(function(OneSignal) {
+    window.OneSignalDeferred.push(function(OneSignal: any) {
       console.log("[AppLayout] OneSignal SDK is ready or has been initialized via script.");
 
-      OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+      OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event: any) => {
         console.log("[AppLayout] OneSignal foregroundWillDisplay event:", event);
-        event.preventDefault(); 
+        event.preventDefault();
 
         const notification = event.notification;
         const inAppNotifData: Omit<InAppNotificationData, 'id'> = {
@@ -337,14 +337,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       });
 
       async function checkAndSubscribe() {
-        if (currentUser && userData) { 
-          const permission = OneSignal.Notifications.permission; 
+        if (currentUser && userData) {
+          const permission = OneSignal.Notifications.permission;
           const isOptedIn = OneSignal.User.PushSubscription.optedIn;
 
           if (permission === true && !isOptedIn) {
             console.log("[AppLayout] OneSignal: Permission granted but not opted-in. Attempting to subscribe...");
             try {
-              await subscribeUserToPush(); 
+              await subscribeUserToPush();
               console.log("[AppLayout] OneSignal: Successfully subscribed after permission check.");
             } catch (error) {
               console.error("[AppLayout] OneSignal: Error during auto-subscription attempt:", error);
@@ -361,29 +361,54 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       checkAndSubscribe();
     });
 
-    return () => {
-      if (typeof window.OneSignal !== 'undefined' && window.OneSignal.Notifications) {
-        console.log("[AppLayout] OneSignal foregroundWillDisplay listener cleanup would go here if API provided.");
-      }
-    };
   }, [isClient, currentUser, userData, showInAppNotification]);
 
-  // Listen for incoming calls
+  const handleAcceptCall = useCallback(async () => {
+    if (!activeIncomingCall) return;
+    setIsCallModalOpen(false);
+    try {
+        router.push(`/call/${activeIncomingCall.callId}`);
+        setActiveIncomingCall(null);
+    } catch (error) {
+        toast({ title: "Hata", description: "Çağrı kabul edilirken bir sorun oluştu.", variant: "destructive"});
+        console.error("Error accepting call:", error);
+        setActiveIncomingCall(null);
+    }
+  }, [activeIncomingCall, router, toast]);
+
+  const handleRejectCall = useCallback(async () => {
+    if (!activeIncomingCall) return;
+    try {
+      await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), {
+        status: "rejected",
+        updatedAt: serverTimestamp(),
+        endedReason: "callee_rejected",
+    });
+      toast({ title: "Çağrı Reddedildi", description: `${activeIncomingCall.callerName || 'Arayan kişi'} çağrısını reddettiniz.` });
+    } catch (error) {
+      toast({ title: "Hata", description: "Çağrı reddedilirken bir sorun oluştu.", variant: "destructive" });
+      console.error("Error rejecting call:", error);
+    } finally {
+        setIsCallModalOpen(false);
+        setActiveIncomingCall(null);
+    }
+  }, [activeIncomingCall, toast]);
+
   useEffect(() => {
     if (!currentUser?.uid) return;
 
     const callsQuery = query(
       collection(db, "directCalls"),
       where("calleeId", "==", currentUser.uid),
-      where("status", "in", ["initiating", "ringing"]), 
-      orderBy("createdAt", "desc") 
+      where("status", "in", ["initiating", "ringing"]),
+      orderBy("createdAt", "desc")
     );
 
     const unsubscribeCalls = onSnapshot(callsQuery, (snapshot) => {
       if (!snapshot.empty) {
-        const callDoc = snapshot.docs[0]; 
+        const callDoc = snapshot.docs[0];
         const callData = callDoc.data();
-        
+
         if (activeIncomingCall?.callId === callDoc.id && isCallModalOpen) return;
         if (pathname.startsWith(`/call/${callDoc.id}`)) return;
 
@@ -425,44 +450,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }, [currentUser?.uid, toast, activeIncomingCall, isCallModalOpen, pathname]);
 
 
-  const handleAcceptCall = async () => {
-    if (!activeIncomingCall) return;
-    setIsCallModalOpen(false);
-    try {
-        router.push(`/call/${activeIncomingCall.callId}`);
-        setActiveIncomingCall(null);
-    } catch (error) {
-        toast({ title: "Hata", description: "Çağrı kabul edilirken bir sorun oluştu.", variant: "destructive"});
-        console.error("Error accepting call:", error);
-        setActiveIncomingCall(null);
-    }
-  };
 
-  const handleRejectCall = async () => {
-    if (!activeIncomingCall) return;
-    try {
-      await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), { 
-        status: "rejected", 
-        updatedAt: serverTimestamp(),
-        endedReason: "callee_rejected",
-    });
-      toast({ title: "Çağrı Reddedildi", description: `${activeIncomingCall.callerName || 'Arayan kişi'} çağrısını reddettiniz.` });
-    } catch (error) {
-      toast({ title: "Hata", description: "Çağrı reddedilirken bir sorun oluştu.", variant: "destructive" });
-      console.error("Error rejecting call:", error);
-    } finally {
-        setIsCallModalOpen(false);
-        setActiveIncomingCall(null);
-    }
-  };
-
-
-
-  const setActionLoading = (id: string, isLoading: boolean) => {
+  const setActionLoading = useCallback((id: string, isLoading: boolean) => {
     setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
-  };
+  }, []);
 
-  const handleAcceptRequestPopover = async (request: FriendRequestForPopover) => {
+  const handleAcceptRequestPopover = useCallback(async (request: FriendRequestForPopover) => {
     if (!currentUser || !userData || !request.userProfile) {
       toast({ title: "Hata", description: "İstek kabul edilemedi, gönderen bilgileri eksik.", variant: "destructive" });
       return;
@@ -492,9 +485,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     } finally {
       setActionLoading(request.id, false);
     }
-  };
+  }, [currentUser, userData, toast, setActionLoading]);
 
-  const handleDeclineRequestPopover = async (requestId: string) => {
+  const handleDeclineRequestPopover = useCallback(async (requestId: string) => {
     setActionLoading(requestId, true);
     try {
       await deleteDoc(doc(db, "friendRequests", requestId));
@@ -505,20 +498,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     } finally {
       setActionLoading(requestId, false);
     }
-  };
+  }, [toast, setActionLoading]);
 
-  const getAvatarFallback = (name?: string | null) => {
+  const getAvatarFallback = useCallback((name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
     return "HW";
-  };
+  }, [currentUser?.email]);
 
   const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/');
   const mainContentClasses = cn(
     "flex-1 overflow-auto bg-background",
     isChatPage
-      ? "p-0"
-      : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]"
+      ? "p-0" // No padding for chat pages
+      : "px-4 md:px-6 pt-4 pb-[calc(theme(spacing.16)+theme(spacing.4))] sm:pb-[calc(theme(spacing.16)+theme(spacing.6))]" // Standard padding for others
   );
 
   return (
@@ -539,10 +532,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Popover>
               <PopoverTrigger asChild>
                 <div
-                  role="button" 
-                  tabIndex={0}  
+                  role="button"
+                  tabIndex={0}
                   className={cn(
-                    buttonVariants({ variant: "ghost", size: "icon" }), 
+                    buttonVariants({ variant: "ghost", size: "icon" }),
                     "rounded-full relative text-muted-foreground hover:text-foreground w-9 h-9 sm:w-10 sm:h-10 cursor-pointer flex items-center justify-center"
                   )}
                   aria-label="Arkadaşlık İstekleri"
@@ -631,11 +624,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
 
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
-      
+
       {isClient && activeIncomingCall && (
           <Dialog open={isCallModalOpen} onOpenChange={(isOpen) => {
-              if (!isOpen && activeIncomingCall) { 
-                  handleRejectCall(); 
+              if (!isOpen && activeIncomingCall) {
+                  handleRejectCall();
               }
               setIsCallModalOpen(isOpen);
               if (!isOpen) setActiveIncomingCall(null);
@@ -674,4 +667,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
