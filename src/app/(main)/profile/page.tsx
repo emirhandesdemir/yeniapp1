@@ -9,8 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star } from "lucide-react"; // Star ikonu eklendi
-import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star } from "lucide-react"; 
+import { useAuth, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ThemeSetting } from "@/contexts/ThemeContext";
@@ -54,7 +54,7 @@ const PREDEFINED_AVATARS = [
 
 
 export default function ProfilePage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen } = useAuth();
+  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen, isCurrentUserPremium } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
 
@@ -288,8 +288,7 @@ export default function ProfilePage() {
   }
 
   const displayPhotoUrlToShow = isEditing ? previewImage : (userData?.photoURL || currentUser?.photoURL || null);
-  const isPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' &&
-                    (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+  const isCurrentlyPremium = isCurrentUserPremium();
 
   return (
     <div className="space-y-6">
@@ -314,12 +313,15 @@ export default function ProfilePage() {
                 variant="outline"
                 size="icon"
                 className="absolute bottom-0 right-0 rounded-full h-8 w-8 sm:h-10 sm:w-10 bg-card hover:bg-muted shadow-md"
-                onClick={() => { }}
+                onClick={() => { }} // Bu butona tıklama olayı eklenmeli, örneğin avatar seçme modalı açabilir
                 aria-label="Avatar seç"
                 disabled={isUserLoading}
               >
                 <ImagePlus className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
+            )}
+            {!isEditing && isCurrentlyPremium && (
+                <Star className="absolute bottom-1 right-1 h-6 w-6 text-yellow-400 fill-yellow-500 bg-card p-1 rounded-full shadow-md" title="Premium Kullanıcı" />
             )}
           </div>
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
@@ -480,7 +482,7 @@ export default function ProfilePage() {
             <CardDescription>Mevcut premium abonelik durumunuz.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {isPremium ? (
+            {isCurrentlyPremium ? (
               <>
                 <p className="flex items-center gap-1.5">
                   Durum: <span className="font-semibold text-yellow-500 capitalize">{userData.premiumStatus} Premium</span>
@@ -497,7 +499,7 @@ export default function ProfilePage() {
             <div className="pt-2">
               <Button asChild className="w-full sm:w-auto">
                 <Link href="/store">
-                  {isPremium ? "Premium'u Yönet" : "Premium Paketleri Gör"}
+                  {isCurrentlyPremium ? "Premium'u Yönet" : "Premium Paketleri Gör"}
                 </Link>
               </Button>
             </div>
@@ -616,3 +618,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    

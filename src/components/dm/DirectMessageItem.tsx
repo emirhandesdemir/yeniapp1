@@ -4,6 +4,7 @@ import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
+import { Star } from 'lucide-react'; // Star eklendi
 
 interface DirectMessage {
   id: string;
@@ -11,6 +12,7 @@ interface DirectMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
+  senderIsPremium?: boolean; // Eklendi
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -20,6 +22,7 @@ interface DirectMessageItemProps {
   msg: DirectMessage;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
+  currentUserIsPremium?: boolean; // Eklendi
   getAvatarFallbackText: (name?: string | null) => string;
 }
 
@@ -27,16 +30,18 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   msg,
   currentUserPhotoURL,
   currentUserDisplayName,
+  currentUserIsPremium,
   getAvatarFallbackText,
 }) => {
   return (
     <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
       {!msg.isOwn && (
-          <Link href={`/profile/${msg.senderId}`} className="self-end mb-1">
+          <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 relative">
             <Avatar className="h-7 w-7">
                 <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                 <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
             </Avatar>
+            {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
           </Link>
       )}
       <div className={`flex flex-col max-w-[70%] sm:max-w-[65%]`}>
@@ -54,13 +59,18 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
           </p>
       </div>
       {msg.isOwn && (
-        <Avatar className="h-7 w-7 cursor-default self-end mb-1">
-            <AvatarImage src={currentUserPhotoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-            <AvatarFallback>{getAvatarFallbackText(currentUserDisplayName)}</AvatarFallback>
-        </Avatar>
+        <div className="relative self-end mb-1 cursor-default">
+            <Avatar className="h-7 w-7">
+                <AvatarImage src={currentUserPhotoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
+                <AvatarFallback>{getAvatarFallbackText(currentUserDisplayName)}</AvatarFallback>
+            </Avatar>
+            {currentUserIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+        </div>
       )}
     </div>
   );
 });
 DirectMessageItem.displayName = 'DirectMessageItem';
 export default DirectMessageItem;
+
+    

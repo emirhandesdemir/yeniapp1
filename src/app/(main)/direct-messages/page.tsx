@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone } from "lucide-react";
+import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone, Star } from "lucide-react"; // Star eklendi
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs } from "firebase/firestore";
@@ -18,23 +18,24 @@ import { tr } from 'date-fns/locale';
 import { generateDmChatId } from "@/lib/utils";
 
 interface DirectMessageConversation {
-  id: string; // dmChatId
+  id: string; 
   participantUids: string[];
   participantInfo: {
     [key: string]: {
       displayName: string | null;
       photoURL: string | null;
+      isPremium?: boolean; // Eklendi
     }
   };
   lastMessageTimestamp: Timestamp | null;
   lastMessageText?: string;
   lastMessageSenderId?: string;
-  otherParticipant?: UserData;
+  otherParticipant?: UserData; 
   unreadCount?: number;
 }
 
 export default function DirectMessagesPage() {
-  const { currentUser, userData, isUserLoading: isAuthLoading } = useAuth();
+  const { currentUser, userData, isUserLoading: isAuthLoading, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const [conversations, setConversations] = useState<DirectMessageConversation[]>([]);
@@ -79,6 +80,7 @@ export default function DirectMessagesPage() {
                 uid: otherUid,
                 displayName: data.participantInfo[otherUid].displayName,
                 photoURL: data.participantInfo[otherUid].photoURL,
+                isPremium: data.participantInfo[otherUid].isPremium || false, // Eklendi
                 email: null, 
                 diamonds: 0, 
                 createdAt: Timestamp.now(), 
@@ -134,6 +136,7 @@ export default function DirectMessagesPage() {
     }
     setPerformingCallAction(targetDmConv.id);
     const callId = doc(collection(db, "directCalls")).id;
+    const currentUserIsCurrentlyPremium = isCurrentUserPremium();
 
     try {
       const callDocRef = doc(db, "directCalls", callId);
@@ -142,9 +145,11 @@ export default function DirectMessagesPage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
+        callerIsPremium: currentUserIsCurrentlyPremium, // Eklendi
         calleeId: targetDmConv.otherParticipant.uid,
         calleeName: targetDmConv.otherParticipant.displayName,
         calleeAvatar: targetDmConv.otherParticipant.photoURL,
+        calleeIsPremium: targetDmConv.otherParticipant.isPremium, // Eklendi
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -157,7 +162,7 @@ export default function DirectMessagesPage() {
     } finally {
       setPerformingCallAction(null);
     }
-  }, [currentUser, userData, router, toast]);
+  }, [currentUser, userData, router, toast, isCurrentUserPremium]);
 
 
   if (isAuthLoading && !currentUser) {
@@ -239,10 +244,13 @@ export default function DirectMessagesPage() {
                   <li key={conv.id}>
                     <div className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
                       <Link href={`/dm/${conv.id}`} className="flex items-center gap-3 min-w-0 flex-grow">
-                        <Avatar className="h-10 w-10 sm:h-12 sm:w-12">
-                          <AvatarImage src={otherParticipant.photoURL || `https://placehold.co/48x48.png`} data-ai-hint="person avatar dm list"/>
-                          <AvatarFallback>{getAvatarFallback(otherParticipant.displayName)}</AvatarFallback>
-                        </Avatar>
+                        <div className="relative">
+                            <Avatar className="h-10 w-10 sm:h-12 sm:w-12">
+                            <AvatarImage src={otherParticipant.photoURL || `https://placehold.co/48x48.png`} data-ai-hint="person avatar dm list"/>
+                            <AvatarFallback>{getAvatarFallback(otherParticipant.displayName)}</AvatarFallback>
+                            </Avatar>
+                            {otherParticipant.isPremium && <Star className="absolute bottom-0 -right-1 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-sm sm:text-base truncate text-foreground">
                             {otherParticipant.displayName || "Bilinmeyen Kullanıcı"}
@@ -286,3 +294,5 @@ export default function DirectMessagesPage() {
     </div>
   );
 }
+
+    

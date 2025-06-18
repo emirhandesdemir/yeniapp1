@@ -16,10 +16,11 @@ import {
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction } from "firebase/firestore";
 import { useRouter } from 'next/navigation';
-import { Flame } from 'lucide-react';
+import { Flame, Star } from 'lucide-react'; // Star eklendi
 import { useToast } from '@/hooks/use-toast';
+import { isPast } from 'date-fns'; // isPast eklendi
 
-const INITIAL_DIAMONDS = 30; // Yeni kullanıcı başlangıç elması 30 olarak güncellendi.
+const INITIAL_DIAMONDS = 30;
 
 export interface PrivacySettings {
   postsVisibleToFriendsOnly?: boolean;
@@ -40,6 +41,7 @@ export interface UserData {
   privacySettings?: PrivacySettings;
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
+  isPremium?: boolean; // Dinamik olarak hesaplanacak veya Firestore'a eklenecek
   reportCount?: number;
   isBanned?: boolean;
 }
@@ -50,6 +52,7 @@ interface AuthContextType {
   loading: boolean;
   isUserLoading: boolean;
   isUserDataLoading: boolean;
+  isCurrentUserPremium: () => boolean; // isPremium kontrol fonksiyonu eklendi
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
@@ -86,9 +89,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
   const { toast } = useToast();
 
-  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
+  const isCurrentUserPremium = useCallback(() => {
+    if (!userData) return false;
+    return userData.premiumStatus !== 'none' && userData.premiumStatus !== undefined &&
+           (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+  }, [userData]);
+
+  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş', isGoogleSignUp: boolean = false) => {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = user.photoURL;
+    
+    const currentPremiumStatus = isGoogleSignUp ? 'none' : 'none'; // Google ile kayıtta başlangıçta premium yok
+    const currentPremiumExpiryDate = null;
+    const dynamicIsPremium = currentPremiumStatus !== 'none' && (!currentPremiumExpiryDate || !isPast(currentPremiumExpiryDate.toDate()));
+
     const dataToSetForLog: Partial<UserData> & {createdAt: string} = {
       uid: user.uid,
       email: user.email,
@@ -104,22 +118,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
         activeRoomsVisibleToFriendsOnly: false,
         feedShowsEveryone: true,
       },
-      premiumStatus: 'none',
-      premiumExpiryDate: null,
+      premiumStatus: currentPremiumStatus,
+      premiumExpiryDate: currentPremiumExpiryDate,
+      isPremium: dynamicIsPremium,
       reportCount: 0,
       isBanned: false,
     };
     console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
 
     try {
-        const dataToSave: UserData = {
+        const dataToSave: Omit<UserData, 'createdAt'> & { createdAt: Timestamp } = { // createdAt Firestore.Timestamp olmalı
             uid: user.uid,
             email: user.email,
             displayName: username || user.displayName,
             photoURL: initialPhotoURL,
             diamonds: INITIAL_DIAMONDS,
             role: "user",
-            createdAt: serverTimestamp() as Timestamp,
+            // createdAt: serverTimestamp() as Timestamp, // Bu satır doğrudan kullanılamaz setDoc içinde.
             bio: "",
             gender: gender || "belirtilmemiş",
             privacySettings: {
@@ -127,23 +142,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 activeRoomsVisibleToFriendsOnly: false,
                 feedShowsEveryone: true,
             },
-            premiumStatus: 'none',
-            premiumExpiryDate: null,
+            premiumStatus: currentPremiumStatus,
+            premiumExpiryDate: currentPremiumExpiryDate,
+            isPremium: dynamicIsPremium,
             reportCount: 0,
             isBanned: false,
         };
-        await setDoc(userDocRef, dataToSave);
+        await setDoc(userDocRef, { ...dataToSave, createdAt: serverTimestamp() }); // serverTimestamp burada kullanılır.
         console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
 
         const docSnap = await getDoc(userDocRef);
         if (docSnap.exists()) {
-            console.log(`[AuthContext] User document for ${user.uid} confirmed exists after createUserDocument. Data:`, docSnap.data());
-            setUserData(docSnap.data() as UserData);
+            const fetchedData = docSnap.data() as UserData;
+            const finalUserData = {
+                ...fetchedData,
+                isPremium: fetchedData.premiumStatus !== 'none' && fetchedData.premiumStatus !== undefined &&
+                           (!fetchedData.premiumExpiryDate || !isPast(fetchedData.premiumExpiryDate.toDate()))
+            };
+            console.log(`[AuthContext] User document for ${user.uid} confirmed exists after createUserDocument. Data:`, finalUserData);
+            setUserData(finalUserData);
         } else {
             console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc in createUserDocument. Using fallback with client-side timestamp.`);
             const fallbackUserData: UserData = {
                 ...dataToSave,
-                createdAt: Timestamp.now(),
+                createdAt: Timestamp.now(), // Fallback
             };
             setUserData(fallbackUserData);
              toast({
@@ -178,6 +200,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 }
 
                 console.log(`[AuthContext] User document found for ${user.uid}. Data:`, existingData);
+                const dynamicIsPremium = existingData.premiumStatus !== 'none' && existingData.premiumStatus !== undefined &&
+                                       (!existingData.premiumExpiryDate || !isPast(existingData.premiumExpiryDate.toDate()));
                 const updatedData: UserData = {
                     ...existingData,
                     displayName: existingData.displayName !== undefined ? existingData.displayName : (user.displayName || null),
@@ -194,6 +218,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     },
                     premiumStatus: existingData.premiumStatus ?? 'none',
                     premiumExpiryDate: existingData.premiumExpiryDate ?? null,
+                    isPremium: dynamicIsPremium,
                     reportCount: existingData.reportCount ?? 0,
                     isBanned: existingData.isBanned ?? false,
                 };
@@ -201,16 +226,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 let needsFirestoreUpdate = false;
                 if (updatedData.displayName !== existingData.displayName || 
                     updatedData.photoURL !== existingData.photoURL ||
-                    updatedData.email !== existingData.email) {
+                    updatedData.email !== existingData.email ||
+                    updatedData.isPremium !== existingData.isPremium // isPremium da senkronize edilebilir
+                    ) {
                     needsFirestoreUpdate = true;
                 }
                 
                 if (needsFirestoreUpdate) {
-                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo for ${user.uid} to Firestore.`);
+                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo/isPremium for ${user.uid} to Firestore.`);
                     await updateDoc(userDocRef, {
                         displayName: updatedData.displayName,
                         photoURL: updatedData.photoURL,
                         email: updatedData.email,
+                        isPremium: updatedData.isPremium, // Firestore'a isPremium ekle
                     }).catch(err => console.error("Error syncing auth profile to firestore:", err));
                 }
                 setUserData(updatedData);
@@ -248,7 +276,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log(`[AuthContext] Firebase Auth user created: ${userCredential.user.uid}. Updating profile...`);
       await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
       console.log(`[AuthContext] Firebase Auth profile updated for ${userCredential.user.uid}. Creating user document...`);
-      await createUserDocument(userCredential.user, username, gender);
+      await createUserDocument(userCredential.user, username, gender, false);
       console.log(`[AuthContext] User document process finished for ${userCredential.user.uid}. Navigating to /`);
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
@@ -310,7 +338,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
         console.log(`[AuthContext] User document for Google user ${user.uid} does not exist. Calling createUserDocument.`);
-        await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
+        await createUserDocument(user, user.displayName || undefined, "belirtilmemiş", true);
       } else {
         const firestoreData = docSnap.data() as UserData;
          if (firestoreData.isBanned) {
@@ -321,7 +349,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
             return;
         }
         console.log(`[AuthContext] User document for Google user ${user.uid} already exists. Data:`, firestoreData);
-        const updatesToFirestore: Partial<UserData> = {};
+        const dynamicIsPremium = firestoreData.premiumStatus !== 'none' && firestoreData.premiumStatus !== undefined &&
+                               (!firestoreData.premiumExpiryDate || !isPast(firestoreData.premiumExpiryDate.toDate()));
+
+        const updatesToFirestore: Partial<UserData> = {
+            isPremium: dynamicIsPremium,
+        };
         const currentPrivacySettings = firestoreData.privacySettings || {};
         updatesToFirestore.privacySettings = {
             postsVisibleToFriendsOnly: currentPrivacySettings.postsVisibleToFriendsOnly ?? false,
@@ -355,6 +388,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (updatesToFirestore.photoURL && updatesToFirestore.photoURL !== firestoreData.photoURL) needsUpdate = true;
         if (updatesToFirestore.bio !== undefined && updatesToFirestore.bio !== firestoreData.bio) needsUpdate = true;
         if (updatesToFirestore.gender !== undefined && updatesToFirestore.gender !== firestoreData.gender) needsUpdate = true;
+        if (updatesToFirestore.isPremium !== firestoreData.isPremium) needsUpdate = true;
         
         if (updatesToFirestore.privacySettings && (
                 updatesToFirestore.privacySettings.postsVisibleToFriendsOnly !== (firestoreData.privacySettings?.postsVisibleToFriendsOnly ?? false) ||
@@ -373,7 +407,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setUserData({ ...firestoreData, ...updatesToFirestore });
         } else {
             console.log("[AuthContext] Google sign-in: No Firestore document update needed.");
-            setUserData(firestoreData);
+            setUserData({...firestoreData, isPremium: dynamicIsPremium});
         }
       }
       console.log(`[AuthContext] Google sign-in process complete for ${user.uid}. Navigating to /`);
@@ -563,7 +597,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         transaction.update(reportedUserRef, updates);
       });
       
-      if (userData && reportedUserId === userData.uid) {
+      if (userData && reportedUserId === userData.uid) { // Bu blok muhtemelen gereksiz, şikayet eden kendi verisini güncellemez.
          setUserData(prev => prev ? {...prev, reportCount: newReportCount, isBanned: shouldBeBanned || prev.isBanned} : null);
       }
 
@@ -616,7 +650,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [currentUser, toast]);
 
 
-  if (loading || (currentUser && isUserDataLoading && !(userData && userData.uid === currentUser.uid && userData.isBanned))) {
+  if (loading || (currentUser && isUserDataLoading && !(userData && userData.uid === currentUser.uid && !userData.isBanned))) {
+    // Ban kontrolü için `!userData.isBanned` eklendi. Eğer banlıysa yükleme ekranında takılı kalmasın.
+    // Zaten onAuthStateChanged içinde banlıysa logout ediliyor.
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-4">
@@ -639,6 +675,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     loading,
     isUserLoading,
     isUserDataLoading,
+    isCurrentUserPremium,
     signUp,
     logIn,
     logOut,
@@ -666,3 +703,11 @@ export interface FriendRequest {
   createdAt: Timestamp;
 }
 
+// Helper function to check premium status, can be used in other components if UserData is available
+export const checkUserPremium = (user: UserData | null): boolean => {
+  if (!user) return false;
+  return user.premiumStatus !== 'none' && user.premiumStatus !== undefined &&
+         (!user.premiumExpiryDate || !isPast(user.premiumExpiryDate.toDate()));
+};
+
+    

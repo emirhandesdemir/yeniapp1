@@ -3,8 +3,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw } from "lucide-react";
-import { useAuth } from '@/contexts/AuthContext';
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star } from "lucide-react"; // Star eklendi
+import { useAuth, checkUserPremium } from '@/contexts/AuthContext'; // checkUserPremium eklendi
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,7 +81,7 @@ const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
 const POSTS_FETCH_LIMIT = 10;
 const ROOMS_FETCH_LIMIT = 3;
-const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000; // 2 minutes
+const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000; 
 
 export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (ChatRoomFeedDisplayData & { feedItemType: 'room' });
 
@@ -139,7 +139,7 @@ export default function HomePage() {
       clearTimeout(refreshButtonTimerRef.current);
     }
     refreshButtonTimerRef.current = setTimeout(() => {
-      if (!isLoadingFeed && !isRefreshingFeed) { // Only show if not currently loading
+      if (!isLoadingFeed && !isRefreshingFeed) { 
         setShowRefreshButton(true);
       }
     }, REFRESH_BUTTON_TIMER_MS);
@@ -155,14 +155,11 @@ export default function HomePage() {
 
     if (isManualRefresh) {
       setIsRefreshingFeed(true);
-    } else if (combinedFeedItems.length === 0 || !isManualRefresh && isLoadingFeed) { 
-      // If it's the very first load or a programmatic refresh that's not manual (like after posting)
-      // and isLoadingFeed was already true (from initial mount), keep it.
-      // Otherwise, if list is empty, it's an initial load.
+    } else {
       setIsLoadingFeed(true);
     }
     
-    setShowRefreshButton(false); // Hide button during fetch
+    setShowRefreshButton(false); 
     if (refreshButtonTimerRef.current) {
       clearTimeout(refreshButtonTimerRef.current);
     }
@@ -180,6 +177,7 @@ export default function HomePage() {
       const roomsQuery = query(
         collection(db, "chatRooms"),
         where("expiresAt", ">", now),
+        //orderBy("isPremiumRoom", "desc"), // Önce premium odaları göstermek için eklenebilir
         orderBy("expiresAt", "asc"),
         orderBy("participantCount", "desc"),
         limit(ROOMS_FETCH_LIMIT)
@@ -196,6 +194,8 @@ export default function HomePage() {
             participantCount: roomData.participantCount,
             maxParticipants: roomData.maxParticipants,
             createdAt: roomData.createdAt as Timestamp,
+            isPremiumRoom: roomData.isPremiumRoom || false, // isPremiumRoom eklendi
+            creatorIsPremium: roomData.creatorIsPremium || false, // creatorIsPremium eklendi
           } as ChatRoomFeedDisplayData);
         }
       });
@@ -206,9 +206,9 @@ export default function HomePage() {
     } finally {
       setIsLoadingFeed(false);
       setIsRefreshingFeed(false);
-      startRefreshButtonTimer(); // Restart timer after fetch
+      startRefreshButtonTimer(); 
     }
-  }, [currentUser, startRefreshButtonTimer, combinedFeedItems.length, isLoadingFeed]);
+  }, [currentUser, startRefreshButtonTimer]);
 
   useEffect(() => {
     if (currentUser) {
@@ -218,7 +218,7 @@ export default function HomePage() {
       setCombinedFeedItems([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, [currentUser]); // fetchFeedItems is memoized, only run on currentUser change
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser && userData?.privacySettings?.feedShowsEveryone === false) {
@@ -257,6 +257,13 @@ export default function HomePage() {
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
     const combined = [...postItems, ...roomItems].sort((a, b) => {
+        // Premium odaları ve premium kullanıcıların gönderilerini üste taşıma
+        const aIsPremiumContent = (a.feedItemType === 'room' && (a as ChatRoomFeedDisplayData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium);
+        const bIsPremiumContent = (b.feedItemType === 'room' && (b as ChatRoomFeedDisplayData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium);
+
+        if (aIsPremiumContent && !bIsPremiumContent) return -1;
+        if (!aIsPremiumContent && bIsPremiumContent) return 1;
+        
         const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
         const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
         return timeB - timeA; 
@@ -275,10 +282,10 @@ export default function HomePage() {
 
   const handleRefreshClick = useCallback(() => {
     if (isRefreshingFeed) return;
-    fetchFeedItems(true); // Pass true for manual refresh
+    fetchFeedItems(true); 
   }, [isRefreshingFeed, fetchFeedItems]);
 
-  if (authLoading || (currentUser && isUserDataLoading && !userData)) { // Check if userData is also loaded
+  if (authLoading || (currentUser && isUserDataLoading && !userData)) { 
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-6">
@@ -296,6 +303,7 @@ export default function HomePage() {
 
   if (currentUser && userData) {
     const greetingName = userData?.displayName || currentUser?.displayName || "Kullanıcı";
+    const userIsCurrentlyPremium = checkUserPremium(userData);
     
     return (
       <AppLayout>
@@ -319,6 +327,7 @@ export default function HomePage() {
                       <div>
                         <CardTitle className="text-lg sm:text-xl font-semibold text-foreground">
                           Merhaba, {greetingName}!
+                          {userIsCurrentlyPremium && <Star className="inline h-5 w-5 ml-1.5 text-yellow-400" />}
                         </CardTitle>
                         <CardDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                           Topluluğa hoş geldin. Yeni keşifler seni bekliyor!
@@ -382,18 +391,18 @@ export default function HomePage() {
               <div className="p-6 pt-4">
                 <CreatePostForm onPostCreated={() => {
                     setIsCreatePostDialogOpen(false);
-                    fetchFeedItems(); 
+                    fetchFeedItems(true); 
                 }} />
               </div>
             </DialogContent>
           </Dialog>
           
           {showRefreshButton && !isLoadingFeed && !isRefreshingFeed && (
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="my-3">
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="my-3 sticky top-[calc(3.5rem+0.75rem)] sm:top-[calc(3.5rem+1rem)] z-20">
               <Button
                 onClick={handleRefreshClick}
                 variant="outline"
-                className="w-full py-2.5 text-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-sm rounded-full"
+                className="w-full py-2.5 text-sm bg-card/80 dark:bg-background/80 backdrop-blur-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-md rounded-full"
                 disabled={isRefreshingFeed || isLoadingFeed}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
@@ -456,7 +465,7 @@ export default function HomePage() {
                 if (item.feedItemType === 'post') {
                   return (
                     <motion.div 
-                        key={`post-${item.id}-${item.createdAt?.seconds || index}`} 
+                        key={`post-${item.id}-${(item.createdAt as Timestamp)?.seconds || index}`} 
                         custom={index}
                         variants={feedItemEntryVariants}
                         initial="hidden"
@@ -468,7 +477,7 @@ export default function HomePage() {
                 } else if (item.feedItemType === 'room') {
                   return (
                     <motion.div 
-                        key={`room-${item.id}-${item.createdAt?.seconds || index}`}
+                        key={`room-${item.id}-${(item.createdAt as Timestamp)?.seconds || index}`}
                         custom={index}
                         variants={feedItemEntryVariants}
                         initial="hidden"
@@ -503,3 +512,4 @@ export default function HomePage() {
   );
 }
 
+    

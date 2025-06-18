@@ -4,7 +4,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, Timestamp, doc, updateDoc, query, orderBy, runTransaction } from "firebase/firestore";
-import { useAuth, type UserData } from "@/contexts/AuthContext";
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -59,10 +59,14 @@ export default function AdminUsersContent() {
         const usersCollectionRef = collection(db, "users");
         const q = query(usersCollectionRef, orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
-        const usersList = querySnapshot.docs.map(docSnapshot => ({
-          uid: docSnapshot.id,
-          ...docSnapshot.data(),
-        } as UserData));
+        const usersList = querySnapshot.docs.map(docSnapshot => {
+          const userData = docSnapshot.data() as UserData;
+          return {
+            uid: docSnapshot.id,
+            ...userData,
+            isPremium: checkUserPremium(userData), // isPremium eklendi
+          } as UserData;
+        });
         setUsers(usersList);
       } catch (error) {
         console.error("Error fetching users:", error);
@@ -159,14 +163,17 @@ export default function AdminUsersContent() {
       } else if (newPremiumStatus === 'monthly') {
         newExpiryDate = Timestamp.fromDate(addDays(new Date(), 30));
       }
+      
+      const newIsPremium = newPremiumStatus !== 'none' && (!newExpiryDate || !isPast(newExpiryDate.toDate()));
 
       await updateDoc(userDocRef, {
         premiumStatus: newPremiumStatus,
-        premiumExpiryDate: newExpiryDate
+        premiumExpiryDate: newExpiryDate,
+        isPremium: newIsPremium, // isPremium da güncelleniyor
       });
 
       setUsers(prevUsers => prevUsers.map(u =>
-        u.uid === selectedUser.uid ? { ...u, premiumStatus: newPremiumStatus, premiumExpiryDate: newExpiryDate } : u
+        u.uid === selectedUser.uid ? { ...u, premiumStatus: newPremiumStatus, premiumExpiryDate: newExpiryDate, isPremium: newIsPremium } : u
       ));
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının premium durumu güncellendi.` });
       setIsEditPremiumDialogOpen(false);
@@ -186,13 +193,9 @@ export default function AdminUsersContent() {
       const userDocRef = doc(db, "users", selectedUser.uid);
       const updates: Partial<UserData> = {
         isBanned: moderateUserIsBanned,
-        reportCount: moderateUserIsBanned ? selectedUser.reportCount : moderateUserReportCount // Ban kaldırılırsa şikayet sayısı da güncellenebilir
+        reportCount: moderateUserIsBanned ? selectedUser.reportCount : moderateUserReportCount 
       };
-      // Eğer ban kaldırılıyorsa ve admin şikayet sayısını sıfırlamak istiyorsa (bu UI'da henüz yok ama mantık eklenebilir)
-      // if (!moderateUserIsBanned && /* resetReportCountCheckbox.checked */ false) {
-      // updates.reportCount = 0;
-      // }
-
+      
       await updateDoc(userDocRef, updates);
       setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, ...updates } : u));
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının moderasyon durumu güncellendi.` });
@@ -285,10 +288,13 @@ export default function AdminUsersContent() {
                   {users.map((user) => (
                     <TableRow key={user.uid} className={user.isBanned ? 'bg-destructive/10' : ''}>
                       <TableCell>
-                        <Avatar className="h-9 w-9 sm:h-10 sm:w-10 rounded-md">
-                          <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar list" />
-                          <AvatarFallback>{getAvatarFallbackText(user.displayName, user.email)}</AvatarFallback>
-                        </Avatar>
+                        <div className="relative">
+                            <Avatar className="h-9 w-9 sm:h-10 sm:w-10 rounded-md">
+                            <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar list" />
+                            <AvatarFallback>{getAvatarFallbackText(user.displayName, user.email)}</AvatarFallback>
+                            </Avatar>
+                            {user.isPremium && <Star className="absolute -bottom-1 -right-1 h-3.5 w-3.5 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow-sm" />}
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium text-sm">{user.displayName || "İsimsiz"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{user.email}</TableCell>
@@ -304,10 +310,10 @@ export default function AdminUsersContent() {
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge
-                          variant={user.premiumStatus && user.premiumStatus !== 'none' ? 'default' : 'outline'}
-                          className={user.premiumStatus && user.premiumStatus !== 'none' ? 'bg-yellow-500 text-black dark:text-yellow-950 text-xs' : 'text-xs'}
+                          variant={user.isPremium ? 'default' : 'outline'}
+                          className={user.isPremium ? 'bg-yellow-500 text-black dark:text-yellow-950 text-xs' : 'text-xs'}
                         >
-                          {user.premiumStatus === 'weekly' ? 'Haftalık' : user.premiumStatus === 'monthly' ? 'Aylık' : 'Yok'}
+                          {user.isPremium ? (user.premiumStatus === 'weekly' ? 'Haftalık' : user.premiumStatus === 'monthly' ? 'Aylık' : 'Evet') : 'Yok'}
                         </Badge>
                       </TableCell>
                        <TableCell className="text-center">
@@ -503,7 +509,7 @@ export default function AdminUsersContent() {
                   type="number"
                   value={moderateUserReportCount}
                   onChange={(e) => setModerateUserReportCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  disabled={processingAction || moderateUserIsBanned} // Banlı ise şikayet sayısı değiştirilemez
+                  disabled={processingAction || moderateUserIsBanned} 
                   className="h-9"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -527,3 +533,5 @@ export default function AdminUsersContent() {
     </div>
   );
 }
+
+    

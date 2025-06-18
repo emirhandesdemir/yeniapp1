@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star } from "lucide-react"; // Star eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -24,7 +24,7 @@ import {
   getDocs,
   setDoc
 } from "firebase/firestore";
-import { useAuth, type UserData } from "@/contexts/AuthContext";
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId } from "@/lib/utils";
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
@@ -42,6 +42,7 @@ interface DirectMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
+  senderIsPremium?: boolean; // Eklendi
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -52,6 +53,7 @@ interface DmPartnerDetails {
   displayName: string | null;
   photoURL: string | null;
   email?: string | null;
+  isPremium?: boolean; // Eklendi
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500;
@@ -67,7 +69,7 @@ export default function DirectMessagePage() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { currentUser, userData, isUserLoading, reportUser, blockUser } = useAuth();
+  const { currentUser, userData, isUserLoading, reportUser, blockUser, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -103,6 +105,7 @@ export default function DirectMessagePage() {
                 displayName: partnerData.displayName,
                 photoURL: partnerData.photoURL,
                 email: partnerData.email,
+                isPremium: checkUserPremium(partnerData), // isPremium eklendi
                 });
                 document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
             } else {
@@ -117,7 +120,6 @@ export default function DirectMessagePage() {
         }
     };
     fetchPartnerDetails();
-    // onSnapshot yerine getDoc kullandığımız için useEffect'in return'ünde unsubscribe'a gerek yok.
   }, [chatId, currentUser?.uid, toast, router]);
 
 
@@ -135,6 +137,7 @@ export default function DirectMessagePage() {
           senderId: data.senderId,
           senderName: data.senderName,
           senderAvatar: data.senderAvatar,
+          senderIsPremium: data.senderIsPremium || false, // Eklendi
           timestamp: data.timestamp,
         });
       });
@@ -190,6 +193,7 @@ export default function DirectMessagePage() {
 
     setIsSending(true);
     const tempMessage = newMessage.trim();
+    const userIsCurrentlyPremium = isCurrentUserPremium();
 
     try {
       const dmChatDocRef = doc(db, "directMessages", chatId);
@@ -208,17 +212,34 @@ export default function DirectMessagePage() {
             [currentUser.uid]: {
               displayName: userData.displayName,
               photoURL: userData.photoURL,
+              isPremium: userIsCurrentlyPremium, // Eklendi
             },
             [dmPartnerDetails.uid]: {
               displayName: dmPartnerDetails.displayName,
               photoURL: dmPartnerDetails.photoURL,
+              isPremium: dmPartnerDetails.isPremium, // Eklendi
             },
           },
           createdAt: serverTimestamp(),
           ...messageDataForParentDoc
         });
       } else {
-         await setDoc(dmChatDocRef, messageDataForParentDoc, { merge: true });
+         // ParticipantInfo'yu da güncelleyebiliriz, özellikle premium durumu değişmişse
+         const existingData = dmChatDocSnap.data();
+         const updatedParticipantInfo = {
+            ...(existingData?.participantInfo || {}),
+            [currentUser.uid]: {
+                displayName: userData.displayName,
+                photoURL: userData.photoURL,
+                isPremium: userIsCurrentlyPremium,
+            },
+            [dmPartnerDetails.uid]: {
+                displayName: dmPartnerDetails.displayName,
+                photoURL: dmPartnerDetails.photoURL,
+                isPremium: dmPartnerDetails.isPremium,
+            }
+         };
+         await setDoc(dmChatDocRef, { ...messageDataForParentDoc, participantInfo: updatedParticipantInfo }, { merge: true });
       }
 
       await addDoc(collection(db, `directMessages/${chatId}/messages`), {
@@ -226,6 +247,7 @@ export default function DirectMessagePage() {
         senderId: currentUser.uid,
         senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL,
+        senderIsPremium: userIsCurrentlyPremium, // Eklendi
         timestamp: serverTimestamp(),
       });
       setNewMessage("");
@@ -235,7 +257,7 @@ export default function DirectMessagePage() {
     } finally {
       setIsSending(false);
     }
-  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast]);
+  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast, isCurrentUserPremium]);
 
   const handleVoiceCall = useCallback(async () => {
     if (!currentUser || !userData || !dmPartnerDetails) {
@@ -243,6 +265,7 @@ export default function DirectMessagePage() {
       return;
     }
     const callId = doc(collection(db, "directCalls")).id;
+    const currentUserIsCurrentlyPremium = isCurrentUserPremium();
     try {
       const callDocRef = doc(db, "directCalls", callId);
       await setDoc(callDocRef, {
@@ -250,9 +273,11 @@ export default function DirectMessagePage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
+        callerIsPremium: currentUserIsCurrentlyPremium, // Eklendi
         calleeId: dmPartnerDetails.uid,
         calleeName: dmPartnerDetails.displayName,
         calleeAvatar: dmPartnerDetails.photoURL,
+        calleeIsPremium: dmPartnerDetails.isPremium, // Eklendi
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -263,7 +288,7 @@ export default function DirectMessagePage() {
       console.error("Error initiating call from DM header:", error);
       toast({ title: "Arama Hatası", description: "Arama başlatılırken bir sorun oluştu.", variant: "destructive" });
     }
-  }, [currentUser, userData, dmPartnerDetails, router, toast]);
+  }, [currentUser, userData, dmPartnerDetails, router, toast, isCurrentUserPremium]);
 
   const handleVideoCall = useCallback(() => {
     toast({
@@ -294,6 +319,8 @@ export default function DirectMessagePage() {
     );
   }
 
+  const userIsCurrentlyPremium = isCurrentUserPremium();
+
   return (
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
@@ -304,11 +331,12 @@ export default function DirectMessagePage() {
                 <span className="sr-only">Geri</span>
             </Link>
             </Button>
-            <Link href={`/profile/${dmPartnerDetails.uid}`} className="flex items-center gap-2 min-w-0">
+            <Link href={`/profile/${dmPartnerDetails.uid}`} className="flex items-center gap-2 min-w-0 relative">
                 <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
                     <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
                     <AvatarFallback>{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
                 </Avatar>
+                {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-6 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />}
                 <div className="flex-1 min-w-0">
                     <h2 className="text-sm sm:text-base font-semibold text-foreground hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
                 </div>
@@ -366,6 +394,7 @@ export default function DirectMessagePage() {
                 msg={msg}
                 currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
                 currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
+                currentUserIsPremium={userIsCurrentlyPremium}
                 getAvatarFallbackText={getAvatarFallbackText}
               />
             ))}
@@ -401,3 +430,5 @@ export default function DirectMessagePage() {
     </div>
   );
 }
+
+    

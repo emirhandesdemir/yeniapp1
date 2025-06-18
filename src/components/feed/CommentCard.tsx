@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Timestamp, doc, deleteDoc, updateDoc, increment } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { Trash2, Loader2 } from "lucide-react";
+import { Trash2, Loader2, Star } from "lucide-react"; // Star eklendi
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,7 @@ export interface CommentData {
   userId: string;
   username: string | null;
   userAvatar: string | null;
+  commenterIsPremium?: boolean; // Eklendi
   content: string;
   createdAt: Timestamp;
 }
@@ -70,11 +71,14 @@ const CommentCard: React.FC<CommentCardProps> = React.memo(({ comment, postId, o
 
   return (
     <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-muted/30 dark:bg-muted/20 border border-border/50">
-      <Link href={`/profile/${comment.userId}`} className="flex-shrink-0 mt-0.5">
+      <Link href={`/profile/${comment.userId}`} className="flex-shrink-0 mt-0.5 relative">
         <Avatar className="h-8 w-8">
           <AvatarImage src={comment.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="user avatar comment" />
           <AvatarFallback>{getAvatarFallbackText(comment.username)}</AvatarFallback>
         </Avatar>
+        {comment.commenterIsPremium && (
+            <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-muted/70 p-px rounded-full shadow" />
+        )}
       </Link>
       <div className="flex-1">
         <div className="flex items-center justify-between">
@@ -106,3 +110,5 @@ const CommentCard: React.FC<CommentCardProps> = React.memo(({ comment, postId, o
 });
 CommentCard.displayName = 'CommentCard';
 export default CommentCard;
+
+    

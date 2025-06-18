@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone } from "lucide-react";
-import { useAuth, type UserData } from "@/contexts/AuthContext";
+import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone, Star } from "lucide-react"; // Star eklendi
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -34,6 +34,7 @@ import { useRouter } from "next/navigation";
 
 interface Friend extends UserData {
   addedAt?: Timestamp;
+  isPremium?: boolean; // Eklendi
 }
 
 interface SearchResultUser extends UserData {
@@ -41,10 +42,11 @@ interface SearchResultUser extends UserData {
   isRequestSent?: boolean;
   isRequestReceived?: boolean;
   outgoingRequestId?: string | null;
+  isPremium?: boolean; // Eklendi
 }
 
 export default function FriendsPage() {
-  const { currentUser, userData, isUserLoading: isAuthLoading } = useAuth();
+  const { currentUser, userData, isUserLoading: isAuthLoading, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -69,7 +71,7 @@ export default function FriendsPage() {
     setLoadingFriends(true);
     try {
       const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-      const q = query(friendsRef); // Optionally, order by addedAt if needed
+      const q = query(friendsRef); 
       const snapshot = await getDocs(q);
 
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
@@ -77,23 +79,27 @@ export default function FriendsPage() {
         try {
             const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
             if (userProfileDoc.exists()) {
+            const profile = userProfileDoc.data() as UserData;
             return {
                 uid: friendDoc.id,
-                ...userProfileDoc.data(),
+                ...profile,
+                isPremium: checkUserPremium(profile), // isPremium eklendi
                 addedAt: friendData.addedAt
             } as Friend;
             }
         } catch (error) {
             console.error("Error fetching profile for friend:", friendDoc.id, error);
         }
+        // Fallback if full profile fetch fails
         return {
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
           photoURL: friendData.photoURL || null,
-          email: friendData.email || null,
-          diamonds: friendData.diamonds || 0,
-          role: friendData.role || 'user',
-          createdAt: friendData.addedAt || Timestamp.now(),
+          email: friendData.email || null, // Bu alan normalde friendData'da olmaz, ancak UserData tipi için ekliyoruz.
+          diamonds: friendData.diamonds || 0, // Bu da friendData'da olmayabilir.
+          role: friendData.role || 'user', // Bu da.
+          createdAt: friendData.addedAt || Timestamp.now(), // createdAt yerine addedAt kullanalım.
+          isPremium: friendData.isPremium || false, // Eklendi
           addedAt: friendData.addedAt
         } as Friend;
       });
@@ -140,7 +146,7 @@ export default function FriendsPage() {
       const processedResults: SearchResultUser[] = [];
 
       for (const user of rawResults) {
-        let processedUser: SearchResultUser = { ...user };
+        let processedUser: SearchResultUser = { ...user, isPremium: checkUserPremium(user) }; // isPremium eklendi
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
 
         if (!processedUser.isFriend) {
@@ -186,11 +192,13 @@ export default function FriendsPage() {
   const handleSendFriendRequest = useCallback(async (targetUser: SearchResultUser) => {
     if (!currentUser || !userData || !targetUser.uid || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived) return;
     setActionLoading(targetUser.uid, true);
+    const currentUserIsCurrentlyPremium = isCurrentUserPremium();
     try {
       const newRequestRef = await addDoc(collection(db, "friendRequests"), {
         fromUserId: currentUser.uid,
         fromUsername: userData.displayName,
         fromAvatarUrl: userData.photoURL,
+        fromUserIsPremium: currentUserIsCurrentlyPremium, // Eklendi
         toUserId: targetUser.uid,
         toUsername: targetUser.displayName,
         toAvatarUrl: targetUser.photoURL,
@@ -207,7 +215,7 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(targetUser.uid, false);
     }
-  }, [currentUser, userData, toast, setActionLoading]);
+  }, [currentUser, userData, toast, setActionLoading, isCurrentUserPremium]);
 
   const handleCancelOutgoingRequest = useCallback(async (targetUser: SearchResultUser) => {
     if (!currentUser || !targetUser.outgoingRequestId) {
@@ -261,7 +269,7 @@ export default function FriendsPage() {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
-      fetchFriends(); // Refresh friends list after removal
+      fetchFriends(); 
       setSearchResults(prevResults => prevResults.map(sr =>
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
       ));
@@ -280,6 +288,7 @@ export default function FriendsPage() {
     }
     setActionLoading(`call-${targetFriend.uid}`, true);
     const callId = doc(collection(db, "directCalls")).id;
+    const currentUserIsCurrentlyPremium = isCurrentUserPremium();
 
     try {
       const callDocRef = doc(db, "directCalls", callId);
@@ -288,9 +297,11 @@ export default function FriendsPage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
+        callerIsPremium: currentUserIsCurrentlyPremium, // Eklendi
         calleeId: targetFriend.uid,
         calleeName: targetFriend.displayName,
         calleeAvatar: targetFriend.photoURL,
+        calleeIsPremium: targetFriend.isPremium, // Eklendi
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -303,7 +314,7 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(`call-${targetFriend.uid}`, false);
     }
-  }, [currentUser, userData, router, toast, setActionLoading]);
+  }, [currentUser, userData, router, toast, setActionLoading, isCurrentUserPremium]);
 
   const getAvatarFallback = useCallback((name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "??";
@@ -357,10 +368,13 @@ export default function FriendsPage() {
                   {myFriends.map(friend => (
                     <li key={friend.uid} className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
                       <Link href={`/profile/${friend.uid}`} className="flex items-center gap-3 flex-grow min-w-0">
-                        <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
-                          <AvatarImage src={friend.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar" />
-                          <AvatarFallback>{getAvatarFallback(friend.displayName)}</AvatarFallback>
-                        </Avatar>
+                        <div className="relative">
+                            <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
+                            <AvatarImage src={friend.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar" />
+                            <AvatarFallback>{getAvatarFallback(friend.displayName)}</AvatarFallback>
+                            </Avatar>
+                            {friend.isPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                        </div>
                         <div>
                           <p className="font-medium text-sm sm:text-base hover:underline">{friend.displayName || "İsimsiz"}</p>
                         </div>
@@ -425,10 +439,13 @@ export default function FriendsPage() {
                     {searchResults.map(user => (
                       <li key={user.uid} className="flex items-center justify-between p-3 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border">
                         <Link href={`/profile/${user.uid}`} className="flex items-center gap-3 flex-grow min-w-0">
-                           <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
-                             <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar search" />
-                             <AvatarFallback>{getAvatarFallback(user.displayName)}</AvatarFallback>
-                           </Avatar>
+                           <div className="relative">
+                             <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
+                               <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar search" />
+                               <AvatarFallback>{getAvatarFallback(user.displayName)}</AvatarFallback>
+                             </Avatar>
+                             {user.isPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                           </div>
                            <p className="font-medium text-sm sm:text-base hover:underline">{user.displayName || "İsimsiz"}</p>
                         </Link>
                         <div className="flex-shrink-0">
@@ -458,7 +475,7 @@ export default function FriendsPage() {
                                 variant="outline"
                                 size="sm"
                                 className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                                disabled // Popover'dan kabul etme/reddetme işlemleri yönetilecek.
+                                disabled 
                                 onClick={() => toast({ title: "İstek Mevcut", description: "Bu kullanıcıdan gelen bir arkadaşlık isteği var. Bildirimlerden yönetebilirsiniz."})}
                                 >
                                 <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi
@@ -489,3 +506,5 @@ export default function FriendsPage() {
     </div>
   );
 }
+
+    

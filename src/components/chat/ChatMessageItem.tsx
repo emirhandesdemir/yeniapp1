@@ -4,7 +4,7 @@ import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut } from "lucide-react"; // LogOut eklendi
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star } from "lucide-react"; // Star eklendi
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
@@ -16,6 +16,7 @@ interface Message {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
+  senderIsPremium?: boolean; // Eklendi
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -40,6 +41,7 @@ interface ChatMessageItemProps {
   getAvatarFallbackText: (name?: string | null) => string;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
+  currentUserIsPremium?: boolean; // Eklendi
   isCurrentUserRoomCreator: boolean;
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
 }
@@ -61,12 +63,13 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   getAvatarFallbackText,
   currentUserPhotoURL,
   currentUserDisplayName,
+  currentUserIsPremium,
   isCurrentUserRoomCreator,
   onKickParticipantFromTextChat,
 }) => {
 
   const renderMessageWithMentions = React.useCallback((text: string, currentUsername?: string | null) => {
-    const parts = text.split(/(@[\w.-]+)/g); // Split by mentions, keeping the mention
+    const parts = text.split(/(@[\w.-]+)/g); 
     return parts.map((part, index) => {
       if (part.startsWith('@')) {
         const username = part.substring(1);
@@ -118,21 +121,25 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             if (!isOpen) setPopoverOpenForUserId(null);
         }}>
             <PopoverTrigger asChild onClick={() => onOpenUserInfoPopover(msg.senderId)}>
-                <Avatar className="h-7 w-7 cursor-pointer self-end mb-1">
-                    <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-                    <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
-                </Avatar>
+                <div className="relative self-end mb-1 cursor-pointer">
+                    <Avatar className="h-7 w-7">
+                        <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
+                        <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
+                    </Avatar>
+                    {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                </div>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3" side="top" align="start">
                 {popoverLoading && popoverOpenForUserId === msg.senderId && <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
                 {!popoverLoading && popoverTargetUser && popoverOpenForUserId === msg.senderId && (
                     <div className="space-y-2">
                         <div className="flex items-center gap-3">
-                            <Link href={`/profile/${popoverTargetUser.uid}`}>
+                            <Link href={`/profile/${popoverTargetUser.uid}`} className="relative">
                                 <Avatar className="h-12 w-12">
                                     <AvatarImage src={popoverTargetUser.photoURL || `https://placehold.co/80x80.png`} data-ai-hint="user portrait" />
                                     <AvatarFallback>{getAvatarFallbackText(popoverTargetUser.displayName)}</AvatarFallback>
                                 </Avatar>
+                                {popoverTargetUser.isPremium && <Star className="absolute -bottom-1 -right-1 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />}
                             </Link>
                             <div>
                                 <Link href={`/profile/${popoverTargetUser.uid}`}>
@@ -192,13 +199,18 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
           </p>
       </div>
       {msg.isOwn && (
-        <Avatar className="h-7 w-7 cursor-default self-end mb-1">
-            <AvatarImage src={currentUserPhotoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-            <AvatarFallback>{getAvatarFallbackText(currentUserDisplayName)}</AvatarFallback>
-        </Avatar>
+        <div className="relative self-end mb-1 cursor-default">
+            <Avatar className="h-7 w-7">
+                <AvatarImage src={currentUserPhotoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
+                <AvatarFallback>{getAvatarFallbackText(currentUserDisplayName)}</AvatarFallback>
+            </Avatar>
+            {currentUserIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+        </div>
       )}
     </div>
   );
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
+
+    

@@ -11,7 +11,7 @@ Kullanıcı profil bilgilerini saklar.
   - `email`: (String) Kullanıcının e-postası
   - `displayName`: (String) Kullanıcının seçtiği görünen ad
   - `photoURL`: (String, nullable) Kullanıcının profil fotoğrafının URL'si
-  - `diamonds`: (Number) Kullanıcının uygulama içi para birimi bakiyesi (Varsayılan: 10)
+  - `diamonds`: (Number) Kullanıcının uygulama içi para birimi bakiyesi (Varsayılan: 30)
   - `createdAt`: (Timestamp) Kullanıcı belgesinin oluşturulduğu zaman
   - `role`: (String) Kullanıcının rolü (örneğin, "user", "admin") (Varsayılan: 'user')
   - `bio`: (String, nullable) Kullanıcının hakkında yazdığı kısa metin.
@@ -22,6 +22,7 @@ Kullanıcı profil bilgilerini saklar.
     - `feedShowsEveryone`: (Boolean) `true` ise kullanıcının ana sayfa akışında herkesin gönderileri gösterilir, `false` ise sadece arkadaşlarının gönderileri gösterilir. (Varsayılan: `true`)
   - `premiumStatus`: (String, nullable) Kullanıcının premium abonelik durumu ('none', 'weekly', 'monthly'). (Varsayılan: 'none')
   - `premiumExpiryDate`: (Timestamp, nullable) Premium aboneliğin sona erme tarihi. (Varsayılan: `null`)
+  - `isPremium`: (Boolean, isteğe bağlı) Kullanıcının premium olup olmadığını gösterir. `premiumStatus` ve `premiumExpiryDate` alanlarına göre dinamik olarak hesaplanabilir veya Firestore'a senkronize edilebilir.
   - `reportCount`: (Number, isteğe bağlı) Kullanıcının aldığı şikayet sayısı. (Varsayılan: 0)
   - `isBanned`: (Boolean, isteğe bağlı) Kullanıcının banlanıp banlanmadığı. (Varsayılan: `false`)
 - **Alt Koleksiyonlar:**
@@ -45,6 +46,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `description`: (String) Odanın açıklaması (Zorunlu)
   - `creatorId`: (String) Odayı oluşturan kullanıcının UID'si
   - `creatorName`: (String) Oluşturanın görünen adı
+  - `creatorIsPremium`: (Boolean, isteğe bağlı) Odayı oluşturan kullanıcının premium olup olmadığı. (Varsayılan: `false`)
+  - `isPremiumRoom`: (Boolean, isteğe bağlı) Odanın bir premium kullanıcı tarafından oluşturulup oluşturulmadığı veya premium özelliklere sahip olup olmadığı. (Varsayılan: `false`)
   - `createdAt`: (Timestamp) Odanın oluşturulduğu zaman
   - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman (Varsayılan: Oluşturulma + 20 dakika)
   - `image`: (String) Odanın resminin URL'si (Placeholder olarak kullanılır)
@@ -56,15 +59,15 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
   - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
   - `currentGameAnswerDeadline`: (Timestamp, nullable) Mevcut oyun sorusu için son cevap verme zamanı.
-- **Not:** Normal kullanıcılar için oda oluşturma maliyeti varsayılan olarak **10 elmas**tır. Premium kullanıcılar ücretsiz oluşturabilir.
+- **Not:** Normal kullanıcılar için oda oluşturma maliyeti varsayılan olarak **1 elmas**tır. Premium kullanıcılar ücretsiz oluşturabilir.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı), `mentionedUserIds` (Array<String>, isteğe bağlı)
+    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı), `mentionedUserIds` (Array<String>, isteğe bağlı)
     - **Not:** `timestamp` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve mesajları sıralamak için kullanılır.
   - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
-    - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı)
+    - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı), `isPremium` (Boolean, isteğe bağlı)
     - **Not:** `joinedAt` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve katılımcıları sıralamak için kullanılır.
   - `voiceParticipants`: Odadaki aktif sesli sohbet katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/voiceParticipants/{userId}`
@@ -72,6 +75,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `uid`: (String) Kullanıcının UID'si
       - `displayName`: (String) Kullanıcının görünen adı
       - `photoURL`: (String, nullable) Kullanıcının avatar URL'si
+      - `isPremium`: (Boolean, isteğe bağlı) Katılımcının premium olup olmadığı.
       - `joinedAt`: (Timestamp) Sesli sohbete katıldığı zaman
       - `isMuted`: (Boolean) Kullanıcının kendi mikrofonunu kapatıp kapatmadığı (Varsayılan: `false`)
       - `isMutedByAdmin`: (Boolean) Oda yöneticisi tarafından susturulup susturulmadığı (Varsayılan: `false`)
@@ -109,7 +113,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `dmChatId`, iki kullanıcının UID'sinin alfabetik olarak sıralanıp `_` ile birleştirilmesiyle oluşturulur.
 - **Alanlar:**
   - `participantUids`: (Array<String>) İki katılımcının UID'lerini içerir.
-  - `participantInfo`: (Map) Katılımcıların temel bilgilerini saklar.
+  - `participantInfo`: (Map) Katılımcıların temel bilgilerini saklar. Her bir katılımcı UID'si için: `{ displayName: String, photoURL: String, isPremium: Boolean (isteğe bağlı) }`
   - `createdAt`: (Timestamp) DM sohbetinin ilk mesajla oluşturulduğu zaman.
   - `lastMessageTimestamp`: (Timestamp) Bu sohbetteki son mesajın zaman damgası.
   - `lastMessageText`: (String, isteğe bağlı) Son mesajın kısa bir özeti.
@@ -117,7 +121,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `timestamp` (Timestamp)
+    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp)
     - **Not:** `timestamp` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve mesajları sıralamak için kullanılır.
 - **Gerekli İndeksler:**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
@@ -131,9 +135,11 @@ Birebir sesli/görüntülü çağrı oturumlarını yönetir.
   - `callerId`: (String) Çağrıyı başlatan kullanıcının UID'si.
   - `callerName`: (String, nullable) Çağrıyı başlatanın adı.
   - `callerAvatar`: (String, nullable) Çağrıyı başlatanın avatarı.
+  - `callerIsPremium`: (Boolean, isteğe bağlı) Arayanın premium olup olmadığı.
   - `calleeId`: (String) Çağrıyı alan kullanıcının UID'si.
   - `calleeName`: (String, nullable) Çağrıyı alanın adı.
   - `calleeAvatar`: (String, nullable) Çağrıyı alanın avatarı.
+  - `calleeIsPremium`: (Boolean, isteğe bağlı) Arananın premium olup olmadığı.
   - `status`: (String) Çağrının durumu: `initiating` (başlatılıyor), `ringing` (çalıyor), `active` (aktif), `rejected` (reddedildi), `ended` (sonlandırıldı), `missed` (cevapsız), `failed` (başarısız).
   - `offerSdp`: (String, nullable) Arayanın SDP offer'ı.
   - `answerSdp`: (String, nullable) Arananın SDP answer'ı.
@@ -160,6 +166,7 @@ Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
   - `fromUserId`: (String) İsteği gönderen kullanıcının UID'si
   - `fromUsername`: (String) Gönderenin görünen adı
   - `fromAvatarUrl`: (String, nullable) Gönderenin avatar URL'si
+  - `fromUserIsPremium`: (Boolean, isteğe bağlı) İsteği gönderenin premium olup olmadığı.
   - `toUserId`: (String) İsteği alan kullanıcının UID'si
   - `toUsername`: (String) Alıcının görünen adı
   - `toAvatarUrl`: (String, nullable) Alıcının avatar URL'si
@@ -190,6 +197,7 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - `userId`: (String) Gönderiyi oluşturan kullanıcının UID'si
   - `username`: (String) Gönderiyi oluşturan kullanıcının görünen adı
   - `userAvatar`: (String, nullable) Gönderiyi oluşturan kullanıcının avatar URL'si
+  - `authorIsPremium`: (Boolean, isteğe bağlı) Gönderiyi oluşturan kullanıcının premium olup olmadığı.
   - `content`: (String) Gönderinin metin içeriği (Max 280 karakter)
   - `createdAt`: (Timestamp) Gönderinin oluşturulduğu zaman
   - `likeCount`: (Number) Beğeni sayısı (Varsayılan: 0)
@@ -202,6 +210,7 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - `originalPostUserId`: (String, isteğe bağlı) Orijinal gönderiyi oluşturan kullanıcının ID'si.
   - `originalPostUsername`: (String, isteğe bağlı, nullable) Orijinal gönderiyi oluşturan kullanıcının adı.
   - `originalPostUserAvatar`: (String, isteğe bağlı, nullable) Orijinal gönderiyi oluşturan kullanıcının avatarı.
+  - `originalPostAuthorIsPremium`: (Boolean, isteğe bağlı) Orijinal gönderiyi oluşturan kullanıcının premium olup olmadığı.
   - `originalPostContent`: (String, isteğe bağlı) Orijinal gönderinin içeriği.
   - `originalPostCreatedAt`: (Timestamp, isteğe bağlı) Orijinal gönderinin oluşturulma zamanı.
   - `originalPostSharedRoomId`: (String, isteğe bağlı, nullable) Orijinal gönderi bir oda paylaştıysa.
@@ -213,6 +222,7 @@ Kullanıcıların paylaştığı gönderileri saklar.
       - `userId`: (String) Yorumu yapan kullanıcının UID'si
       - `username`: (String) Yorumu yapan kullanıcının görünen adı
       - `userAvatar`: (String, nullable) Yorumu yapan kullanıcının avatar URL'si
+      - `commenterIsPremium`: (Boolean, isteğe bağlı) Yorumu yapan kullanıcının premium olup olmadığı.
       - `content`: (String) Yorumun metin içeriği
       - `createdAt`: (Timestamp) Yorumun oluşturulduğu zaman
     - **Not:** `createdAt` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve yorumları sıralamak için kullanılır.

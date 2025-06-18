@@ -7,9 +7,9 @@ import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2 } from "lucide-react";
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2, Star } from "lucide-react"; // Star eklendi
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,7 @@ export interface Post {
   userId: string;
   username: string | null;
   userAvatar: string | null;
+  authorIsPremium?: boolean; // Eklendi
   content: string;
   createdAt: Timestamp;
   likeCount: number;
@@ -41,6 +42,7 @@ export interface Post {
   originalPostUserId?: string;
   originalPostUsername?: string | null;
   originalPostUserAvatar?: string | null;
+  originalPostAuthorIsPremium?: boolean; // Eklendi
   originalPostContent?: string;
   originalPostCreatedAt?: Timestamp;
   originalPostSharedRoomId?: string;
@@ -161,12 +163,14 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     if (isReposting) return;
 
     setIsReposting(true);
+    const currentUserIsPremium = checkUserPremium(userData);
 
     const postToRepost = post.isRepost ? {
       id: post.originalPostId,
       userId: post.originalPostUserId,
       username: post.originalPostUsername,
       userAvatar: post.originalPostUserAvatar,
+      authorIsPremium: post.originalPostAuthorIsPremium, // Eklendi
       content: post.originalPostContent,
       createdAt: post.originalPostCreatedAt,
       sharedRoomId: post.originalPostSharedRoomId,
@@ -184,12 +188,14 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
         userId: currentUser.uid,
         username: userData.displayName,
         userAvatar: userData.photoURL,
+        authorIsPremium: currentUserIsPremium, // Eklendi
         createdAt: serverTimestamp(),
         isRepost: true,
         originalPostId: postToRepost.id,
         originalPostUserId: postToRepost.userId,
         originalPostUsername: postToRepost.username,
         originalPostUserAvatar: postToRepost.userAvatar,
+        originalPostAuthorIsPremium: postToRepost.authorIsPremium, // Eklendi
         originalPostContent: postToRepost.content,
         originalPostCreatedAt: postToRepost.createdAt,
         originalPostSharedRoomId: postToRepost.sharedRoomId,
@@ -219,11 +225,14 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   const renderOriginalPostContent = useCallback((originalPost: Partial<Post>) => (
     <div className="mt-2 mb-1 p-3 border border-border/30 bg-muted/20 dark:bg-muted/15 shadow-inner rounded-lg">
       <header className="flex flex-row items-start gap-2.5 pb-2">
-        <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0">
+        <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0 relative">
             <Avatar className="h-8 w-8">
             <AvatarImage src={originalPost.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
             <AvatarFallback>{getAvatarFallbackText(originalPost.username)}</AvatarFallback>
             </Avatar>
+            {originalPost.authorIsPremium && (
+                <Star className="absolute -bottom-1 -right-1 h-3 w-3 text-yellow-400 fill-yellow-400 bg-muted/70 p-px rounded-full shadow" />
+            )}
         </Link>
         <div className="flex-1">
             <Link href={`/profile/${originalPost.userId}`}>
@@ -254,11 +263,14 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   return (
     <div className="bg-card/70 dark:bg-card/50 backdrop-blur-sm rounded-xl shadow-sm overflow-hidden">
       <header className="flex flex-row items-start gap-3 p-3 pb-2">
-        <Link href={`/profile/${post.userId}`} className="flex-shrink-0">
+        <Link href={`/profile/${post.userId}`} className="flex-shrink-0 relative">
             <Avatar className="h-10 w-10">
             <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
             <AvatarFallback>{getAvatarFallbackText(post.username)}</AvatarFallback>
             </Avatar>
+            {post.authorIsPremium && (
+                <Star className="absolute -bottom-1 -right-1 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />
+            )}
         </Link>
         <div className="flex-1">
           <div className="flex items-center justify-between">
@@ -298,6 +310,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
               userId: post.originalPostUserId,
               username: post.originalPostUsername,
               userAvatar: post.originalPostUserAvatar,
+              authorIsPremium: post.originalPostAuthorIsPremium, // Eklendi
               content: post.originalPostContent,
               createdAt: post.originalPostCreatedAt,
               sharedRoomId: post.originalPostSharedRoomId,
@@ -340,7 +353,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
             size="sm"
             className="text-muted-foreground hover:text-green-500 px-2 py-1.5"
             onClick={handleRepost}
-            disabled={isReposting || !currentUser}
+            disabled={isReposting || !currentUser || isOwnPost} // Kendi gönderisini RT'leme engeli
         >
           {isReposting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Repeat className="h-4 w-4 mr-1.5" />}
         </Button>
@@ -384,3 +397,5 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 });
 PostCard.displayName = 'PostCard';
 export default PostCard;
+
+    

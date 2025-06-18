@@ -4,18 +4,18 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, doc, increment, updateDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Star } from "lucide-react"; // Star eklendi
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const MAX_COMMENT_LENGTH = 180;
 
 interface CommentFormProps {
   postId: string;
-  onCommentAdded: () => void; // Callback to notify parent about new comment
+  onCommentAdded: () => void; 
 }
 
 export default function CommentForm({ postId, onCommentAdded }: CommentFormProps) {
@@ -45,24 +45,25 @@ export default function CommentForm({ postId, onCommentAdded }: CommentFormProps
     }
 
     setIsSubmitting(true);
+    const userIsCurrentlyPremium = checkUserPremium(userData);
+
     try {
-      // Add comment to subcollection
       await addDoc(collection(db, `posts/${postId}/comments`), {
         userId: currentUser.uid,
         username: userData.displayName,
         userAvatar: userData.photoURL,
+        commenterIsPremium: userIsCurrentlyPremium, // Eklendi
         content: content.trim(),
         createdAt: serverTimestamp(),
       });
 
-      // Increment commentCount on the post document
       const postRef = doc(db, "posts", postId);
       await updateDoc(postRef, {
         commentCount: increment(1),
       });
       
       setContent("");
-      onCommentAdded(); // Notify parent
+      onCommentAdded(); 
       toast({ title: "Başarılı", description: "Yorumunuz gönderildi!" });
     } catch (error) {
       console.error("Error creating comment:", error);
@@ -78,18 +79,24 @@ export default function CommentForm({ postId, onCommentAdded }: CommentFormProps
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
-    return "HW"; // HiweWalk için HW
+    return "HW"; 
   };
 
   const remainingChars = MAX_COMMENT_LENGTH - content.length;
+  const userIsCurrentlyPremium = checkUserPremium(userData);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="flex items-start space-x-2">
-        <Avatar className="h-8 w-8 mt-1 flex-shrink-0">
-          <AvatarImage src={userData?.photoURL || `https://placehold.co/32x32.png`} data-ai-hint="user avatar comment form" />
-          <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
-        </Avatar>
+        <div className="relative flex-shrink-0">
+            <Avatar className="h-8 w-8 mt-1">
+            <AvatarImage src={userData?.photoURL || `https://placehold.co/32x32.png`} data-ai-hint="user avatar comment form" />
+            <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
+            </Avatar>
+            {userIsCurrentlyPremium && (
+                <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />
+            )}
+        </div>
         <Textarea
           placeholder="Yorumunu yaz..."
           value={content}
@@ -116,3 +123,5 @@ export default function CommentForm({ postId, onCommentAdded }: CommentFormProps
     </form>
   );
 }
+
+    

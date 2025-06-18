@@ -4,11 +4,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, MessageSquarePlus, XCircle, LinkIcon, List } from "lucide-react";
+import { Loader2, Send, MessageSquarePlus, XCircle, LinkIcon, List, Star } from "lucide-react"; // Star eklendi
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -104,11 +104,14 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
     }
 
     setIsSubmitting(true);
+    const userIsCurrentlyPremium = checkUserPremium(userData);
+
     try {
       const postData: any = {
         userId: currentUser.uid,
         username: userData.displayName,
         userAvatar: userData.photoURL,
+        authorIsPremium: userIsCurrentlyPremium, // Eklendi
         content: content.trim(),
         createdAt: serverTimestamp(),
         likeCount: 0,
@@ -146,19 +149,25 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
   };
 
   const remainingChars = MAX_POST_LENGTH - content.length;
+  const userIsCurrentlyPremium = checkUserPremium(userData);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="flex items-start space-x-3">
-        <Avatar className="h-10 w-10 mt-1 flex-shrink-0">
-          <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
-          <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
-        </Avatar>
+        <div className="relative">
+            <Avatar className="h-10 w-10 mt-1 flex-shrink-0">
+            <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
+            <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
+            </Avatar>
+            {userIsCurrentlyPremium && (
+                <Star className="absolute -bottom-1 -right-1 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />
+            )}
+        </div>
         <Textarea
           placeholder="Ne düşünüyorsun, HiweWalk'er?"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          rows={4} // Slightly taller for dialog
+          rows={4} 
           maxLength={MAX_POST_LENGTH}
           className="flex-1 resize-none bg-background focus:border-primary text-sm"
           disabled={isSubmitting || !currentUser}
@@ -186,7 +195,6 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
                     Oda Paylaş
                 </Button>
             </DialogTrigger>
-            {/* Nested Dialog for room selection - ensure it's styled and positioned correctly relative to parent if needed */}
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                 <DialogTitle>Aktif Odanı Paylaş</DialogTitle>
@@ -249,3 +257,5 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
     </form>
   );
 }
+
+    

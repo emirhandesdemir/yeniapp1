@@ -4,7 +4,7 @@
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, UserCog, VolumeX, Crown, UserX } from "lucide-react";
+import { Mic, MicOff, UserCog, VolumeX, Crown, UserX, Star } from "lucide-react"; // Star eklendi
 import type { ActiveVoiceParticipantData } from '@/app/(main)/chat/[roomId]/page';
 import {
   DropdownMenu,
@@ -51,14 +51,22 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
       )}
       onClick={onClick}
     >
-      <Avatar className={cn(
-        avatarSizeClass,
-        "mb-1 border-2 transition-all duration-150",
-        participant.isSpeaking ? 'border-green-500 shadow-lg scale-105 ring-2 ring-green-500/50 ring-offset-2 ring-offset-card' : 'border-transparent'
-      )}>
-        <AvatarImage src={participant.photoURL || `https://placehold.co/96x96.png`} data-ai-hint="voice chat user large" />
-        <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
-      </Avatar>
+        <div className="relative">
+            <Avatar className={cn(
+                avatarSizeClass,
+                "mb-1 border-2 transition-all duration-150",
+                participant.isSpeaking ? 'border-green-500 shadow-lg scale-105 ring-2 ring-green-500/50 ring-offset-2 ring-offset-card' : 'border-transparent'
+            )}>
+                <AvatarImage src={participant.photoURL || `https://placehold.co/96x96.png`} data-ai-hint="voice chat user large" />
+                <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
+            </Avatar>
+            {participant.isPremium && (
+                <Star className={cn(
+                    "absolute -bottom-0 -right-0 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow",
+                    isHostSlot ? "h-5 w-5" : "h-4 w-4"
+                )} />
+            )}
+        </div>
       <p className={cn(
         nameTextSize,
         "font-medium truncate w-full text-center text-foreground/80 group-hover:text-foreground max-w-[70px] sm:max-w-[80px]",
@@ -204,3 +212,5 @@ const VoiceParticipantGrid: React.FC<{
 });
 VoiceParticipantGrid.displayName = 'VoiceParticipantGrid';
 export default VoiceParticipantGrid;
+
+    

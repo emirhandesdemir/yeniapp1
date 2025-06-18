@@ -8,8 +8,8 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock } from "lucide-react";
-import { useAuth, type UserData, type FriendRequest, type PrivacySettings } from "@/contexts/AuthContext";
+import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star } from "lucide-react"; // Star eklendi
+import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import {
@@ -20,7 +20,7 @@ import {
   where,
   orderBy,
   limit,
-  onSnapshot, // Posts ve ActiveRooms için geçici olarak onSnapshot'tan getDocs'a çevrildi
+  onSnapshot, 
   addDoc,
   deleteDoc as deleteFirestoreDoc,
   serverTimestamp,
@@ -72,8 +72,11 @@ export default function UserProfilePage() {
         try {
             const docSnap = await getDoc(userDocRef);
             if (docSnap.exists()) {
-                setProfileUser({ uid: docSnap.id, ...docSnap.data() } as UserData);
-                document.title = `${docSnap.data().displayName || 'Kullanıcı'} Profili - HiweWalk`;
+                const fetchedUser = { uid: docSnap.id, ...docSnap.data() } as UserData;
+                // isPremium alanını dinamik olarak ayarla
+                fetchedUser.isPremium = checkUserPremium(fetchedUser);
+                setProfileUser(fetchedUser);
+                document.title = `${fetchedUser.displayName || 'Kullanıcı'} Profili - HiweWalk`;
             } else {
                 setProfileUser(null);
                 toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
@@ -212,11 +215,13 @@ export default function UserProfilePage() {
   const handleSendFriendRequest = async () => {
     if (!currentUser || !currentUserData || !profileUser || friendshipStatus !== "none") return;
     setPerformingAction(true);
+    const currentUserIsPremium = checkUserPremium(currentUserData);
     try {
       await addDoc(collection(db, "friendRequests"), {
         fromUserId: currentUser.uid,
         fromUsername: currentUserData.displayName,
         fromAvatarUrl: currentUserData.photoURL,
+        fromUserIsPremium: currentUserIsPremium, // Eklendi
         toUserId: profileUser.uid,
         toUsername: profileUser.displayName,
         toAvatarUrl: profileUser.photoURL,
@@ -241,10 +246,10 @@ export default function UserProfilePage() {
       batch.update(requestRef, { status: "accepted" });
 
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid);
-      batch.set(myFriendRef, { displayName: profileUser.displayName, photoURL: profileUser.photoURL, addedAt: serverTimestamp() });
+      batch.set(myFriendRef, { displayName: profileUser.displayName, photoURL: profileUser.photoURL, isPremium: profileUser.isPremium, addedAt: serverTimestamp() });
       
       const theirFriendRef = doc(db, `users/${profileUser.uid}/confirmedFriends`, currentUser.uid);
-      batch.set(theirFriendRef, { displayName: currentUserData.displayName, photoURL: currentUserData.photoURL, addedAt: serverTimestamp() });
+      batch.set(theirFriendRef, { displayName: currentUserData.displayName, photoURL: currentUserData.photoURL, isPremium: checkUserPremium(currentUserData), addedAt: serverTimestamp() });
       
       await batch.commit();
       toast({ title: "Başarılı", description: `${profileUser.displayName} ile arkadaş oldunuz.` });
@@ -383,16 +388,22 @@ export default function UserProfilePage() {
     return <ShieldCheck className="h-4 w-4 text-green-500" title="Herkese açık" />;
   };
 
+  const profileUserIsPremium = profileUser.isPremium;
 
   return (
     <div className="space-y-6">
       <Card className="shadow-xl overflow-hidden bg-gradient-to-br from-primary/5 via-card to-accent/5 dark:from-primary/10 dark:via-card dark:to-accent/10">
         <div className="h-24 sm:h-32 bg-gradient-to-r from-primary to-accent" />
         <CardHeader className="flex flex-col items-center text-center -mt-12 sm:-mt-16">
-          <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
-            <AvatarImage src={profileUser.photoURL || `https://placehold.co/128x128.png`} alt={profileUser.displayName || "Kullanıcı"} data-ai-hint="user profile portrait" />
-            <AvatarFallback>{getAvatarFallbackText(profileUser.displayName)}</AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-card shadow-lg">
+                <AvatarImage src={profileUser.photoURL || `https://placehold.co/128x128.png`} alt={profileUser.displayName || "Kullanıcı"} data-ai-hint="user profile portrait" />
+                <AvatarFallback>{getAvatarFallbackText(profileUser.displayName)}</AvatarFallback>
+            </Avatar>
+            {profileUserIsPremium && (
+                <Star className="absolute bottom-1 right-1 h-6 w-6 text-yellow-400 fill-yellow-500 bg-card p-1 rounded-full shadow-md" title="Premium Kullanıcı" />
+            )}
+          </div>
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
             {profileUser.displayName || "Kullanıcı Adı Yok"}
           </CardTitle>
@@ -496,3 +507,5 @@ export default function UserProfilePage() {
     </div>
   );
 }
+
+    
