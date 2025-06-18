@@ -14,9 +14,8 @@ import {
   Home,
   UserRound,
   Flame,
-  Rss,
   Phone,
-  PhoneIncoming as PhoneIncomingIcon,
+  PhoneOff as PhoneOffIcon, // PhoneOff olarak yeniden adlandırıldı
   XCircle as CloseIcon,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -38,7 +37,7 @@ import {
   writeBatch,
   getDoc,
   orderBy,
-  updateDoc, // updateDoc eklendi
+  updateDoc,
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
@@ -46,7 +45,7 @@ import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification, type InAppNotificationData } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeUserToPush } from '@/lib/notificationUtils';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"; // Dialog importları eklendi
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 interface FriendRequestForPopover {
   id: string;
@@ -72,7 +71,7 @@ interface IncomingCallInfo {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Rss },
+  { href: '/', label: 'Anasayfa', icon: Home, activeIcon: Home }, // Aktif ikon Home olarak değiştirildi
   { href: '/chat', label: 'Odalar', icon: MessageSquare, activeIcon: MessageSquare },
   { href: '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
@@ -376,22 +375,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const callsQuery = query(
       collection(db, "directCalls"),
       where("calleeId", "==", currentUser.uid),
-      where("status", "in", ["initiating", "ringing"]), // Listen for both
+      where("status", "in", ["initiating", "ringing"]), 
       orderBy("createdAt", "desc") 
     );
 
     const unsubscribeCalls = onSnapshot(callsQuery, (snapshot) => {
       if (!snapshot.empty) {
-        const callDoc = snapshot.docs[0]; // Get the most recent incoming call
+        const callDoc = snapshot.docs[0]; 
         const callData = callDoc.data();
         
-        // Avoid showing modal if call is already being handled or was just rejected/missed by this user
         if (activeIncomingCall?.callId === callDoc.id && isCallModalOpen) return;
         if (pathname.startsWith(`/call/${callDoc.id}`)) return;
 
 
         if (callData.status === "initiating") {
-            // Update status to ringing if we are the callee and it's just initiating
             updateDoc(doc(db, "directCalls", callDoc.id), { status: "ringing", updatedAt: serverTimestamp() })
               .then(() => {
                  console.log(`[AppLayout] Call ${callDoc.id} status updated to ringing.`);
@@ -414,7 +411,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
              setIsCallModalOpen(true);
         }
       } else {
-        // No active incoming calls, ensure modal is closed
         if (isCallModalOpen) {
             setIsCallModalOpen(false);
             setActiveIncomingCall(null);
@@ -432,10 +428,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const handleAcceptCall = async () => {
     if (!activeIncomingCall) return;
     setIsCallModalOpen(false);
-    // Status update to 'active' will be handled by CallPage once connection established
-    // Or we can set it to 'callee_accepting' here
     try {
-        // await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), { status: "active", updatedAt: serverTimestamp() }); // Status is now 'ringing'
         router.push(`/call/${activeIncomingCall.callId}`);
         setActiveIncomingCall(null);
     } catch (error) {
@@ -641,8 +634,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       
       {isClient && activeIncomingCall && (
           <Dialog open={isCallModalOpen} onOpenChange={(isOpen) => {
-              if (!isOpen && activeIncomingCall) { // Only act if closing a valid call modal
-                  handleRejectCall(); // Assume closing modal means rejecting if not accepted
+              if (!isOpen && activeIncomingCall) { 
+                  handleRejectCall(); 
               }
               setIsCallModalOpen(isOpen);
               if (!isOpen) setActiveIncomingCall(null);
@@ -660,7 +653,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </DialogHeader>
             <DialogFooter className="flex-row gap-3 p-6 bg-card">
               <Button onClick={handleRejectCall} variant="destructive" className="flex-1 h-12 text-base">
-                <PhoneOff className="mr-2 h-5 w-5"/> Reddet
+                <PhoneOffIcon className="mr-2 h-5 w-5"/> Reddet
               </Button>
               <Button onClick={handleAcceptCall} className="flex-1 h-12 text-base bg-green-500 hover:bg-green-600 text-white">
                 <Phone className="mr-2 h-5 w-5"/> Kabul Et
@@ -682,5 +675,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   );
 }
 
-
-    

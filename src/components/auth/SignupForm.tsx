@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -15,10 +16,10 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { User, Mail, Lock, Loader2, VenetianMask } from "lucide-react";
+import { User, Mail, Lock, Loader2, VenetianMask, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useState } from "react";
 
-// Google ikonu için basit bir SVG
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
     <path d="M17.6402 9.18199C17.6402 8.54562 17.5834 7.93617 17.4779 7.35364H9V10.8002H13.8438C13.6365 11.9702 13.0002 12.9275 12.0479 13.5638V15.8184H14.9565C16.6584 14.2529 17.6402 11.9456 17.6402 9.18199Z" fill="#4285F4"/>
@@ -37,6 +38,7 @@ const formSchema = z.object({
 
 export default function SignupForm() {
   const { signUp, signInWithGoogle, isUserLoading } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,7 +46,7 @@ export default function SignupForm() {
       username: "",
       email: "",
       password: "",
-      gender: undefined, // Başlangıçta seçili olmaması için undefined
+      gender: undefined, 
     },
   });
 
@@ -53,9 +55,6 @@ export default function SignupForm() {
   }
 
   const handleGoogleSignUp = async () => {
-    // Google ile kayıt olurken cinsiyet bilgisi alınamıyor, bu nedenle varsayılan veya sonradan düzenlenebilir bir değer atanabilir.
-    // AuthContext'teki signInWithGoogle fonksiyonu, Firestore'a yazarken gender alanını "belirtilmemiş" veya null olarak ayarlayabilir.
-    // Şimdilik, AuthContext'teki signInWithGoogle'un bunu hallettiğini varsayıyoruz.
     await signInWithGoogle();
   };
 
@@ -103,9 +102,29 @@ export default function SignupForm() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <FormControl>
-                  <Input type="password" placeholder="••••••" {...field} className="pl-10" disabled={isUserLoading} />
+                  <Input 
+                    type={showPassword ? "text" : "password"} 
+                    placeholder="••••••" 
+                    {...field} 
+                    className="pl-10 pr-10" 
+                    disabled={isUserLoading} 
+                  />
                 </FormControl>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon" 
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  <span className="sr-only">{showPassword ? "Şifreyi gizle" : "Şifreyi göster"}</span>
+                </Button>
               </div>
+              <FormDescription className="text-xs pt-1">
+                Güçlü bir şifre için: En az 6 karakter, büyük/küçük harf, sayı ve sembol (!@#% gibi) kullanın.
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
@@ -179,3 +198,4 @@ export default function SignupForm() {
     </Form>
   );
 }
+

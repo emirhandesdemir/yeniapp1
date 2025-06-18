@@ -63,7 +63,6 @@ export default function UserProfilePage() {
 
   const isOwnProfile = currentUser?.uid === userId;
 
-  // Fetch Profile User Data
   useEffect(() => {
     if (!userId) return;
     setLoadingProfile(true);
@@ -75,7 +74,7 @@ export default function UserProfilePage() {
       } else {
         setProfileUser(null);
         toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
-        router.push("/"); // veya /404
+        router.push("/"); 
       }
       setLoadingProfile(false);
     }, (error) => {
@@ -86,7 +85,6 @@ export default function UserProfilePage() {
     return () => unsubscribe();
   }, [userId, router, toast]);
 
-  // Determine Friendship Status
   useEffect(() => {
     if (!currentUser || !profileUser || isOwnProfile) {
       if(isOwnProfile) setFriendshipStatus("self");
@@ -94,7 +92,6 @@ export default function UserProfilePage() {
     }
 
     const checkStatus = async () => {
-      // Check if friends
       const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid);
       const friendDocSnap = await getDoc(friendDocRef);
       if (friendDocSnap.exists()) {
@@ -102,7 +99,6 @@ export default function UserProfilePage() {
         return;
       }
 
-      // Check outgoing request
       const outgoingReqQuery = query(
         collection(db, "friendRequests"),
         where("fromUserId", "==", currentUser.uid),
@@ -116,7 +112,6 @@ export default function UserProfilePage() {
         return;
       }
 
-      // Check incoming request
       const incomingReqQuery = query(
         collection(db, "friendRequests"),
         where("fromUserId", "==", profileUser.uid),
@@ -135,21 +130,19 @@ export default function UserProfilePage() {
   }, [currentUser, profileUser, isOwnProfile]);
 
   const canViewContent = useCallback((contentType: "posts" | "rooms") => {
-    if (!profileUser) return false; // Profil yüklenmediyse içerik gösterilemez
-    if (isOwnProfile) return true; // Kendi profilinde her zaman görebilir
+    if (!profileUser) return false; 
+    if (isOwnProfile) return true; 
 
     const privacySettings = profileUser.privacySettings;
     const key = contentType === "posts" ? "postsVisibleToFriendsOnly" : "activeRoomsVisibleToFriendsOnly";
     
     if (!privacySettings || privacySettings[key] === undefined || privacySettings[key] === false) {
-      return true; // Herkese açıksa veya ayar yoksa (varsayılan herkese açık)
+      return true; 
     }
-    // Gizliyse (true), sadece arkadaşların görmesine izin ver
     return friendshipStatus === "friends";
   }, [profileUser, isOwnProfile, friendshipStatus]);
 
 
-  // Fetch Posts
   useEffect(() => {
     if (!userId || !profileUser) return;
 
@@ -163,7 +156,7 @@ export default function UserProfilePage() {
       collection(db, "posts"),
       where("userId", "==", userId),
       orderBy("createdAt", "desc"),
-      limit(20) // Örnek bir limit
+      limit(20) 
     );
     const unsubscribe = onSnapshot(postsQuery, (snapshot) => {
       const postsData: Post[] = [];
@@ -177,7 +170,6 @@ export default function UserProfilePage() {
     return () => unsubscribe();
   }, [userId, profileUser, canViewContent]);
 
-  // Fetch Active Rooms
   useEffect(() => {
     if (!userId || !profileUser) return;
     
@@ -192,7 +184,7 @@ export default function UserProfilePage() {
       collection(db, "chatRooms"),
       where("creatorId", "==", userId),
       where("expiresAt", ">", Timestamp.now()),
-      orderBy("expiresAt", "asc") // Veya createdAt desc
+      orderBy("expiresAt", "asc") 
     );
     const unsubscribe = onSnapshot(roomsQuery, (snapshot) => {
       const roomsData: PublicProfileChatRoom[] = [];
@@ -222,7 +214,7 @@ export default function UserProfilePage() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Başarılı", description: `${profileUser.displayName} adlı kullanıcıya arkadaşlık isteği gönderildi.` });
-      setFriendshipStatus("request_sent"); // State'i hemen güncelle
+      setFriendshipStatus("request_sent"); 
     } catch (error) {
       toast({ title: "Hata", description: "Arkadaşlık isteği gönderilemedi.", variant: "destructive" });
     } finally {
@@ -279,7 +271,6 @@ export default function UserProfilePage() {
       batch.delete(doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid));
       batch.delete(doc(db, `users/${profileUser.uid}/confirmedFriends`, currentUser.uid));
       
-      // Delete accepted friend request documents related to this friendship
       const requestQuery1 = query(collection(db, "friendRequests"), 
         where("status", "==", "accepted"),
         where("fromUserId", "==", currentUser.uid), 
@@ -359,7 +350,7 @@ export default function UserProfilePage() {
                 <Button onClick={handleAcceptFriendRequest} disabled={performingAction} className="bg-blue-500 hover:bg-blue-600 text-white">
                     <UserCheck className="mr-2 h-4 w-4" /> İsteği Kabul Et
                 </Button>
-                 <Button variant="ghost" onClick={() => { /* Decline logic here, maybe similar to cancel or delete request */ toast({title:"Yakında", description:"Reddetme özelliği eklenecek."})}} disabled={performingAction}>Reddet</Button>
+                 <Button variant="ghost" onClick={() => { toast({title:"Yakında", description:"Reddetme özelliği eklenecek."})}} disabled={performingAction}>Reddet</Button>
             </div>
         );
       case "none":
@@ -392,10 +383,10 @@ export default function UserProfilePage() {
             <AvatarImage src={profileUser.photoURL || `https://placehold.co/128x128.png`} alt={profileUser.displayName || "Kullanıcı"} data-ai-hint="user profile portrait" />
             <AvatarFallback>{getAvatarFallbackText(profileUser.displayName)}</AvatarFallback>
           </Avatar>
-          <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-primary-foreground/90">
+          <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
             {profileUser.displayName || "Kullanıcı Adı Yok"}
           </CardTitle>
-          <CardDescription className="text-muted-foreground">{profileUser.email}</CardDescription>
+          <CardDescription className="text-foreground/80">{profileUser.email}</CardDescription>
           {!isOwnProfile && currentUser && (
              <div className="mt-4">
                 {performingAction ? <Loader2 className="h-6 w-6 animate-spin text-primary"/> : renderActionButton()}
@@ -408,14 +399,13 @@ export default function UserProfilePage() {
           )}
         </CardHeader>
         <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 text-center">
-           <h3 className="text-lg font-semibold text-primary-foreground/80 mb-1">Hakkında</h3>
-           <p className="text-muted-foreground whitespace-pre-wrap text-sm sm:text-base max-w-xl mx-auto">
+           <h3 className="text-lg font-semibold text-foreground/90 mb-1">Hakkında</h3>
+           <p className="text-foreground/90 whitespace-pre-wrap text-sm sm:text-base max-w-xl mx-auto">
              {profileUser.bio || "Henüz bir biyografi eklenmemiş."}
            </p>
         </CardContent>
       </Card>
 
-      {/* Posts Section */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -445,7 +435,6 @@ export default function UserProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Active Rooms Section */}
       <Card>
         <CardHeader>
             <div className="flex items-center justify-between">

@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle } from "lucide-react"; // MicIcon, PauseCircle, PlayCircle eklendi
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle } from "lucide-react";
 import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -39,15 +39,15 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
 ];
 
 const PREDEFINED_AVATARS = [
-  "https://placehold.co/128x128/ADD8E6/333333.png?text=HW1", // Light Blue
-  "https://placehold.co/128x128/7FFFD4/333333.png?text=HW2", // Aquamarine
-  "https://placehold.co/128x128/F0F8FF/333333.png?text=HW3", // Alice Blue
-  "https://placehold.co/128x128/FFB6C1/333333.png?text=HW4", // Light Pink
-  "https://placehold.co/128x128/90EE90/333333.png?text=HW5", // Light Green
-  "https://placehold.co/128x128/FFA07A/333333.png?text=HW6", // Light Salmon
-  "https://placehold.co/128x128/DDA0DD/333333.png?text=HW7", // Plum
-  "https://placehold.co/128x128/B0E0E6/333333.png?text=HW8", // Powder Blue
-  null, // "Avatarı Kaldır" seçeneği için
+  "https://placehold.co/128x128/ADD8E6/333333.png?text=HW1", 
+  "https://placehold.co/128x128/7FFFD4/333333.png?text=HW2", 
+  "https://placehold.co/128x128/F0F8FF/333333.png?text=HW3", 
+  "https://placehold.co/128x128/FFB6C1/333333.png?text=HW4", 
+  "https://placehold.co/128x128/90EE90/333333.png?text=HW5", 
+  "https://placehold.co/128x128/FFA07A/333333.png?text=HW6", 
+  "https://placehold.co/128x128/DDA0DD/333333.png?text=HW7", 
+  "https://placehold.co/128x128/B0E0E6/333333.png?text=HW8", 
+  null, 
 ];
 
 
@@ -113,7 +113,6 @@ export default function ProfilePage() {
     }
   }, [userData, isEditing]);
 
-  // Cleanup mic test stream on component unmount
   useEffect(() => {
     return () => {
       if (micTestStream) {
@@ -226,7 +225,7 @@ export default function ProfilePage() {
 
   const startMicTest = async () => {
     setMicError(null);
-    if (micTestStream) { // Eğer test zaten çalışıyorsa, önce durdur
+    if (micTestStream) { 
       micTestStream.getTracks().forEach(track => track.stop());
       setMicTestStream(null);
     }
@@ -235,8 +234,6 @@ export default function ProfilePage() {
       setMicTestStream(stream);
       if (audioPlaybackRef.current) {
         audioPlaybackRef.current.srcObject = stream;
-        // Note: For direct playback, audio element should not be muted.
-        // Consider adding a volume control or a clear instruction for headphones.
       }
       setIsTestingMic(true);
       toast({ title: "Mikrofon Testi Başladı", description: "Kendi sesinizi duyuyor olmalısınız." });
@@ -292,7 +289,7 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <Card className="shadow-xl overflow-hidden bg-gradient-to-br from-primary/5 via-card to-accent/5 dark:from-primary/10 dark:via-card dark:to-accent/10">
+      <Card className="overflow-hidden bg-gradient-to-br from-primary/5 via-card to-accent/5 dark:from-primary/10 dark:via-card dark:to-accent/10 border-none shadow-none">
         <div className="h-24 sm:h-32 bg-gradient-to-r from-primary to-accent" />
         <CardHeader className="flex flex-col items-center text-center -mt-12 sm:-mt-16">
           <div className="relative group">
@@ -321,10 +318,10 @@ export default function ProfilePage() {
               </Button>
             )}
           </div>
-          <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-primary-foreground/90">
+          <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
             {isEditing ? tempProfile.username : (userData?.displayName || currentUser?.displayName || "Kullanıcı Adı Yok")}
           </CardTitle>
-          <CardDescription className="text-muted-foreground">{currentUser?.email}</CardDescription>
+          <CardDescription className="text-foreground/80">{currentUser?.email}</CardDescription>
         </CardHeader>
         <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
           {isEditing ? (
@@ -435,8 +432,8 @@ export default function ProfilePage() {
           ) : (
             <div className="space-y-6">
               <div className="space-y-2">
-                <h3 className="text-lg font-semibold text-primary-foreground/80">Hakkımda</h3>
-                <p className="text-muted-foreground whitespace-pre-wrap text-sm sm:text-base">
+                <h3 className="text-lg font-semibold text-foreground/90">Hakkımda</h3>
+                <p className="text-foreground/90 whitespace-pre-wrap text-sm sm:text-base">
                   {userData?.bio || "Henüz bir biyografi eklenmemiş."}
                 </p>
               </div>
@@ -469,7 +466,7 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
         <CardHeader>
           <div className="flex items-center gap-2">
             <MicIcon className="h-6 w-6 text-primary" />
@@ -482,7 +479,6 @@ export default function ProfilePage() {
             {isTestingMic ? <PauseCircle className="mr-2 h-4 w-4" /> : <PlayCircle className="mr-2 h-4 w-4" />}
             {isTestingMic ? "Testi Durdur" : "Mikrofon Testini Başlat"}
           </Button>
-          {/* Sesin çalınacağı gizli audio elementi */}
           <audio ref={audioPlaybackRef} autoPlay className={isTestingMic ? "block w-full mt-2 rounded-md" : "hidden"} controls={isTestingMic}></audio>
           {micError && <p className="text-sm text-destructive">{micError}</p>}
           {!micError && isTestingMic && <p className="text-sm text-muted-foreground">Şu anda mikrofonunuzdan gelen sesi duyuyor olmalısınız. Testi bitirmek için "Testi Durdur" butonuna basın.</p>}
@@ -492,7 +488,7 @@ export default function ProfilePage() {
 
 
       {!isEditing && (
-        <Card>
+        <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
             <CardHeader>
             <div className="flex items-center gap-2">
                 <ShieldCheck className="h-6 w-6 text-primary" />
@@ -508,7 +504,7 @@ export default function ProfilePage() {
         </Card>
       )}
 
-      <Card>
+      <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Users className="h-6 w-6 text-primary" />
@@ -525,7 +521,7 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
         <CardHeader>
           <div className="flex items-center gap-2">
             <ShoppingBag className="h-6 w-6 text-primary" />
@@ -542,7 +538,7 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Palette className="h-6 w-6 text-primary" />
@@ -569,7 +565,7 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
         <CardHeader>
           <CardTitle className="text-xl sm:text-2xl">Aktiviteler</CardTitle>
           <CardDescription>Son aktiviteleriniz burada görünecek.</CardDescription>

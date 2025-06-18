@@ -14,12 +14,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Mail, Lock, Loader2 } from "lucide-react";
+import { Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-// import { useState } from "react"; // Artık AuthContext'teki isUserLoading kullanılıyor
+import { useState } from "react";
 
-// Google ikonu için basit bir SVG
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
     <path d="M17.6402 9.18199C17.6402 8.54562 17.5834 7.93617 17.4779 7.35364H9V10.8002H13.8438C13.6365 11.9702 13.0002 12.9275 12.0479 13.5638V15.8184H14.9565C16.6584 14.2529 17.6402 11.9456 17.6402 9.18199Z" fill="#4285F4"/>
@@ -36,8 +35,9 @@ const formSchema = z.object({
 });
 
 export default function LoginForm() {
-  const { logIn, signInWithGoogle, isUserLoading } = useAuth(); // signInWithGoogle eklendi
+  const { logIn, signInWithGoogle, isUserLoading } = useAuth();
   const { toast } = useToast();
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -49,12 +49,10 @@ export default function LoginForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     await logIn(values.email, values.password);
-    // Toast ve yönlendirme AuthContext içinde hallediliyor
   }
 
   const handleGoogleSignIn = async () => {
     await signInWithGoogle();
-    // Toast ve yönlendirme AuthContext içinde hallediliyor
   };
 
   return (
@@ -85,8 +83,25 @@ export default function LoginForm() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <FormControl>
-                  <Input type="password" placeholder="••••••" {...field} className="pl-10" disabled={isUserLoading} />
+                  <Input 
+                    type={showPassword ? "text" : "password"} 
+                    placeholder="••••••" 
+                    {...field} 
+                    className="pl-10 pr-10" 
+                    disabled={isUserLoading} 
+                  />
                 </FormControl>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon" 
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1} 
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  <span className="sr-only">{showPassword ? "Şifreyi gizle" : "Şifreyi göster"}</span>
+                </Button>
               </div>
               <FormMessage />
             </FormItem>
@@ -126,3 +141,4 @@ export default function LoginForm() {
     </Form>
   );
 }
+
