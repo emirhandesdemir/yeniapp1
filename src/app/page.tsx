@@ -3,8 +3,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star } from "lucide-react"; // Star eklendi
-import { useAuth, checkUserPremium } from '@/contexts/AuthContext'; // checkUserPremium eklendi
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star } from "lucide-react";
+import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
 import RoomInFeedCard, { type ChatRoomFeedDisplayData } from "@/components/feed/RoomInFeedCard";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, Timestamp, where, limit, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, Timestamp, where, limit, getDocs, onSnapshot } from "firebase/firestore";
 import { isPast } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -79,7 +79,7 @@ const feedItemEntryVariants = {
 
 const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
-const POSTS_FETCH_LIMIT = 10;
+const POSTS_FETCH_LIMIT = 10; // Bu limit onSnapshot'ta da kullanılacak
 const ROOMS_FETCH_LIMIT = 3;
 const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000; 
 
@@ -97,7 +97,8 @@ export default function HomePage() {
   const [activeRooms, setActiveRooms] = useState<ChatRoomFeedDisplayData[]>([]);
   const [combinedFeedItems, setCombinedFeedItems] = useState<FeedDisplayItem[]>([]);
 
-  const [isLoadingFeed, setIsLoadingFeed] = useState(true);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(true);
   const [isRefreshingFeed, setIsRefreshingFeed] = useState(false);
   
   const [friends, setFriends] = useState<string[]>([]);
@@ -139,45 +140,38 @@ export default function HomePage() {
       clearTimeout(refreshButtonTimerRef.current);
     }
     refreshButtonTimerRef.current = setTimeout(() => {
-      if (!isLoadingFeed && !isRefreshingFeed) { 
+      if (!isLoadingPosts && !isLoadingRooms && !isRefreshingFeed) { 
         setShowRefreshButton(true);
       }
     }, REFRESH_BUTTON_TIMER_MS);
-  }, [isLoadingFeed, isRefreshingFeed]);
+  }, [isLoadingPosts, isLoadingRooms, isRefreshingFeed]);
 
-  const fetchFeedItems = useCallback(async (isManualRefresh = false) => {
+  const fetchActiveRooms = useCallback(async (isManualRefresh = false) => {
     if (!currentUser) {
-      setCombinedFeedItems([]);
-      setIsLoadingFeed(false);
-      setIsRefreshingFeed(false);
+      setActiveRooms([]);
+      setIsLoadingRooms(false);
+      if (isManualRefresh) setIsRefreshingFeed(false);
       return;
     }
 
     if (isManualRefresh) {
       setIsRefreshingFeed(true);
     } else {
-      setIsLoadingFeed(true);
+      setIsLoadingRooms(true);
     }
     
-    setShowRefreshButton(false); 
-    if (refreshButtonTimerRef.current) {
-      clearTimeout(refreshButtonTimerRef.current);
+    if (isManualRefresh) { // Only reset timer elements if it's a manual refresh
+        setShowRefreshButton(false); 
+        if (refreshButtonTimerRef.current) {
+        clearTimeout(refreshButtonTimerRef.current);
+        }
     }
 
     try {
-      const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
-      const postsSnapshot = await getDocs(postsQuery);
-      const fetchedPostsData: Post[] = [];
-      postsSnapshot.forEach((doc) => {
-        fetchedPostsData.push({ id: doc.id, ...doc.data() } as Post);
-      });
-      setAllPosts(fetchedPostsData);
-
       const now = Timestamp.now();
       const roomsQuery = query(
         collection(db, "chatRooms"),
         where("expiresAt", ">", now),
-        //orderBy("isPremiumRoom", "desc"), // Önce premium odaları göstermek için eklenebilir
         orderBy("expiresAt", "asc"),
         orderBy("participantCount", "desc"),
         limit(ROOMS_FETCH_LIMIT)
@@ -194,31 +188,61 @@ export default function HomePage() {
             participantCount: roomData.participantCount,
             maxParticipants: roomData.maxParticipants,
             createdAt: roomData.createdAt as Timestamp,
-            isPremiumRoom: roomData.isPremiumRoom || false, // isPremiumRoom eklendi
-            creatorIsPremium: roomData.creatorIsPremium || false, // creatorIsPremium eklendi
+            isPremiumRoom: roomData.isPremiumRoom || false,
+            creatorIsPremium: roomData.creatorIsPremium || false,
           } as ChatRoomFeedDisplayData);
         }
       });
       setActiveRooms(fetchedRoomsData);
 
     } catch (error) {
-      console.error("Error fetching feed items: ", error);
+      console.error("Error fetching active rooms: ", error);
     } finally {
-      setIsLoadingFeed(false);
-      setIsRefreshingFeed(false);
-      startRefreshButtonTimer(); 
+      setIsLoadingRooms(false);
+      if (isManualRefresh) {
+        setIsRefreshingFeed(false);
+        startRefreshButtonTimer(); 
+      }
     }
-  }, [currentUser, startRefreshButtonTimer]);
+  }, [currentUser, startRefreshButtonTimer]); // startRefreshButtonTimer eklendi
+
+  // Real-time listener for posts
+  useEffect(() => {
+    if (!currentUser) {
+      setAllPosts([]);
+      setIsLoadingPosts(false);
+      return () => {}; // Return an empty function for cleanup
+    }
+    setIsLoadingPosts(true);
+    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
+    
+    const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+      const fetchedPostsData: Post[] = [];
+      snapshot.forEach((doc) => {
+        fetchedPostsData.push({ id: doc.id, ...doc.data() } as Post);
+      });
+      setAllPosts(fetchedPostsData);
+      setIsLoadingPosts(false);
+      if (!isRefreshingFeed) { // Sadece ilk yüklemede veya onSnapshot sonrası timer'ı başlat
+          startRefreshButtonTimer();
+      }
+    }, (error) => {
+      console.error("Error fetching posts with onSnapshot: ", error);
+      setIsLoadingPosts(false);
+    });
+
+    return () => unsubscribePosts(); // Cleanup listener on component unmount or currentUser change
+  }, [currentUser, isRefreshingFeed, startRefreshButtonTimer]);
+
 
   useEffect(() => {
     if (currentUser) {
-      fetchFeedItems(); 
+      fetchActiveRooms(); // Fetch rooms once on load
     } else {
-      setIsLoadingFeed(false); 
-      setCombinedFeedItems([]);
+      setIsLoadingRooms(false);
+      setActiveRooms([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, [currentUser]);
+  }, [currentUser, fetchActiveRooms]); // fetchActiveRooms eklendi
 
   useEffect(() => {
     if (currentUser && userData?.privacySettings?.feedShowsEveryone === false) {
@@ -242,7 +266,7 @@ export default function HomePage() {
   useEffect(() => {
     const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true; 
 
-    if (isLoadingFeed || (!feedShowsEveryone && loadingFriends)) {
+    if (isLoadingPosts || isLoadingRooms || (!feedShowsEveryone && loadingFriends)) {
       return; 
     }
 
@@ -257,7 +281,6 @@ export default function HomePage() {
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
     const combined = [...postItems, ...roomItems].sort((a, b) => {
-        // Premium odaları ve premium kullanıcıların gönderilerini üste taşıma
         const aIsPremiumContent = (a.feedItemType === 'room' && (a as ChatRoomFeedDisplayData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium);
         const bIsPremiumContent = (b.feedItemType === 'room' && (b as ChatRoomFeedDisplayData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium);
 
@@ -270,7 +293,7 @@ export default function HomePage() {
     });
     setCombinedFeedItems(combined);
 
-  }, [allPosts, activeRooms, isLoadingFeed, userData?.privacySettings?.feedShowsEveryone, friends, loadingFriends, currentUser]);
+  }, [allPosts, activeRooms, isLoadingPosts, isLoadingRooms, userData?.privacySettings?.feedShowsEveryone, friends, loadingFriends, currentUser]);
 
   useEffect(() => {
     return () => {
@@ -282,8 +305,12 @@ export default function HomePage() {
 
   const handleRefreshClick = useCallback(() => {
     if (isRefreshingFeed) return;
-    fetchFeedItems(true); 
-  }, [isRefreshingFeed, fetchFeedItems]);
+    fetchActiveRooms(true); // Fetch rooms again on manual refresh
+    // Posts will auto-refresh due to onSnapshot, but we can set isRefreshingFeed
+    setIsRefreshingFeed(true); 
+    // onSnapshot listener for posts will eventually set isRefreshingFeed to false via setIsLoadingPosts(false)
+    // and then call startRefreshButtonTimer
+  }, [isRefreshingFeed, fetchActiveRooms]);
 
   if (authLoading || (currentUser && isUserDataLoading && !userData)) { 
     return (
@@ -391,28 +418,28 @@ export default function HomePage() {
               <div className="p-6 pt-4">
                 <CreatePostForm onPostCreated={() => {
                     setIsCreatePostDialogOpen(false);
-                    fetchFeedItems(true); 
+                    // fetchFeedItems(true); // onSnapshot posts will update automatically
                 }} />
               </div>
             </DialogContent>
           </Dialog>
           
-          {showRefreshButton && !isLoadingFeed && !isRefreshingFeed && (
+          {showRefreshButton && !isLoadingPosts && !isLoadingRooms && !isRefreshingFeed && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="my-3 sticky top-[calc(3.5rem+0.75rem)] sm:top-[calc(3.5rem+1rem)] z-20">
               <Button
                 onClick={handleRefreshClick}
                 variant="outline"
                 className="w-full py-2.5 text-sm bg-card/80 dark:bg-background/80 backdrop-blur-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-md rounded-full"
-                disabled={isRefreshingFeed || isLoadingFeed}
+                disabled={isRefreshingFeed || isLoadingPosts || isLoadingRooms}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Yeni Gönderileri Yükle
+                Yeni İçerikleri Yükle
               </Button>
             </motion.div>
           )}
 
 
-          {(isLoadingFeed && combinedFeedItems.length === 0) && ( 
+          {(isLoadingPosts || isLoadingRooms) && combinedFeedItems.length === 0 && !isRefreshingFeed && ( 
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }}
@@ -437,7 +464,7 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {!isLoadingFeed && !isRefreshingFeed && combinedFeedItems.length === 0 && (
+          {!isLoadingPosts && !isLoadingRooms && !isRefreshingFeed && combinedFeedItems.length === 0 && (
              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                 <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
                     <CardHeader className="pb-2">
@@ -459,7 +486,7 @@ export default function HomePage() {
              </motion.div>
           )}
 
-          {!isLoadingFeed && combinedFeedItems.length > 0 && (
+          {(!isLoadingPosts || !isLoadingRooms || combinedFeedItems.length > 0) && !isRefreshingFeed && ( // Show if not loading OR if there are items (to prevent flicker during refresh)
             <div className="space-y-4">
               {combinedFeedItems.map((item, index) => {
                 if (item.feedItemType === 'post') {
@@ -511,5 +538,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-    
