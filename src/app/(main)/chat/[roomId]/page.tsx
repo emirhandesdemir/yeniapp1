@@ -134,7 +134,7 @@ const MESSAGE_WINDOW_SECONDS = 5;
 
 const CAPACITY_INCREASE_COST = 5;
 const CAPACITY_INCREASE_SLOTS = 1;
-const PREMIUM_USER_ROOM_CAPACITY = 50; // Bu değer chat/page.tsx ile aynı olmalı
+const PREMIUM_USER_ROOM_CAPACITY = 50; 
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -1281,13 +1281,13 @@ export default function ChatRoomPage() {
                 {!isRoomExpired && roomDetails.expiresAt && (
                   <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading || isIncreasingCapacity}>
                     {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                    Süre Uzat ({ROOM_EXTENSION_COST} <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                    Süre Uzat
                   </DropdownMenuItem>
                 )}
                 {!isCurrentUserPremium && roomDetails.maxParticipants < PREMIUM_USER_ROOM_CAPACITY && (
                    <DropdownMenuItem onClick={handleIncreaseCapacity} disabled={isIncreasingCapacity || isUserLoading || isExtending}>
                     {isIncreasingCapacity ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                    Katılımcı Artır (+{CAPACITY_INCREASE_SLOTS}) ({CAPACITY_INCREASE_COST} <Gem className="inline h-3 w-3 ml-1 mr-0.5 text-yellow-400 dark:text-yellow-500" />)
+                    Katılımcı Artır
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">

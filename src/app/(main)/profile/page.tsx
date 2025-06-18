@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle } from "lucide-react";
+import { User, Mail, Edit3, Save, XCircle, Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star } from "lucide-react"; // Star ikonu eklendi
 import { useAuth, type PrivacySettings } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -25,6 +25,8 @@ import Link from "next/link";
 import { Switch } from "@/components/ui/switch";
 import { LogOutIcon, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format, isPast } from "date-fns";
+import { tr } from "date-fns/locale";
 
 
 interface UserProfileForm {
@@ -286,6 +288,8 @@ export default function ProfilePage() {
   }
 
   const displayPhotoUrlToShow = isEditing ? previewImage : (userData?.photoURL || currentUser?.photoURL || null);
+  const isPremium = userData?.premiumStatus && userData.premiumStatus !== 'none' && 
+                    (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
 
   return (
     <div className="space-y-6">
@@ -431,9 +435,9 @@ export default function ProfilePage() {
             </form>
           ) : (
             <div className="space-y-6">
-              <div className="space-y-2">
+              <div className="space-y-2 text-center">
                 <h3 className="text-lg font-semibold text-foreground/90">Hakkımda</h3>
-                <p className="text-foreground/90 whitespace-pre-wrap text-sm sm:text-base">
+                <p className="text-foreground/90 whitespace-pre-wrap text-sm sm:text-base max-w-xl mx-auto">
                   {userData?.bio || "Henüz bir biyografi eklenmemiş."}
                 </p>
               </div>
@@ -465,6 +469,41 @@ export default function ProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      {!isEditing && userData && (
+        <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Star className="h-6 w-6 text-yellow-400" />
+              <CardTitle className="text-xl sm:text-2xl">Premium Bilgileri</CardTitle>
+            </div>
+            <CardDescription>Mevcut premium abonelik durumunuz.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {isPremium ? (
+              <>
+                <p className="flex items-center gap-1.5">
+                  Durum: <span className="font-semibold text-yellow-500 capitalize">{userData.premiumStatus} Premium</span>
+                </p>
+                {userData.premiumExpiryDate && (
+                  <p className="flex items-center gap-1.5">
+                    Geçerlilik Tarihi: <span className="font-medium text-foreground">{format(userData.premiumExpiryDate.toDate(), "dd MMMM yyyy, HH:mm", { locale: tr })}</span>
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground">Şu anda aktif bir premium aboneliğiniz bulunmuyor.</p>
+            )}
+            <div className="pt-2">
+              <Button asChild className="w-full sm:w-auto">
+                <Link href="/store">
+                  {isPremium ? "Premium'u Yönet" : "Premium Paketleri Gör"}
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-none shadow-none bg-card/50 dark:bg-card/30">
         <CardHeader>
@@ -577,4 +616,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

@@ -53,10 +53,10 @@ interface GameSettings {
   questionIntervalSeconds: number;
 }
 
-const ROOM_CREATION_COST = 1; // Oda oluşturma maliyeti 1 elmasa düşürüldü.
+const ROOM_CREATION_COST = 1; 
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
-const MAX_PARTICIPANTS_PER_ROOM = 7; // Normal kullanıcılar için varsayılan
-const PREMIUM_USER_ROOM_CAPACITY = 50; // Premium kullanıcılar için kapasite
+const MAX_PARTICIPANTS_PER_ROOM = 7; 
+const PREMIUM_USER_ROOM_CAPACITY = 50; 
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
@@ -194,8 +194,8 @@ export default function ChatRoomsPage() {
         const sortedRooms = resolvedRooms.sort((a,b) => {
           const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
           if (participantDiff !== 0) return participantDiff;
-          const timeA = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
-          const timeB = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
           return timeB - timeA;
         });
         setChatRooms(sortedRooms);
@@ -422,7 +422,7 @@ export default function ChatRoomsPage() {
                   className="text-sm text-muted-foreground"
                   variants={itemVariants}
                 >
-                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı {isCreatorPremiumForDialog ? "ücretsiz (Premium)" : `${ROOM_CREATION_COST} elmas karşılığında`} oluşturabilirsiniz.
+                  Aşağıdaki listelenen aktif odalara katılabilir veya sağ üstteki butonu kullanarak kendi sohbet odanızı {isCreatorPremiumForDialog ? "ücretsiz (Premium)" : `oluşturabilirsiniz.`}
                 </motion.p>
               </CardContent>
             </Card>
@@ -446,12 +446,6 @@ export default function ChatRoomsPage() {
               disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
               Yeni Oda Oluştur
-              {!isCreatorPremiumForDialog && (
-                <span className="ml-1.5 flex items-center text-xs text-yellow-300 dark:text-yellow-400 font-semibold">
-                  {ROOM_CREATION_COST}
-                  <Gem className="ml-1 h-3.5 w-3.5" />
-                </span>
-              )}
                {isCreatorPremiumForDialog && (
                 <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
               )}
@@ -563,12 +557,6 @@ export default function ChatRoomsPage() {
                     disabled={!currentUser || isUserLoading || isUserDataLoading }
                   >
                     Hemen Yeni Oda Oluştur!
-                    {!isCreatorPremiumForDialog && (
-                      <span className="ml-1.5 flex items-center text-sm text-yellow-300 dark:text-yellow-200 font-semibold">
-                        {ROOM_CREATION_COST}
-                        <Gem className="ml-1 h-4 w-4" />
-                      </span>
-                    )}
                     {isCreatorPremiumForDialog && (
                         <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
                     )}
