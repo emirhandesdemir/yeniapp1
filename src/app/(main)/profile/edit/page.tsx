@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Save, XCircle, ImagePlus, Trash2, User, Mail, ArrowLeft } from "lucide-react";
+import { Loader2, Save, XCircle, ImagePlus, Trash2, User, Mail, ArrowLeft, Edit3 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
