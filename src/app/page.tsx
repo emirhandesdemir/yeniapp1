@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw } from "lucide-react";
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +18,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, orderBy, Timestamp, where, limit, getDocs } from "firebase/firestore";
 import { isPast } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
@@ -80,6 +81,7 @@ const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
 const POSTS_FETCH_LIMIT = 10;
 const ROOMS_FETCH_LIMIT = 3;
+const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000; // 2 minutes
 
 export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (ChatRoomFeedDisplayData & { feedItemType: 'room' });
 
@@ -99,7 +101,10 @@ export default function HomePage() {
   const [isRefreshingFeed, setIsRefreshingFeed] = useState(false);
   
   const [friends, setFriends] = useState<string[]>([]);
-  const [loadingFriends, setLoadingFriends] = useState(true); // Initially true
+  const [loadingFriends, setLoadingFriends] = useState(true);
+
+  const [showRefreshButton, setShowRefreshButton] = useState(false);
+  const refreshButtonTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -109,7 +114,6 @@ export default function HomePage() {
       }
     }
   }, []);
-
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isWelcomeCardVisible) return;
@@ -124,43 +128,68 @@ export default function HomePage() {
     };
   }, [isWelcomeCardVisible]);
 
-
   useEffect(() => {
     if (!authLoading && !currentUser) {
       router.replace('/login');
     }
   }, [currentUser, authLoading, router]);
 
-  const fetchFeedItems = useCallback(async () => {
-    if (!currentUser) return; // Ensure currentUser is available
+  const startRefreshButtonTimer = useCallback(() => {
+    if (refreshButtonTimerRef.current) {
+      clearTimeout(refreshButtonTimerRef.current);
+    }
+    refreshButtonTimerRef.current = setTimeout(() => {
+      if (!isLoadingFeed && !isRefreshingFeed) { // Only show if not currently loading
+        setShowRefreshButton(true);
+      }
+    }, REFRESH_BUTTON_TIMER_MS);
+  }, [isLoadingFeed, isRefreshingFeed]);
+
+  const fetchFeedItems = useCallback(async (isManualRefresh = false) => {
+    if (!currentUser) {
+      setCombinedFeedItems([]);
+      setIsLoadingFeed(false);
+      setIsRefreshingFeed(false);
+      return;
+    }
+
+    if (isManualRefresh) {
+      setIsRefreshingFeed(true);
+    } else if (combinedFeedItems.length === 0 || !isManualRefresh && isLoadingFeed) { 
+      // If it's the very first load or a programmatic refresh that's not manual (like after posting)
+      // and isLoadingFeed was already true (from initial mount), keep it.
+      // Otherwise, if list is empty, it's an initial load.
+      setIsLoadingFeed(true);
+    }
     
-    setIsRefreshingFeed(true); // Use a specific state for refresh button
+    setShowRefreshButton(false); // Hide button during fetch
+    if (refreshButtonTimerRef.current) {
+      clearTimeout(refreshButtonTimerRef.current);
+    }
 
     try {
-      // Fetch Posts
       const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
       const postsSnapshot = await getDocs(postsQuery);
-      const fetchedPosts: Post[] = [];
+      const fetchedPostsData: Post[] = [];
       postsSnapshot.forEach((doc) => {
-        fetchedPosts.push({ id: doc.id, ...doc.data() } as Post);
+        fetchedPostsData.push({ id: doc.id, ...doc.data() } as Post);
       });
-      setAllPosts(fetchedPosts);
+      setAllPosts(fetchedPostsData);
 
-      // Fetch Rooms
       const now = Timestamp.now();
       const roomsQuery = query(
         collection(db, "chatRooms"),
         where("expiresAt", ">", now),
-        orderBy("expiresAt", "asc"), // expiresAt asc, then participantCount desc for better active room visibility
+        orderBy("expiresAt", "asc"),
         orderBy("participantCount", "desc"),
         limit(ROOMS_FETCH_LIMIT)
       );
       const roomsSnapshot = await getDocs(roomsQuery);
-      const fetchedRooms: ChatRoomFeedDisplayData[] = [];
+      const fetchedRoomsData: ChatRoomFeedDisplayData[] = [];
       roomsSnapshot.forEach((doc) => {
         const roomData = doc.data();
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
-          fetchedRooms.push({
+          fetchedRoomsData.push({
             id: doc.id,
             name: roomData.name,
             description: roomData.description,
@@ -170,28 +199,31 @@ export default function HomePage() {
           } as ChatRoomFeedDisplayData);
         }
       });
-      setActiveRooms(fetchedRooms);
+      setActiveRooms(fetchedRoomsData);
 
     } catch (error) {
       console.error("Error fetching feed items: ", error);
     } finally {
-      setIsLoadingFeed(false); // Set initial loading to false after first fetch
+      setIsLoadingFeed(false);
       setIsRefreshingFeed(false);
+      startRefreshButtonTimer(); // Restart timer after fetch
     }
-  }, [currentUser]); // Added currentUser as dependency
+  }, [currentUser, startRefreshButtonTimer, combinedFeedItems.length, isLoadingFeed]);
 
   useEffect(() => {
     if (currentUser) {
-      fetchFeedItems(); // Initial fetch
+      fetchFeedItems(); 
+    } else {
+      setIsLoadingFeed(false); 
+      setCombinedFeedItems([]);
     }
-  }, [currentUser, fetchFeedItems]); // fetchFeedItems is now a dependency
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [currentUser]); // fetchFeedItems is memoized, only run on currentUser change
 
   useEffect(() => {
     if (currentUser && userData?.privacySettings?.feedShowsEveryone === false) {
       setLoadingFriends(true);
       const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-      // Using onSnapshot for friends list as it's smaller and changes might be more critical for immediate filtering
       const unsubscribeFriends = onSnapshot(friendsRef, (snapshot) => {
         const friendIds = snapshot.docs.map(doc => doc.id);
         setFriends(friendIds);
@@ -207,12 +239,11 @@ export default function HomePage() {
     }
   }, [currentUser, userData?.privacySettings?.feedShowsEveryone]);
 
-
   useEffect(() => {
     const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true; 
 
     if (isLoadingFeed || (!feedShowsEveryone && loadingFriends)) {
-      return; // Don't combine if still loading initial feed or friends for filtering
+      return; 
     }
 
     let filteredPosts = allPosts;
@@ -234,8 +265,20 @@ export default function HomePage() {
 
   }, [allPosts, activeRooms, isLoadingFeed, userData?.privacySettings?.feedShowsEveryone, friends, loadingFriends, currentUser]);
 
+  useEffect(() => {
+    return () => {
+      if (refreshButtonTimerRef.current) {
+        clearTimeout(refreshButtonTimerRef.current);
+      }
+    };
+  }, []);
 
-  if (authLoading || (currentUser && isUserDataLoading)) {
+  const handleRefreshClick = useCallback(() => {
+    if (isRefreshingFeed) return;
+    fetchFeedItems(true); // Pass true for manual refresh
+  }, [isRefreshingFeed, fetchFeedItems]);
+
+  if (authLoading || (currentUser && isUserDataLoading && !userData)) { // Check if userData is also loaded
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-6">
@@ -339,28 +382,28 @@ export default function HomePage() {
               <div className="p-6 pt-4">
                 <CreatePostForm onPostCreated={() => {
                     setIsCreatePostDialogOpen(false);
-                    fetchFeedItems(); // Yeni gönderi sonrası akışı yenile
+                    fetchFeedItems(); 
                 }} />
               </div>
             </DialogContent>
           </Dialog>
           
-          <Button
-            onClick={fetchFeedItems}
-            disabled={isRefreshingFeed}
-            variant="outline"
-            className="w-full my-4"
-          >
-            {isRefreshingFeed ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Yeni Akışı Yükle
-          </Button>
+          {showRefreshButton && !isLoadingFeed && !isRefreshingFeed && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="my-3">
+              <Button
+                onClick={handleRefreshClick}
+                variant="outline"
+                className="w-full py-2.5 text-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-sm rounded-full"
+                disabled={isRefreshingFeed || isLoadingFeed}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Yeni Gönderileri Yükle
+              </Button>
+            </motion.div>
+          )}
 
 
-          {isLoadingFeed && !isRefreshingFeed && ( // Only show initial full loader if not refreshing
+          {(isLoadingFeed && combinedFeedItems.length === 0) && ( 
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }}
@@ -373,7 +416,19 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {!isLoadingFeed && combinedFeedItems.length === 0 && (
+          {isRefreshingFeed && (
+             <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="flex items-center justify-center py-4 text-sm text-muted-foreground"
+            >
+              <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+              Akış yenileniyor...
+            </motion.div>
+          )}
+
+          {!isLoadingFeed && !isRefreshingFeed && combinedFeedItems.length === 0 && (
              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                 <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
                     <CardHeader className="pb-2">
@@ -401,7 +456,7 @@ export default function HomePage() {
                 if (item.feedItemType === 'post') {
                   return (
                     <motion.div 
-                        key={`post-${item.id}-${item.createdAt?.seconds}`} // Daha benzersiz bir key
+                        key={`post-${item.id}-${item.createdAt?.seconds || index}`} 
                         custom={index}
                         variants={feedItemEntryVariants}
                         initial="hidden"
@@ -413,7 +468,7 @@ export default function HomePage() {
                 } else if (item.feedItemType === 'room') {
                   return (
                     <motion.div 
-                        key={`room-${item.id}-${item.createdAt?.seconds}`} // Daha benzersiz bir key
+                        key={`room-${item.id}-${item.createdAt?.seconds || index}`}
                         custom={index}
                         variants={feedItemEntryVariants}
                         initial="hidden"
@@ -447,3 +502,4 @@ export default function HomePage() {
     </div>
   );
 }
+
