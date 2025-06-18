@@ -427,30 +427,49 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return false;
     }
     setIsUserLoading(true);
+    console.log("[AuthContext] updateUserProfile: Start", updates);
 
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
-    let finalPhotoURL: string | null | undefined = undefined; // undefined: no change, null: remove, string: new URL
+    let finalPhotoURL: string | null | undefined = undefined; 
 
     try {
-      // Handle photo upload/removal first
       if (updates.newPhotoFile) {
+        console.log("[AuthContext] updateUserProfile: Handling newPhotoFile");
         const photoFile = updates.newPhotoFile;
-        const fileExtension = photoFile.name.split('.').pop();
+        const fileExtension = photoFile.name.split('.').pop()?.toLowerCase();
+
+        if (!fileExtension) {
+            toast({ title: "Dosya Hatası", description: "Geçersiz dosya türü veya dosya adı uzantısı yok.", variant: "destructive" });
+            setIsUserLoading(false);
+            return false;
+        }
+        const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        if (!validExtensions.includes(fileExtension)) {
+            toast({ title: "Dosya Hatası", description: `Desteklenmeyen dosya uzantısı: .${fileExtension}. Lütfen ${validExtensions.join(', ')} uzantılı bir dosya seçin.`, variant: "destructive" });
+            setIsUserLoading(false);
+            return false;
+        }
+
         const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
+        console.log("[AuthContext] updateUserProfile: Before uploadBytes");
         await uploadBytes(photoRef, photoFile);
+        console.log("[AuthContext] updateUserProfile: After uploadBytes, Before getDownloadURL");
         finalPhotoURL = await getDownloadURL(photoRef);
+        console.log("[AuthContext] updateUserProfile: After getDownloadURL", finalPhotoURL);
       } else if (updates.removePhoto) {
+        console.log("[AuthContext] updateUserProfile: Handling removePhoto");
         finalPhotoURL = null;
-        // Optionally delete old photo from storage if it exists
         const currentPhotoURL = userData?.photoURL || auth.currentUser?.photoURL;
         if (currentPhotoURL) {
           try {
             const oldPhotoRef = storageRef(storage, currentPhotoURL);
-            await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error:", e));
+            console.log("[AuthContext] updateUserProfile: Attempting to delete old photo", currentPhotoURL);
+            await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error (ignored):", e));
+            console.log("[AuthContext] updateUserProfile: Old photo deletion attempt finished.");
           } catch (e) {
-            console.warn("Could not delete old profile picture from storage:", e);
+            console.warn("Could not delete old profile picture from storage (error caught but ignored):", e);
           }
         }
       }
@@ -460,7 +479,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         firestoreUpdates.photoURL = finalPhotoURL;
       }
 
-      // Handle other updates
       const currentDisplayName = userData?.displayName || auth.currentUser.displayName || "";
       if (updates.displayName && updates.displayName.trim() !== currentDisplayName) {
         if (updates.displayName.trim().length < 3) {
@@ -493,30 +511,40 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (!hasAuthUpdates && !hasFirestoreUpdates) {
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
-        setIsUserLoading(false);
-        return true;
+        // setIsUserLoading(false) will be handled by finally
+        return true; 
       }
 
       if (hasAuthUpdates && auth.currentUser) {
+        console.log("[AuthContext] updateUserProfile: Before updateFirebaseProfile", authUpdates);
         await updateFirebaseProfile(auth.currentUser, authUpdates);
+        console.log("[AuthContext] updateUserProfile: After updateFirebaseProfile");
       }
 
       if (hasFirestoreUpdates) {
+        console.log("[AuthContext] updateUserProfile: Before updateDoc (Firestore)", firestoreUpdates);
         await updateDoc(userDocRef, firestoreUpdates);
+        console.log("[AuthContext] updateUserProfile: After updateDoc (Firestore)");
       }
-
-      if (hasFirestoreUpdates) {
-        setUserData(prev => prev ? { ...prev, ...firestoreUpdates, photoURL: finalPhotoURL !== undefined ? finalPhotoURL : prev.photoURL } : null);
-      } else if (hasAuthUpdates && authUpdates.photoURL !== undefined) { // Only photo was updated in Auth
-        setUserData(prev => prev ? { ...prev, photoURL: authUpdates.photoURL } : null);
+      
+      // Update local userData state
+      const newLocalUserData = { ...userData } as UserData; // Type assertion
+        if (firestoreUpdates.displayName !== undefined) newLocalUserData.displayName = firestoreUpdates.displayName;
+        if (firestoreUpdates.photoURL !== undefined) newLocalUserData.photoURL = firestoreUpdates.photoURL;
+        if (firestoreUpdates.bio !== undefined) newLocalUserData.bio = firestoreUpdates.bio;
+        if (firestoreUpdates.privacySettings !== undefined) newLocalUserData.privacySettings = firestoreUpdates.privacySettings;
+      
+      if (Object.keys(newLocalUserData).length > 0) { // Check if there are actual changes to local data
+        setUserData(newLocalUserData);
       }
 
 
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+      console.log("[AuthContext] updateUserProfile: Try block finished, returning true");
       return true;
 
     } catch (error: any) {
-      console.error("[AuthContext] Genel profil güncelleme başarısız:", error);
+      console.error("[AuthContext] Genel profil güncelleme başarısız:", error.code, error.message, error);
       toast({
         title: "Profil Güncelleme Hatası",
         description: `Profil güncellenirken bir sorun oluştu: ${error.message || 'Bilinmeyen hata'}`,
@@ -524,6 +552,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       return false;
     } finally {
+      console.log("[AuthContext] updateUserProfile: Finally block, setting isUserLoading to false");
       setIsUserLoading(false);
     }
   }, [toast, userData]);
