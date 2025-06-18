@@ -19,7 +19,7 @@ import { useRouter } from 'next/navigation';
 import { Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const INITIAL_DIAMONDS = 10;
+const INITIAL_DIAMONDS = 30; // Yeni kullanıcı başlangıç elması 30 olarak güncellendi.
 
 export interface PrivacySettings {
   postsVisibleToFriendsOnly?: boolean;
@@ -163,7 +163,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log("[AuthContext] onAuthStateChanged triggered. User:", user ? user.uid : null);
       setCurrentUser(user);
       if (user) {
-        // Yerel ban kontrolü kaldırıldı. Güvenilir kontrol Firestore'dan veri çekildikten sonra yapılacak.
         setIsUserDataLoading(true);
         const userDocRef = doc(db, "users", user.uid);
         try {
@@ -173,12 +172,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 if (existingData.isBanned) {
                     console.log(`[AuthContext] Firestore check: User ${user.uid} is banned. Forcing logout.`);
                     await signOut(auth);
-                    // setUserData(null); // onAuthStateChanged tekrar tetikleneceği için burada state güncellemeye gerek yok
-                    // setIsUserDataLoading(false); // onAuthStateChanged tekrar tetikleneceği için burada state güncellemeye gerek yok
-                    // setLoading(false); // onAuthStateChanged tekrar tetikleneceği için burada state güncellemeye gerek yok
                     router.push('/login?reason=banned_firestore_check');
                     toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive"});
-                    return; // Banlı kullanıcı için işlem burada sonlanır.
+                    return; 
                 }
 
                 console.log(`[AuthContext] User document found for ${user.uid}. Data:`, existingData);
@@ -221,7 +217,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
             } else {
                 console.log(`[AuthContext] User document for ${user.uid} (email: ${user.email}, displayName: ${user.displayName}) not found. Attempting to create.`);
-                // createUserDocument, kendi içinde setUserData çağrısını yapacak
                 await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
             }
         } catch (error: any) {
@@ -242,7 +237,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
     return unsubscribe;
-  }, [router, toast, createUserDocument]); // Bağımlılık dizisinden userData çıkarıldı.
+  }, [router, toast, createUserDocument]);
 
 
   const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
@@ -539,6 +534,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       toast({ title: "Hata", description: "Kendinizi şikayet edemezsiniz.", variant: "destructive" });
       return;
     }
+    setIsUserLoading(true);
     try {
       await addDoc(collection(db, "reports"), {
         reporterId: currentUser.uid,
@@ -567,21 +563,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         transaction.update(reportedUserRef, updates);
       });
       
-      setUserData(prev => {
-        if(prev && prev.uid === reportedUserId) {
-          return {...prev, reportCount: newReportCount, isBanned: shouldBeBanned || prev.isBanned};
-        }
-        return prev;
-      });
+      if (userData && reportedUserId === userData.uid) {
+         setUserData(prev => prev ? {...prev, reportCount: newReportCount, isBanned: shouldBeBanned || prev.isBanned} : null);
+      }
+
 
       toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir." });
       if(shouldBeBanned){
-         toast({ title: "Kullanıcı Banlandı (Simülasyon)", description: `${reportedUserId} ID'li kullanıcı ${newReportCount} şikayete ulaştığı için otomatik olarak banlandı.`, variant: "destructive", duration: 7000 });
+         toast({ title: "Kullanıcı Banlandı (Simülasyon)", description: `Şikayet edilen kullanıcı ${newReportCount} şikayete ulaştığı için otomatik olarak banlandı.`, variant: "destructive", duration: 7000 });
       }
 
     } catch (error: any) {
       console.error("Error reporting user:", error);
       toast({ title: "Hata", description: `Kullanıcı şikayet edilirken bir sorun oluştu: ${error.message || error}`, variant: "destructive" });
+    } finally {
+        setIsUserLoading(false);
     }
   }, [currentUser, userData, toast]);
 
@@ -594,6 +590,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         toast({ title: "Hata", description: "Kendinizi engelleyemezsiniz.", variant: "destructive" });
         return;
     }
+    setIsUserLoading(true);
     try {
       const blockRef = doc(db, `users/${currentUser.uid}/blockedUsers`, blockedUserId);
       const targetUserDoc = await getDoc(doc(db, "users", blockedUserId));
@@ -613,6 +610,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       console.error("Error blocking user:", error);
       toast({ title: "Hata", description: "Kullanıcı engellenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+        setIsUserLoading(false);
     }
   }, [currentUser, toast]);
 
@@ -666,3 +665,4 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
+

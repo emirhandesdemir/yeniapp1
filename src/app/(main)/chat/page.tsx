@@ -53,7 +53,7 @@ interface GameSettings {
   questionIntervalSeconds: number;
 }
 
-const ROOM_CREATION_COST = 10;
+const ROOM_CREATION_COST = 1; // Oda oluşturma maliyeti 1 elmasa düşürüldü.
 const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7; // Normal kullanıcılar için varsayılan
 const PREMIUM_USER_ROOM_CAPACITY = 50; // Premium kullanıcılar için kapasite
@@ -159,61 +159,54 @@ export default function ChatRoomsPage() {
       collection(db, "chatRooms"),
       where("expiresAt", ">", currentTime),      
       orderBy("expiresAt", "asc"),             
-      // participantCount ve createdAt sıralamaları, ana sıralama (expiresAt) sonrası client-side'da yapılacak
-      // Firestore birden fazla inequality filter ve farklı bir alanda orderBy desteklemez (expiresAt > ve participantCount desc gibi)
-      // Ya da birden fazla orderBy için composite index gerekir, şimdilik client-side sort.
-      limit(50) // Fetch a reasonable number for client-side sort
+      limit(50) 
     );
 
-    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
-      const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
-        const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
-        // expiresAt kontrolü Firestore sorgusunda yapıldı, burada tekrar gerekmeyebilir ama garanti için kalabilir.
-        if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) { 
-          
-          let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
-          try {
-            const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
-            const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
-            const voiceSnapshot = await getDocs(voiceQuery);
-            voiceSnapshot.forEach(vpDoc => {
-              const vpData = vpDoc.data();
-              voicePreviews.push({
-                uid: vpDoc.id,
-                photoURL: vpData.photoURL || null,
-                displayName: vpData.displayName || null,
+    const fetchRooms = async () => {
+      setLoading(true);
+      try {
+        const querySnapshot = await getDocs(q);
+        const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
+          const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
+          if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) { 
+            let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
+            try {
+              const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
+              const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
+              const voiceSnapshot = await getDocs(voiceQuery);
+              voiceSnapshot.forEach(vpDoc => {
+                const vpData = vpDoc.data();
+                voicePreviews.push({
+                  uid: vpDoc.id,
+                  photoURL: vpData.photoURL || null,
+                  displayName: vpData.displayName || null,
+                });
               });
-            });
-          } catch (error) {
-            console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
+            } catch (error) {
+              console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
+            }
+            return { id: docSnapshot.id, ...roomData, voiceParticipantPreviews: voicePreviews } as ChatRoom;
           }
+          return null;
+        });
 
-          return { id: docSnapshot.id, ...roomData, voiceParticipantPreviews: voicePreviews } as ChatRoom;
-        }
-        return null;
-      });
-
-      const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
-      
-      // Sort client-side
-      const sortedRooms = resolvedRooms.sort((a,b) => {
-        const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
-        if (participantDiff !== 0) return participantDiff;
-
-        const timeA = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
-        const timeB = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0;
-        
-        return timeB - timeA;
-      });
-      setChatRooms(sortedRooms);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching chat rooms: ", error);
-      toast({ title: "Hata", description: "Sohbet odaları yüklenirken bir sorun oluştu.", variant: "destructive" });
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+        const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
+        const sortedRooms = resolvedRooms.sort((a,b) => {
+          const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
+          if (participantDiff !== 0) return participantDiff;
+          const timeA = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
+          const timeB = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
+          return timeB - timeA;
+        });
+        setChatRooms(sortedRooms);
+      } catch (error) {
+        console.error("Error fetching chat rooms: ", error);
+        toast({ title: "Hata", description: "Sohbet odaları yüklenirken bir sorun oluştu.", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRooms();
   }, [toast]);
 
   const resetCreateRoomForm = () => {
@@ -669,3 +662,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+
