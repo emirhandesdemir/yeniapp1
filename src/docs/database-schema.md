@@ -79,7 +79,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `joinedAt`: (Timestamp) Sesli sohbete katıldığı zaman
       - `isMuted`: (Boolean) Kullanıcının kendi mikrofonunu kapatıp kapatmadığı (Varsayılan: `false`)
       - `isMutedByAdmin`: (Boolean) Oda yöneticisi tarafından susturulup susturulmadığı (Varsayılan: `false`)
-      - `isSpeaking`: (Boolean) Kullanıcının o anda konuşup konuşmadığı (Prototipte simüle edilebilir, Varsayılan: `false`)
+      - `isSpeaking`: (Boolean) Kullanıcının o anda konuşup konuşmadığı (Varsayılan: `false`)
     - **Not:** `joinedAt` (Artan) üzerinde basit bir indeks Firestore tarafından genellikle otomatik oluşturulur ve katılımcıları sıralamak için kullanılır.
   - `webrtcSignals`: Kullanıcılar arasında WebRTC sinyallerini (offer, answer, ICE candidate) iletmek için kullanılır. Her kullanıcı kendi UID'si altında bir belgeye sahip olur ve bu belge altında gelen sinyalleri saklayan bir `signals` alt koleksiyonu bulunur.
     - **Yol:** `/chatRooms/{roomId}/webrtcSignals/{userId}/signals/{signalId}`
@@ -274,5 +274,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-    

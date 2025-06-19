@@ -95,8 +95,8 @@ export interface ActiveVoiceParticipantData {
   photoURL: string | null;
   isPremium?: boolean;
   joinedAt?: Timestamp;
-  isMuted?: boolean;
-  isMutedByAdmin?: boolean;
+  isMuted?: boolean; // User's self-mute status
+  isMutedByAdmin?: boolean; // Admin-enforced mute
   isSpeaking?: boolean;
 }
 
@@ -434,7 +434,7 @@ export default function ChatRoomPage() {
 
     try {
         if (signal.type === 'offer') {
-            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer" ) { // Removed "have-remote-offer" to allow setting if remote offer already set
+            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer" ) { 
                 console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition or race.`);
             }
             if (signal.sdp) {
@@ -464,7 +464,7 @@ export default function ChatRoomPage() {
             }
             negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'candidate') {
-            if (signal.candidate && signal.candidate.candidate) { // Ensure candidate string is not empty
+            if (signal.candidate && signal.candidate.candidate) { 
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
                     console.log(`[WebRTC] Added ICE candidate from ${fromUid}.`);
@@ -625,6 +625,12 @@ export default function ChatRoomPage() {
       silenceTimerRef.current = null;
     }
     if (analyserRef.current) {
+        // Disconnect analyser to allow garbage collection
+        if (audioContextRef.current && audioContextRef.current.destination) {
+            // Assuming source was connected to analyser, and analyser perhaps to destination or nowhere else
+            // This is a bit tricky without knowing the full graph.
+            // Best to just nullify and let GC handle if possible.
+        }
         analyserRef.current = null;
     }
     dataArrayRef.current = null;
@@ -671,7 +677,22 @@ export default function ChatRoomPage() {
         throw new Error("No active tracks in media stream");
       }
       localStreamRef.current = stream;
+      
+      // Mute by admin check before enabling local track for others
+      const selfVoiceDocRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+      const selfVoiceDocSnap = await getDoc(selfVoiceDocRef);
+      const selfIsAdminMuted = selfVoiceDocSnap.exists() && selfVoiceDocSnap.data()?.isMutedByAdmin === true;
+
+      if (selfIsAdminMuted) {
+        console.log("[WebRTC] User is admin-muted. Joining voice but local tracks will remain disabled for others initially.");
+        localStreamRef.current.getAudioTracks().forEach(track => track.enabled = false);
+        setSelfMuted(true); // Reflect admin mute visually
+      } else {
+        setSelfMuted(false);
+        localStreamRef.current.getAudioTracks().forEach(track => track.enabled = true);
+      }
       startSpeakingDetection();
+
 
       await setDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), {
         uid: currentUser.uid,
@@ -679,14 +700,13 @@ export default function ChatRoomPage() {
         photoURL: userData.photoURL || currentUser.photoURL || null,
         isPremium: userIsCurrentlyPremium,
         joinedAt: serverTimestamp(),
-        isMuted: false,
-        isMutedByAdmin: false,
+        isMuted: selfIsAdminMuted, // Initial self-mute state reflects admin mute
+        isMutedByAdmin: selfIsAdminMuted,
         isSpeaking: false,
       });
       await updateDoc(doc(db, "chatRooms", roomId), { voiceParticipantCount: increment(1) });
 
       setIsCurrentUserInVoiceChat(true);
-      setSelfMuted(false);
       toast({ title: "Sesli Sohbete Katıldın!" });
 
       const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`));
@@ -806,20 +826,18 @@ export default function ChatRoomPage() {
 
           const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
 
-          if (isCurrentUserInVoiceChatRef.current && selfInFirestore && selfInFirestore.isSpeaking !== localIsSpeakingRef.current && !selfMuted) {
-            console.log(`[WebRTC Voice Listener] Speaking status for local user (${currentUser.uid}) might differ. Firestore: ${selfInFirestore.isSpeaking}, Local Detection: ${localIsSpeakingRef.current}. SelfMuted: ${selfMuted}`);
+          if (isCurrentUserInVoiceChatRef.current && selfInFirestore && selfInFirestore.isSpeaking !== localIsSpeakingRef.current && !selfMuted && !selfInFirestore.isMutedByAdmin) {
+            console.log(`[WebRTC Voice Listener] Speaking status for local user (${currentUser.uid}) might differ. Firestore: ${selfInFirestore.isSpeaking}, Local Detection: ${localIsSpeakingRef.current}. SelfMuted: ${selfMuted}, AdminMuted: ${selfInFirestore.isMutedByAdmin}`);
           }
 
-          if (isCurrentUserInVoiceChatRef.current && !selfMuted) {
-            newVoiceParticipantsData = newVoiceParticipantsData.map(p =>
-              p.id === currentUser.uid ? { ...p, isSpeaking: localIsSpeakingRef.current } : p
-            );
-          } else if (isCurrentUserInVoiceChatRef.current && selfMuted) {
-             newVoiceParticipantsData = newVoiceParticipantsData.map(p =>
-              p.id === currentUser.uid ? { ...p, isSpeaking: false } : p 
-            );
+          if (isCurrentUserInVoiceChatRef.current) {
+            newVoiceParticipantsData = newVoiceParticipantsData.map(p => {
+              if (p.id === currentUser.uid) {
+                return { ...p, isSpeaking: (selfInFirestore?.isMutedByAdmin || selfMuted) ? false : localIsSpeakingRef.current };
+              }
+              return p;
+            });
           }
-
 
           setActiveVoiceParticipants(newVoiceParticipantsData);
 
@@ -828,6 +846,18 @@ export default function ChatRoomPage() {
               handleLeaveVoiceChat(true);
               return;
           }
+          
+          // Handle admin mute propagation to local stream
+          if (selfInFirestore && localStreamRef.current) {
+            const isAdminMuted = selfInFirestore.isMutedByAdmin === true;
+            localStreamRef.current.getAudioTracks().forEach(track => {
+              track.enabled = !isAdminMuted && !selfMuted;
+            });
+            if (isAdminMuted && !selfMuted) {
+                setSelfMuted(true); // Reflect admin mute locally if user hasn't self-muted
+            }
+          }
+
 
           if (isCurrentUserInVoiceChatRef.current && localStreamRef.current && localStreamRef.current.active) {
               newVoiceParticipantsData.forEach(p => {
@@ -1349,62 +1379,60 @@ export default function ChatRoomPage() {
 
   const userIsCurrentlyPremium = isCurrentUserPremium();
 
-
   const toggleSelfMute = useCallback(async () => {
     if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current || !localStreamRef.current) return;
+
+    const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+    const voiceParticipantSnap = await getDoc(voiceParticipantRef);
+    if (voiceParticipantSnap.exists() && voiceParticipantSnap.data()?.isMutedByAdmin) {
+      toast({ title: "Sessize Alındınız", description: "Oda yöneticisi tarafından sessize alındığınız için mikrofonunuzu açamazsınız.", variant: "destructive" });
+      return;
+    }
+
     const newMuteState = !selfMuted;
     localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = !newMuteState; });
     try {
-        const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
-        await updateDoc(voiceParticipantRef, { isMuted: newMuteState, isMutedByAdmin: false });
+        await updateDoc(voiceParticipantRef, { isMuted: newMuteState }); // isMutedByAdmin'i burada değiştirmiyoruz
         setSelfMuted(newMuteState);
+        // Konuşma durumu da mute durumuna göre güncellenmeli
+        if (newMuteState) {
+            updateSpeakingStatusInFirestore(false); // Mute ise konuşmuyor
+            setLocalIsSpeaking(false);
+        }
     } catch (error) {
         console.error("Error toggling self mute:", error);
         toast({ title: "Hata", description: "Mikrofon durumu güncellenirken bir sorun oluştu.", variant: "destructive" });
-        localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = selfMuted; });
+        localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = selfMuted; }); // Hata durumunda eski duruma dön
     }
-  }, [currentUser, roomId, selfMuted, toast]);
+  }, [currentUser, roomId, selfMuted, toast, updateSpeakingStatusInFirestore]);
 
-  const handleAdminKickFromVoice = useCallback(async (targetUserId: string) => {
+  const handleAdminToggleMuteUserVoice = useCallback(async (targetUserId: string, currentAdminMuteState?: boolean) => {
     if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
-    cleanupPeerConnection(targetUserId);
+    
+    const newAdminMuteState = !currentAdminMuteState;
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
-      const roomRef = doc(db, "chatRooms", roomId);
-      const batch = writeBatch(db);
-      batch.delete(voiceParticipantRef);
-
-      const roomDocSnap = await getDoc(roomRef);
-      if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
-        batch.update(roomRef, { voiceParticipantCount: increment(-1) });
-      }
-
-      const signalsRef = collection(db, `chatRooms/${roomId}/webrtcSignals/${targetUserId}/signals`);
-      const signalsSnap = await getDocs(signalsRef);
-      signalsSnap.forEach(signalDoc => batch.delete(signalDoc.ref));
-
-      await batch.commit();
-      toast({ title: "Başarılı", description: "Kullanıcı sesli sohbetten atıldı." });
+      await updateDoc(voiceParticipantRef, {
+        isMutedByAdmin: newAdminMuteState,
+        isMuted: newAdminMuteState, // Admin mute ettiğinde, kullanıcının self-mute'u da aktif olmalı
+      });
+      toast({
+        title: "Başarılı",
+        description: `Kullanıcının mikrofonu ${newAdminMuteState ? "kapatıldı (yönetici tarafından)" : "açılmasına izin verildi"}.`
+      });
     } catch (error) {
-      console.error("Error kicking user from voice:", error);
-      toast({ title: "Hata", description: "Kullanıcı sesli sohbetten atılırken bir sorun oluştu.", variant: "destructive" });
+      console.error("Error toggling user mute by admin:", error);
+      toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" });
     }
-  }, [currentUser, roomId, isCurrentUserRoomCreator, cleanupPeerConnection, toast]);
+  }, [currentUser, roomId, isCurrentUserRoomCreator, toast]);
 
-  const handleAdminToggleMuteUserVoice = useCallback(async (targetUserId: string, currentMuteState?: boolean) => { if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return; try { const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId); await updateDoc(voiceParticipantRef, { isMutedByAdmin: !currentMuteState, isMuted: !currentMuteState }); toast({ title: "Başarılı", description: `Kullanıcının mikrofonu ${!currentMuteState ? "kapatıldı" : "açıldı (isteğe bağlı)"}.` }); } catch (error) { console.error("Error toggling user mute by admin:", error); toast({ title: "Hata", description: "Kullanıcının mikrofon durumu yönetici tarafından güncellenirken bir sorun oluştu.", variant: "destructive" }); } }, [currentUser, roomId, isCurrentUserRoomCreator, toast]);
-
-  const handleVoiceParticipantSlotClick = useCallback((participantId: string | null) => {
-    if (participantId && participantId !== currentUser?.uid) {
-      handleOpenUserInfoPopover(participantId);
-    }
-  }, [currentUser, handleOpenUserInfoPopover]);
 
   const handleKickParticipantFromTextChat = useCallback(async (targetUserId: string, targetUsername?: string) => {
     if (!isCurrentUserRoomCreator || !currentUser || targetUserId === currentUser?.uid) {
       toast({ title: "Yetki Hatası", description: "Bu kullanıcıyı odadan atma yetkiniz yok.", variant: "destructive" });
       return;
     }
-    if (!confirm(`${targetUsername || 'Bu kullanıcıyı'} metin sohbetinden atmak istediğinizden emin misiniz? Bu işlem kullanıcıyı sesli sohbetten de çıkaracaktır.`)) return;
+    if (!confirm(`${targetUsername || 'Bu kullanıcıyı'} metin sohbetinden atmak istediğinizden emin misiniz? Bu işlem kullanıcıyı sesli sohbetten de çıkaracaktır (eğer katılıyorsa).`)) return;
 
     try {
       const batch = writeBatch(db);
@@ -1422,7 +1450,7 @@ export default function ChatRoomPage() {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
       const voiceParticipantSnap = await getDoc(voiceParticipantRef);
       if (voiceParticipantSnap.exists()) {
-        cleanupPeerConnection(targetUserId);
+        cleanupPeerConnection(targetUserId); // Önce peer bağlantısını temizle
         batch.delete(voiceParticipantRef);
         if (roomDocSnap.exists() && (roomDocSnap.data()?.voiceParticipantCount ?? 0) > 0) {
             batch.update(roomRef, { voiceParticipantCount: increment(-1) });
@@ -1467,9 +1495,9 @@ export default function ChatRoomPage() {
                     console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
                     audioEl.srcObject = stream;
                 }
-                if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) {
+                if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) { // Check readyState
                      audioEl.play().catch(error => {
-                        if (error.name !== 'AbortError') {
+                        if (error.name !== 'AbortError') { // AbortError can happen if srcObject is changed while playing
                              console.warn(`[WebRTC RENDER REF] Error explicitly playing audio for ${uid}:`, error);
                         }
                      });
@@ -1554,7 +1582,7 @@ export default function ChatRoomPage() {
           )}
         </div>
       </header>
-      <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
+      <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
       <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
           {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} currentUserIsPremium={userIsCurrentlyPremium} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}

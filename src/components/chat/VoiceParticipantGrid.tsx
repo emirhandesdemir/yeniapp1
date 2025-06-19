@@ -20,7 +20,6 @@ interface VoiceParticipantSlotProps {
   isCurrentUser: boolean;
   isRoomCreatorViewing: boolean;
   isParticipantTheRoomCreator: boolean;
-  onAdminKick: () => void;
   onAdminToggleMute: () => void;
   getAvatarFallbackText: (name?: string | null) => string;
   onClick: () => void;
@@ -32,7 +31,6 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
   isCurrentUser,
   isRoomCreatorViewing,
   isParticipantTheRoomCreator,
-  onAdminKick,
   onAdminToggleMute,
   getAvatarFallbackText,
   onClick,
@@ -89,13 +87,9 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="top">
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAdminToggleMute(); }} disabled={participant.isMuted === undefined && participant.isMutedByAdmin === undefined}>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAdminToggleMute(); }}>
               {participant.isMutedByAdmin ? <Mic className="mr-2 h-4 w-4" /> : <VolumeX className="mr-2 h-4 w-4" />}
-              {participant.isMutedByAdmin ? "Sesi Açmasına İzin Ver" : "Kullanıcıyı Sessize Al"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAdminKick(); }} className="text-destructive focus:text-destructive">
-              <UserX className="mr-2 h-4 w-4" />
-              Sohbetten At
+              {participant.isMutedByAdmin ? "Sesini Açmasına İzin Ver" : "Kullanıcıyı Sessize Al"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -112,8 +106,8 @@ const VoiceParticipantGrid: React.FC<{
   isCurrentUserRoomCreator: boolean;
   roomCreatorId?: string;
   maxSlots: number;
-  onAdminKickUser: (targetUserId: string) => void;
-  onAdminToggleMuteUser: (targetUserId: string, currentMuteState?: boolean) => void;
+  onAdminKickUser: (targetUserId: string) => void; // This prop is no longer used but kept for type consistency if other parts of app expect it.
+  onAdminToggleMuteUser: (targetUserId: string, currentAdminMuteState?: boolean) => void;
   getAvatarFallbackText: (name?: string | null) => string;
   onSlotClick: (participantId: string | null) => void;
 }> = React.memo(({
@@ -122,7 +116,6 @@ const VoiceParticipantGrid: React.FC<{
   isCurrentUserRoomCreator,
   roomCreatorId,
   maxSlots,
-  onAdminKickUser,
   onAdminToggleMuteUser,
   getAvatarFallbackText,
   onSlotClick
@@ -164,7 +157,6 @@ const VoiceParticipantGrid: React.FC<{
             isCurrentUser={hostParticipant.id === currentUserUid}
             isRoomCreatorViewing={isCurrentUserRoomCreator}
             isParticipantTheRoomCreator={hostParticipant.id === roomCreatorId}
-            onAdminKick={() => onAdminKickUser(hostParticipant!.id)}
             onAdminToggleMute={() => onAdminToggleMuteUser(hostParticipant!.id, hostParticipant!.isMutedByAdmin)}
             getAvatarFallbackText={getAvatarFallbackText}
             onClick={() => onSlotClick(hostParticipant!.id)}
@@ -182,7 +174,6 @@ const VoiceParticipantGrid: React.FC<{
               isCurrentUser={p.id === currentUserUid}
               isRoomCreatorViewing={isCurrentUserRoomCreator}
               isParticipantTheRoomCreator={p.id === roomCreatorId}
-              onAdminKick={() => onAdminKickUser(p.id)}
               onAdminToggleMute={() => onAdminToggleMuteUser(p.id, p.isMutedByAdmin)}
               getAvatarFallbackText={getAvatarFallbackText}
               onClick={() => onSlotClick(p.id)}
@@ -200,7 +191,6 @@ const VoiceParticipantGrid: React.FC<{
               isCurrentUser={p.id === currentUserUid}
               isRoomCreatorViewing={isCurrentUserRoomCreator}
               isParticipantTheRoomCreator={p.id === roomCreatorId}
-              onAdminKick={() => onAdminKickUser(p.id)}
               onAdminToggleMute={() => onAdminToggleMuteUser(p.id, p.isMutedByAdmin)}
               getAvatarFallbackText={getAvatarFallbackText}
               onClick={() => onSlotClick(p.id)}
