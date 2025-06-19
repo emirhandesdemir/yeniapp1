@@ -141,8 +141,8 @@ const CAPACITY_INCREASE_COST = 5;
 const CAPACITY_INCREASE_SLOTS = 1;
 const PREMIUM_USER_ROOM_CAPACITY = 50;
 
-const SPEAKING_THRESHOLD = 5; // Adjust as needed (0-255 for ByteFrequencyData)
-const SILENCE_DELAY_MS = 1000; // Time to wait before marking as not speaking
+const SPEAKING_THRESHOLD = 5; 
+const SILENCE_DELAY_MS = 1000; 
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -203,7 +203,6 @@ export default function ChatRoomPage() {
 
   const [isIncreasingCapacity, setIsIncreasingCapacity] = useState(false);
 
-  // Speaking detection refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Uint8Array | null>(null);
@@ -245,6 +244,7 @@ export default function ChatRoomPage() {
       pc.onconnectionstatechange = null;
       pc.onsignalingstatechange = null;
       pc.oniceconnectionstatechange = null;
+      pc.onicegatheringstatechange = null;
 
       pc.getSenders().forEach(sender => {
         if (sender.track) {
@@ -289,32 +289,38 @@ export default function ChatRoomPage() {
 
     const pc = new RTCPeerConnection(STUN_SERVERS);
     peerConnectionsRef.current[targetUid] = pc;
-    console.log(`[WebRTC] PeerConnection created for ${targetUid}.`);
+    console.log(`[WebRTC] PeerConnection created for ${targetUid}. Initial signalingState: ${pc.signalingState}`);
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`[WebRTC] ICE candidate for ${targetUid}:`, event.candidate.candidate?.substring(0, 30) + "...");
+        console.log(`[WebRTC] ICE candidate for ${targetUid}:`, event.candidate.candidate ? event.candidate.candidate.substring(0, 30) + "..." : "null candidate string");
         sendSignalMessage(targetUid, { type: 'candidate', candidate: event.candidate.toJSON() });
       } else {
-        console.log(`[WebRTC] All ICE candidates have been sent for ${targetUid}`);
+        console.log(`[WebRTC] All ICE candidates have been sent for ${targetUid}. iceGatheringState: ${pc.iceGatheringState}`);
       }
     };
 
+    pc.onicegatheringstatechange = () => {
+      console.log(`[WebRTC] ICE gathering state change for ${targetUid}: ${pc.iceGatheringState}`);
+    };
+
     pc.ontrack = (event) => {
-      console.log(`[WebRTC ontrack] Track received from ${targetUid}. Stream ID: ${event.streams[0]?.id}, Tracks in stream: ${event.streams[0]?.getTracks().length}`);
+      console.log(`[WebRTC ontrack] Track received from ${targetUid}. Stream IDs: ${event.streams.map(s => s.id).join(', ')}, Track kind: ${event.track.kind}, Track readyState: ${event.track.readyState}, Track muted: ${event.track.muted}, Track enabled: ${event.track.enabled}`);
       if (event.streams && event.streams[0]) {
         const remoteStream = event.streams[0];
         const audioTracks = remoteStream.getAudioTracks();
-        console.log(`[WebRTC ontrack] Remote stream from ${targetUid} is active: ${remoteStream.active}, has ${audioTracks.length} audio tracks.`);
+        console.log(`[WebRTC ontrack] Remote stream from ${targetUid} (ID: ${remoteStream.id}) is active: ${remoteStream.active}, has ${audioTracks.length} audio tracks.`);
+
+        if (audioTracks.length > 0) {
+            console.log(`[WebRTC ontrack] First audio track from ${targetUid}: id=${audioTracks[0].id}, kind=${audioTracks[0].kind}, label='${audioTracks[0].label}', enabled=${audioTracks[0].enabled}, muted=${audioTracks[0].muted}, readyState=${audioTracks[0].readyState}`);
+            audioTracks[0].onunmute = () => console.log(`[WebRTC ontrack] Audio track ${audioTracks[0].id} from ${targetUid} UNMUTED.`);
+            audioTracks[0].onmute = () => console.log(`[WebRTC ontrack] Audio track ${audioTracks[0].id} from ${targetUid} MUTED.`);
+            audioTracks[0].onended = () => console.log(`[WebRTC ontrack] Audio track ${audioTracks[0].id} from ${targetUid} ENDED.`);
+        } else {
+            console.warn(`[WebRTC ontrack] Remote stream from ${targetUid} (ID: ${remoteStream.id}) has NO audio tracks.`);
+        }
 
         if (remoteStream.active && audioTracks.length > 0) {
-          audioTracks.forEach(track => {
-            console.log(`[WebRTC ontrack] Remote audio track from ${targetUid}: id=${track.id}, kind=${track.kind}, label='${track.label}', enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
-            track.onunmute = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} unmuted.`);
-            track.onmute = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} muted.`);
-            track.onended = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} ended.`);
-          });
-
           setActiveRemoteStreams(prev => {
             if (prev[targetUid] === remoteStream && prev[targetUid]?.active === remoteStream.active) {
                 console.log(`[WebRTC ontrack] Stream for ${targetUid} is already the same object and active status. No update to activeRemoteStreams.`);
@@ -324,9 +330,8 @@ export default function ChatRoomPage() {
             return { ...prev, [targetUid]: remoteStream };
           });
           remoteStreamsRef.current[targetUid] = remoteStream;
-
         } else {
-          console.warn(`[WebRTC ontrack] Remote stream from ${targetUid} is INACTIVE or has NO audio tracks. Not adding/removing from activeRemoteStreams.`);
+          console.warn(`[WebRTC ontrack] Remote stream from ${targetUid} (ID: ${remoteStream.id}) is INACTIVE or has NO audio tracks. Not adding/removing from activeRemoteStreams.`);
           setActiveRemoteStreams(prev => {
             if (prev[targetUid]) {
               const newStreams = { ...prev };
@@ -338,16 +343,19 @@ export default function ChatRoomPage() {
           });
         }
       } else {
-        console.warn(`[WebRTC ontrack] Received track event from ${targetUid} but no stream (event.streams[0] is null/undefined).`);
+        console.warn(`[WebRTC ontrack] Received track event from ${targetUid} but no stream (event.streams[0] is null/undefined). Track kind: ${event.track.kind}`);
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC] ICE connection state with ${targetUid}: ${pc.iceConnectionState}. RTC Signalling State: ${pc.signalingState}, Connection State: ${pc.connectionState}, ICE Gathering State: ${pc.iceGatheringState}`);
+        console.log(`[WebRTC] ICE connection state change for ${targetUid}: ${pc.iceConnectionState}. RTC Signaling State: ${pc.signalingState}, Connection State: ${pc.connectionState}, ICE Gathering State: ${pc.iceGatheringState}`);
+         if (pc.iceConnectionState === 'failed') {
+            console.error(`[WebRTC] ICE connection FAILED for ${targetUid}. Restarting ICE might be needed or check STUN/TURN servers.`);
+        }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] Connection state with ${targetUid}: ${pc.connectionState}. RTC Signalling State: ${pc.signalingState}, ICE Connection State: ${pc.iceConnectionState}, ICE Gathering State: ${pc.iceGatheringState}`);
+      console.log(`[WebRTC] Connection state change for ${targetUid}: ${pc.connectionState}. RTC Signaling State: ${pc.signalingState}, ICE Connection State: ${pc.iceConnectionState}, ICE Gathering State: ${pc.iceGatheringState}`);
       if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
         console.warn(`[WebRTC] Connection with ${targetUid} is ${pc.connectionState}. Cleaning up.`);
         cleanupPeerConnection(targetUid);
@@ -355,7 +363,7 @@ export default function ChatRoomPage() {
     };
 
     pc.onsignalingstatechange = () => {
-      console.log(`[WebRTC] Signaling state for ${targetUid}: ${pc.signalingState}`);
+      console.log(`[WebRTC] Signaling state change for ${targetUid}: ${pc.signalingState}`);
     };
 
     pc.onnegotiationneeded = async () => {
@@ -367,10 +375,11 @@ export default function ChatRoomPage() {
       try {
         if (pc.signalingState === 'stable') {
           negotiatingRef.current[targetUid] = true;
-          console.log(`[WebRTC] Creating offer for ${targetUid} due to onnegotiationneeded.`);
+          console.log(`[WebRTC] Creating offer for ${targetUid} due to onnegotiationneeded. Current signalingState: ${pc.signalingState}`);
           const offer = await pc.createOffer();
+          console.log(`[WebRTC] Offer created for ${targetUid}. Setting local description. Current signalingState: ${pc.signalingState}`);
           await pc.setLocalDescription(offer);
-          console.log(`[WebRTC] Local description (offer) set for ${targetUid} from onnegotiationneeded. SDP (first 30): ${offer.sdp?.substring(0,30)}...`);
+          console.log(`[WebRTC] Local description (offer) set for ${targetUid} from onnegotiationneeded. New signalingState: ${pc.signalingState}. SDP (first 30): ${offer.sdp?.substring(0,30)}...`);
           sendSignalMessage(targetUid, { type: 'offer', sdp: pc.localDescription!.sdp });
         } else {
            console.log(`[WebRTC] Negotiation needed for ${targetUid} but signaling state is ${pc.signalingState} (not 'stable'). Skipping offer creation in onnegotiationneeded.`);
@@ -384,13 +393,14 @@ export default function ChatRoomPage() {
     };
 
     if (localStreamRef.current && localStreamRef.current.active && localStreamRef.current.getTracks().length > 0) {
-      console.log(`[WebRTC] Adding ${localStreamRef.current.getTracks().length} local tracks to new PC for ${targetUid}. Local stream is active: ${localStreamRef.current.active}`);
-      localStreamRef.current.getTracks().forEach(track => {
+      const localTracks = localStreamRef.current.getTracks();
+      console.log(`[WebRTC] Adding ${localTracks.length} local tracks to new PC for ${targetUid}. Local stream is active: ${localStreamRef.current.active}`);
+      localTracks.forEach(track => {
         try {
             const sender = pc.getSenders().find(s => s.track === track);
             if (!sender) {
                  const newSender = pc.addTrack(track, localStreamRef.current!);
-                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) added to PC for ${targetUid}. Sender:`, newSender);
+                 console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}, enabled: ${track.enabled}, muted: ${track.muted}, readyState: ${track.readyState}) added to PC for ${targetUid}. Sender:`, newSender);
             } else {
                  console.log(`[WebRTC] Local track (kind: ${track.kind}, id: ${track.id}) already on PC for ${targetUid}. Sender:`, sender, `Not re-adding.`);
             }
@@ -424,15 +434,17 @@ export default function ChatRoomPage() {
 
     try {
         if (signal.type === 'offer') {
-            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer") {
-                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition.`);
+            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer" ) { // Removed "have-remote-offer" to allow setting if remote offer already set
+                console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition or race.`);
             }
             if (signal.sdp) {
+                console.log(`[WebRTC] Attempting to setRemoteDescription (offer) from ${fromUid}. Current signalingState: ${pc.signalingState}`);
                 await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
-                console.log(`[WebRTC] Remote description (offer) set for ${fromUid}. Creating answer.`);
+                console.log(`[WebRTC] Remote description (offer) set for ${fromUid}. New signalingState: ${pc.signalingState}. Creating answer.`);
                 const answer = await pc.createAnswer();
+                console.log(`[WebRTC] Answer created for ${fromUid}. Setting local description. Current signalingState: ${pc.signalingState}`);
                 await pc.setLocalDescription(answer);
-                console.log(`[WebRTC] Local description (answer) set for ${fromUid}. SDP (first 30): ${answer.sdp?.substring(0,30)}...`);
+                console.log(`[WebRTC] Local description (answer) set for ${fromUid}. New signalingState: ${pc.signalingState}. SDP (first 30): ${answer.sdp?.substring(0,30)}...`);
                 sendSignalMessage(fromUid, { type: 'answer', sdp: pc.localDescription!.sdp });
             } else {
                  console.error(`[WebRTC] Received offer from ${fromUid} without SDP.`);
@@ -441,8 +453,9 @@ export default function ChatRoomPage() {
         } else if (signal.type === 'answer') {
             if (pc.signalingState === 'have-local-offer') {
                 if (signal.sdp) {
+                    console.log(`[WebRTC] Attempting to setRemoteDescription (answer) from ${fromUid}. Current signalingState: ${pc.signalingState}`);
                     await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
-                    console.log(`[WebRTC] Remote description (answer) set for ${fromUid}. Connection should be established.`);
+                    console.log(`[WebRTC] Remote description (answer) set for ${fromUid}. New signalingState: ${pc.signalingState}. Connection should be established.`);
                 } else {
                     console.error(`[WebRTC] Received answer from ${fromUid} without SDP.`);
                 }
@@ -451,9 +464,10 @@ export default function ChatRoomPage() {
             }
             negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'candidate') {
-            if (signal.candidate) {
+            if (signal.candidate && signal.candidate.candidate) { // Ensure candidate string is not empty
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    console.log(`[WebRTC] Added ICE candidate from ${fromUid}.`);
                 } catch (e: any) {
                      console.warn(`[WebRTC] Error adding ICE candidate for ${fromUid} (State: ${pc.signalingState}):`, e.message, "Candidate:", signal.candidate);
                      if (!pc.remoteDescription && (e.message.includes("remote description is not set") || e.name === "InvalidStateError")) {
@@ -461,12 +475,12 @@ export default function ChatRoomPage() {
                      }
                 }
             } else {
-                console.warn(`[WebRTC] Received null/empty candidate from ${fromUid}.`);
+                console.warn(`[WebRTC] Received null/empty candidate string from ${fromUid}. Candidate object:`, signal.candidate);
             }
         }
-    } catch (error) {
-        console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${signal.type}):`, error);
-        toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}). Detaylar konsolda.`, variant: "destructive" });
+    } catch (error: any) {
+        console.error(`[WebRTC] Error handling signal from ${fromUid} (type: ${signal.type}):`, error, `Signaling state was: ${pc.signalingState}`);
+        toast({ title: "WebRTC Sinyal İşleme Hatası", description: `Sinyal işlenirken hata (${fromUid}, Tip: ${signal.type}, Durum: ${pc.signalingState}). Detaylar konsolda.`, variant: "destructive" });
         negotiatingRef.current[fromUid] = false;
     }
   }, [createPeerConnection, sendSignalMessage, toast]);
@@ -546,7 +560,7 @@ export default function ChatRoomPage() {
 
   const detectSpeaking = useCallback(() => {
     if (!audioContextRef.current || !analyserRef.current || !dataArrayRef.current) {
-      speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking); // Keep trying if not ready
+      speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking); 
       return;
     }
     analyserRef.current.getByteFrequencyData(dataArrayRef.current);
@@ -558,7 +572,7 @@ export default function ChatRoomPage() {
 
     if (average > SPEAKING_THRESHOLD) {
       if (!localIsSpeakingRef.current) {
-        setLocalIsSpeaking(true); // Update local state first for immediate feedback
+        setLocalIsSpeaking(true); 
         updateSpeakingStatusInFirestore(true);
       }
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -611,8 +625,6 @@ export default function ChatRoomPage() {
       silenceTimerRef.current = null;
     }
     if (analyserRef.current) {
-        // Disconnect source from analyser if source exists
-        // analyserRef.current.disconnect(); This might not be needed if source is destroyed with stream
         analyserRef.current = null;
     }
     dataArrayRef.current = null;
@@ -622,14 +634,14 @@ export default function ChatRoomPage() {
         audioContextRef.current = null;
       }).catch(e => {
           console.error("Error closing AudioContext:", e);
-          audioContextRef.current = null; // Ensure it's nulled even on error
+          audioContextRef.current = null; 
       });
     } else if (audioContextRef.current && audioContextRef.current.state === 'closed') {
         console.log("[WebRTC Speaking] AudioContext was already closed.");
         audioContextRef.current = null;
     }
     
-    if (localIsSpeakingRef.current) { // Check ref before setting state
+    if (localIsSpeakingRef.current) { 
       setLocalIsSpeaking(false);
       updateSpeakingStatusInFirestore(false);
     }
@@ -795,25 +807,21 @@ export default function ChatRoomPage() {
           const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
 
           if (isCurrentUserInVoiceChatRef.current && selfInFirestore && selfInFirestore.isSpeaking !== localIsSpeakingRef.current && !selfMuted) {
-            // This means another client (or an admin action) changed our speaking status, or local detection is fighting with Firestore.
-            // If we are locally detected as speaking, trust that for a brief moment for UI responsiveness.
             console.log(`[WebRTC Voice Listener] Speaking status for local user (${currentUser.uid}) might differ. Firestore: ${selfInFirestore.isSpeaking}, Local Detection: ${localIsSpeakingRef.current}. SelfMuted: ${selfMuted}`);
           }
 
-          // Ensure local speaking status is reflected if not muted
           if (isCurrentUserInVoiceChatRef.current && !selfMuted) {
             newVoiceParticipantsData = newVoiceParticipantsData.map(p =>
               p.id === currentUser.uid ? { ...p, isSpeaking: localIsSpeakingRef.current } : p
             );
           } else if (isCurrentUserInVoiceChatRef.current && selfMuted) {
              newVoiceParticipantsData = newVoiceParticipantsData.map(p =>
-              p.id === currentUser.uid ? { ...p, isSpeaking: false } : p // Force false if self-muted
+              p.id === currentUser.uid ? { ...p, isSpeaking: false } : p 
             );
           }
 
 
           setActiveVoiceParticipants(newVoiceParticipantsData);
-          // console.log("[WebRTC Voice Listener] Active voice participants updated:", newVoiceParticipantsData.map(p=>({name:p.displayName, speaking: p.isSpeaking})));
 
           if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
               console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
@@ -1549,28 +1557,7 @@ export default function ChatRoomPage() {
       <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
       <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-          {messages.map((msg) => (<ChatMessageItem
-            key={msg.id}
-            msg={msg}
-            currentUserUid={currentUser?.uid}
-            popoverOpenForUserId={popoverOpenForUserId}
-            onOpenUserInfoPopover={handleOpenUserInfoPopover}
-            setPopoverOpenForUserId={setPopoverOpenForUserId}
-            popoverLoading={popoverLoading}
-            popoverTargetUser={popoverTargetUser}
-            friendshipStatus={friendshipStatus}
-            relevantFriendRequest={relevantFriendRequest}
-            onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
-            onSendFriendRequestPopover={handleSendFriendRequestPopover}
-            onDmAction={handleDmAction}
-            onViewProfileAction={handleViewProfileAction}
-            getAvatarFallbackText={getAvatarFallbackText}
-            currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
-            currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
-            currentUserIsPremium={userIsCurrentlyPremium}
-            isCurrentUserRoomCreator={isCurrentUserRoomCreator}
-            onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
-          />))}
+          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} currentUserIsPremium={userIsCurrentlyPremium} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
         </ScrollArea>
       </div>
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
@@ -1582,5 +1569,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
 
