@@ -1,6 +1,6 @@
 {
-  "name": "Sohbet Küresi",
-  "short_name": "Sohbet Küresi",
+  "name": "HiweWalk",
+  "short_name": "HiweWalk",
   "description": "Arkadaşlarınızla sohbet edin ve yeni bağlantılar kurun.",
   "icons": [
     {
@@ -20,5 +20,9 @@
   "background_color": "#F6F7F9",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  "id": "Hiwewalk_v1",
+  "dir": "auto",
+  "scope": "hiwewalk.netlify.app",
+  "lang": "tr"
 }
