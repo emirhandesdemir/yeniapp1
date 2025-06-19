@@ -18,9 +18,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Save, XCircle, ImagePlus, Edit3, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
-import Image from "next/image"; // For previewing image
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import ImageCropperDialog from "@/components/profile/ImageCropperDialog";
+import { v4 as uuidv4 } from 'uuid';
 
 interface EditChatRoomDialogProps {
   isOpen: boolean;
@@ -28,7 +30,7 @@ interface EditChatRoomDialogProps {
   roomId: string;
   initialName: string;
   initialDescription: string;
-  initialImage?: string | null; // Current image URL (likely placeholder)
+  initialImage?: string | null;
 }
 
 export default function EditChatRoomDialog({
@@ -45,29 +47,50 @@ export default function EditChatRoomDialog({
   const { toast } = useToast();
 
   const [previewImage, setPreviewImage] = useState<string | null>(initialImage || null);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [croppedRoomImageBlob, setCroppedRoomImageBlob] = useState<Blob | null>(null);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setName(initialName);
-    setDescription(initialDescription);
-    setPreviewImage(initialImage || null);
-  }, [initialName, initialDescription, initialImage, isOpen]); // Reset form when dialog reopens with new initial data
+    if (isOpen) {
+      setName(initialName);
+      setDescription(initialDescription);
+      setPreviewImage(initialImage || null);
+      setCroppedRoomImageBlob(null);
+      setImageToCrop(null);
+    }
+  }, [initialName, initialDescription, initialImage, isOpen]);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // For now, just show a preview. Actual upload is deferred.
+      if (!file.type.startsWith('image/')) {
+        toast({ title: "Hata", description: "Lütfen bir resim dosyası seçin.", variant: "destructive" });
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+         toast({ title: "Hata", description: "Dosya boyutu çok büyük (Maks 5MB).", variant: "destructive" });
+         return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreviewImage(reader.result as string);
+        setImageToCrop(reader.result as string);
+        setIsCropperOpen(true);
+        setCroppedRoomImageBlob(null);
       };
       reader.readAsDataURL(file);
-      toast({
-        title: "Resim Seçildi (Önizleme)",
-        description: "Gerçek resim yükleme özelliği yakında eklenecektir. Kaydettiğinizde bu resim henüz sunucuya yüklenmeyecek.",
-        variant: "default"
-      });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
+  };
+
+  const handleCropComplete = (croppedImageBlob: Blob) => {
+    setCroppedRoomImageBlob(croppedImageBlob);
+    setPreviewImage(URL.createObjectURL(croppedImageBlob));
+    setIsCropperOpen(false);
+    setImageToCrop(null);
   };
 
   const handleSaveChanges = async () => {
@@ -78,22 +101,31 @@ export default function EditChatRoomDialog({
     setIsSaving(true);
     try {
       const roomDocRef = doc(db, "chatRooms", roomId);
-      const updates: { name: string; description: string; image?: string } = {
+      const updates: { name: string; description: string; image?: string; imageAiHint?: string | null } = {
         name: name.trim(),
         description: description.trim(),
       };
 
-      // Placeholder: if a new image was selected, in a real scenario you'd upload it here
-      // and set updates.image = newImageURL;
-      // For now, we'll just keep the initialImage if no new one is previewed,
-      // or the placeholder if a new one is selected but not "uploaded"
-      if (previewImage && previewImage !== initialImage) {
-         // In a real implementation, this would be the new uploaded URL
-         // For now, if a new image is selected, we can revert to a default placeholder or keep showing the preview
-         // updates.image = previewImage; // This is just a data URI or old URL, not a Firebase Storage URL
-         console.log("New image selected for room, but upload is not yet implemented. Preview: ", previewImage.substring(0,50) + "...");
+      if (croppedRoomImageBlob) {
+        const fileExtension = croppedRoomImageBlob.type.split('/')[1] || 'png';
+        const imageFileName = `roomImage-${uuidv4()}.${fileExtension}`;
+        const imageStorageRef = storageRef(storage, `chat_room_images/${roomId}/${imageFileName}`);
+        
+        // Eğer eski bir resim varsa (ve placeholder değilse) onu sil
+        if (initialImage && !initialImage.includes('placehold.co')) {
+            try {
+                const oldImageRef = storageRef(storage, initialImage);
+                await deleteObject(oldImageRef).catch(e => console.warn("Eski oda resmi silinirken hata (yoksayıldı):", e));
+            } catch (e) {
+                console.warn("Eski oda resmi referansı alınırken veya silinirken hata (yoksayıldı):", e);
+            }
+        }
+        
+        await uploadBytes(imageStorageRef, croppedRoomImageBlob);
+        const downloadURL = await getDownloadURL(imageStorageRef);
+        updates.image = downloadURL;
+        updates.imageAiHint = null; // Özel resim yüklendiğinde ipucunu kaldır
       }
-
 
       await updateDoc(roomDocRef, updates);
       toast({ title: "Başarılı", description: "Oda ayarları güncellendi." });
@@ -105,6 +137,12 @@ export default function EditChatRoomDialog({
       setIsSaving(false);
     }
   };
+
+  const getAvatarFallbackText = (nameStr: string) => {
+    if (nameStr) return nameStr.substring(0, 2).toUpperCase();
+    return "O";
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -133,7 +171,7 @@ export default function EditChatRoomDialog({
                    <ImagePlus className="h-10 w-10 text-muted-foreground" />
                 </div>
               )}
-              <AvatarFallback className="rounded-md">{name.substring(0,2).toUpperCase() || "O"}</AvatarFallback>
+              <AvatarFallback className="rounded-md">{getAvatarFallbackText(name)}</AvatarFallback>
             </Avatar>
             <input
               type="file"
@@ -152,10 +190,6 @@ export default function EditChatRoomDialog({
             >
               <ImagePlus className="mr-2 h-4 w-4" /> Resim Seç/Değiştir
             </Button>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Info className="h-3 w-3 text-blue-500"/>
-                Resim yükleme özelliği henüz geliştirme aşamasındadır.
-            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="room-name-edit">Oda Adı</Label>
@@ -191,6 +225,21 @@ export default function EditChatRoomDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {imageToCrop && (
+        <ImageCropperDialog
+          isOpen={isCropperOpen}
+          onClose={() => {
+            setIsCropperOpen(false);
+            setImageToCrop(null);
+          }}
+          imageSrc={imageToCrop}
+          onCropComplete={handleCropComplete}
+          aspectRatio={16/9} // Oda resimleri için daha yatay bir oran olabilir
+          cropShape="rect"
+        />
+      )}
     </Dialog>
   );
 }
+
+    

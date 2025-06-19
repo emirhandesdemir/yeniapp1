@@ -46,7 +46,7 @@ export interface UserData {
   privacySettings?: PrivacySettings;
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
-  isPremium?: boolean; // Dinamik olarak hesaplanacak veya senkronize edilecek
+  isPremium?: boolean;
   reportCount?: number;
   isBanned?: boolean;
   profileViewCount?: number;
@@ -96,6 +96,15 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const defaultPrivacySettings: PrivacySettings = {
+  postsVisibleToFriendsOnly: false,
+  activeRoomsVisibleToFriendsOnly: false,
+  feedShowsEveryone: true,
+  showProfileViewCount: true,
+  showOnlineStatus: true,
+};
+
+
 export function AuthProvider({ children }: AuthProviderProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -111,61 +120,129 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return checkUserPremium(userData);
   }, [userData]);
 
-  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş', isGoogleSignUp: boolean = false) => {
+  const createUserDocument = useCallback(async (
+    user: User, 
+    username?: string, 
+    gender?: 'kadın' | 'erkek' | 'belirtilmemiş', 
+    isGoogleSignUp: boolean = false,
+    googlePhotoURL?: string | null
+  ) => {
     const userDocRef = doc(db, "users", user.uid);
-    const initialPhotoURL = user.photoURL;
-    
-    const currentPremiumStatus = 'none'; 
-    const currentPremiumExpiryDate = null;
-    const dynamicIsPremium = false; // Initially false, will be updated
+    const initialPhotoURL = isGoogleSignUp ? (googlePhotoURL || null) : null; // Google'dan gelen foto veya null
+    const initialDisplayName = username || (isGoogleSignUp ? user.displayName : `Kullanıcı-${user.uid.substring(0,6)}`) || `Kullanıcı-${user.uid.substring(0,6)}`;
 
-    const dataToSave: Omit<UserData, 'createdAt' | 'lastSeen' | 'isPremium'> & { createdAt: Timestamp, lastSeen: Timestamp, isPremium?: boolean } = { 
+    const dataToSave: Omit<UserData, 'createdAt' | 'lastSeen' | 'isPremium'> = {
         uid: user.uid,
         email: user.email,
-        displayName: username || user.displayName,
+        displayName: initialDisplayName,
         photoURL: initialPhotoURL,
         diamonds: INITIAL_DIAMONDS,
         role: "user",
         bio: "",
         gender: gender || "belirtilmemiş",
-        privacySettings: {
-            postsVisibleToFriendsOnly: false,
-            activeRoomsVisibleToFriendsOnly: false,
-            feedShowsEveryone: true,
-            showProfileViewCount: true,
-            showOnlineStatus: true,
-        },
-        premiumStatus: currentPremiumStatus,
-        premiumExpiryDate: currentPremiumExpiryDate,
+        privacySettings: defaultPrivacySettings,
+        premiumStatus: 'none',
+        premiumExpiryDate: null,
         reportCount: 0,
         isBanned: false,
         profileViewCount: 0,
     };
     
     try {
-        await setDoc(userDocRef, { 
-            ...dataToSave, 
-            isPremium: dynamicIsPremium,
-            createdAt: serverTimestamp(), 
-            lastSeen: serverTimestamp() 
+        const fullData = {
+            ...dataToSave,
+            isPremium: false, // Varsayılan
+            createdAt: serverTimestamp() as Timestamp, 
+            lastSeen: serverTimestamp() as Timestamp
+        };
+        await setDoc(userDocRef, fullData);
+        // setUserData anında yansıtmak için
+        setUserData({
+            ...dataToSave,
+            isPremium: false,
+            createdAt: Timestamp.now(), // Geçici, Firestore'dan gelen daha doğru olacak
+            lastSeen: Timestamp.now(),
         });
-        const docSnap = await getDoc(userDocRef); // Fetch after creation
-        if (docSnap.exists()) {
-            setUserData({ ...docSnap.data(), uid: docSnap.id, isPremium: checkUserPremium(docSnap.data() as UserData) } as UserData);
-        } else {
-             const fallbackUserData: UserData = {
-                ...dataToSave,
-                isPremium: dynamicIsPremium,
-                createdAt: Timestamp.now(), 
-                lastSeen: Timestamp.now(),
-            };
-            setUserData(fallbackUserData);
-        }
     } catch (error: any) {
         console.error(`[AuthContext] CRITICAL: Error in createUserDocument for ${user.uid}:`, error.message, error.code, error.stack);
         toast({ title: "Hesap Detayı Kayıt Hatası", description: `Kullanıcı detayları veritabanına kaydedilemedi (Hata: ${error.message}).`, variant: "destructive" });
     }
   }, [toast]);
+
+
+  const hydrateAndSyncUserData = useCallback(async (
+    userAuth: User, 
+    existingFirestoreData: Partial<UserData> | null
+  ): Promise<UserData | null> => {
+    const userDocRef = doc(db, "users", userAuth.uid);
+    let finalUserData: UserData;
+    const firestoreUpdates: Partial<UserData> = {};
+
+    if (existingFirestoreData) {
+        finalUserData = {
+            uid: userAuth.uid,
+            email: existingFirestoreData.email ?? userAuth.email ?? null,
+            displayName: existingFirestoreData.displayName ?? userAuth.displayName ?? `Kullanıcı-${userAuth.uid.substring(0,6)}`,
+            photoURL: existingFirestoreData.photoURL ?? userAuth.photoURL ?? null,
+            diamonds: existingFirestoreData.diamonds ?? INITIAL_DIAMONDS,
+            createdAt: existingFirestoreData.createdAt ?? Timestamp.now(), // Should exist
+            role: existingFirestoreData.role ?? "user",
+            bio: existingFirestoreData.bio ?? "",
+            gender: existingFirestoreData.gender ?? "belirtilmemiş",
+            privacySettings: { ...defaultPrivacySettings, ...(existingFirestoreData.privacySettings || {}) },
+            premiumStatus: existingFirestoreData.premiumStatus ?? 'none',
+            premiumExpiryDate: existingFirestoreData.premiumExpiryDate ?? null,
+            reportCount: existingFirestoreData.reportCount ?? 0,
+            isBanned: existingFirestoreData.isBanned ?? false,
+            profileViewCount: existingFirestoreData.profileViewCount ?? 0,
+            lastSeen: existingFirestoreData.lastSeen ?? Timestamp.now(),
+            isPremium: false, // Recalculate below
+        };
+    } else {
+        // Bu durum createUserDocument tarafından ele alınmalı, ama bir güvenlik ağı olarak.
+        await createUserDocument(userAuth, userAuth.displayName || undefined, "belirtilmemiş", true, userAuth.photoURL);
+        const newSnap = await getDoc(userDocRef);
+        if (!newSnap.exists()) {
+            toast({ title: "Kullanıcı Verisi Hatası", description: "Yeni kullanıcı verisi oluşturulamadı.", variant: "destructive" });
+            return null;
+        }
+        finalUserData = { uid: newSnap.id, ...newSnap.data() } as UserData;
+    }
+    
+    // Sync from Auth if Firestore is missing or different (prefer Firestore if exists)
+    if (finalUserData.displayName === `Kullanıcı-${userAuth.uid.substring(0,6)}` && userAuth.displayName) {
+        finalUserData.displayName = userAuth.displayName;
+        firestoreUpdates.displayName = userAuth.displayName;
+    }
+    if (finalUserData.photoURL === null && userAuth.photoURL) {
+        finalUserData.photoURL = userAuth.photoURL;
+        firestoreUpdates.photoURL = userAuth.photoURL;
+    }
+    if (finalUserData.email === null && userAuth.email) {
+        finalUserData.email = userAuth.email;
+        firestoreUpdates.email = userAuth.email;
+    }
+    
+    // Her zaman isPremium'u yeniden hesapla ve gerekirse güncelle
+    const calculatedIsPremium = checkUserPremium(finalUserData);
+    if (finalUserData.isPremium !== calculatedIsPremium) {
+        firestoreUpdates.isPremium = calculatedIsPremium;
+    }
+    finalUserData.isPremium = calculatedIsPremium;
+
+    // Her zaman lastSeen'i güncelle
+    firestoreUpdates.lastSeen = serverTimestamp() as Timestamp;
+
+    if (Object.keys(firestoreUpdates).length > 0) {
+        try {
+            await updateDoc(userDocRef, firestoreUpdates);
+            finalUserData.lastSeen = Timestamp.now(); // Local state'i de güncelle
+        } catch (error) {
+            console.error("[AuthContext] Firestore kullanıcı verisi senkronizasyon hatası:", error);
+        }
+    }
+    return finalUserData;
+  }, [createUserDocument, toast]);
 
 
   useEffect(() => {
@@ -176,67 +253,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const userDocRef = doc(db, "users", user.uid);
         try {
             const docSnap = await getDoc(userDocRef);
-            if (docSnap.exists()) {
-                const existingData = docSnap.data() as UserData;
-                if (existingData.isBanned) {
-                    await signOut(auth);
-                    router.push('/login?reason=banned_firestore_check');
-                    toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır. Destek için iletişime geçin.", variant: "destructive", duration: 7000});
-                    setUserData(null);
-                    setIsUserDataLoading(false);
-                    setLoading(false);
-                    return; 
-                }
+            const hydratedUser = await hydrateAndSyncUserData(user, docSnap.exists() ? (docSnap.data() as UserData) : null);
 
-                const updatedIsPremium = checkUserPremium(existingData);
-                const updatedData: UserData = {
-                    ...existingData,
-                    uid: docSnap.id,
-                    displayName: existingData.displayName !== undefined ? existingData.displayName : (user.displayName || null),
-                    photoURL: existingData.photoURL !== undefined ? existingData.photoURL : (user.photoURL || null),
-                    email: existingData.email !== undefined ? existingData.email : (user.email || null),
-                    diamonds: existingData.diamonds ?? INITIAL_DIAMONDS,
-                    role: existingData.role ?? "user",
-                    bio: existingData.bio ?? "",
-                    gender: existingData.gender ?? "belirtilmemiş",
-                    privacySettings: {
-                        postsVisibleToFriendsOnly: existingData.privacySettings?.postsVisibleToFriendsOnly ?? false,
-                        activeRoomsVisibleToFriendsOnly: existingData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
-                        feedShowsEveryone: existingData.privacySettings?.feedShowsEveryone ?? true,
-                        showProfileViewCount: existingData.privacySettings?.showProfileViewCount ?? true,
-                        showOnlineStatus: existingData.privacySettings?.showOnlineStatus ?? true,
-                    },
-                    premiumStatus: existingData.premiumStatus ?? 'none',
-                    premiumExpiryDate: existingData.premiumExpiryDate ?? null,
-                    isPremium: updatedIsPremium, // Use calculated value
-                    reportCount: existingData.reportCount ?? 0,
-                    isBanned: existingData.isBanned ?? false,
-                    profileViewCount: existingData.profileViewCount ?? 0,
-                    lastSeen: existingData.lastSeen ?? serverTimestamp() as Timestamp,
-                };
-
-                let needsFirestoreUpdate = false;
-                const firestoreUpdatePayload: Partial<UserData> = {};
-
-                if (updatedData.displayName !== existingData.displayName) { firestoreUpdatePayload.displayName = updatedData.displayName; needsFirestoreUpdate = true; }
-                if (updatedData.photoURL !== existingData.photoURL) { firestoreUpdatePayload.photoURL = updatedData.photoURL; needsFirestoreUpdate = true; }
-                if (updatedData.email !== existingData.email) { firestoreUpdatePayload.email = updatedData.email; needsFirestoreUpdate = true; }
-                if (updatedData.isPremium !== existingData.isPremium) { firestoreUpdatePayload.isPremium = updatedData.isPremium; needsFirestoreUpdate = true; }
-                
-                firestoreUpdatePayload.lastSeen = serverTimestamp() as Timestamp; // Always update lastSeen
-                needsFirestoreUpdate = true; // Ensure lastSeen is updated
-                
-                if (needsFirestoreUpdate) {
-                    await updateDoc(userDocRef, firestoreUpdatePayload).catch(err => console.error("Error syncing auth profile to firestore:", err));
-                    updatedData.lastSeen = Timestamp.now(); 
-                }
-                setUserData(updatedData);
-
+            if (hydratedUser?.isBanned) {
+                await signOut(auth);
+                router.push('/login?reason=banned_auth_check');
+                toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır. Destek için iletişime geçin.", variant: "destructive", duration: 7000});
+                setUserData(null);
             } else {
-                await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
+                setUserData(hydratedUser);
             }
         } catch (error: any) {
-             console.error("[AuthContext] Error fetching/creating user document on auth state change:", error.message, error.code, error.stack);
+             console.error("[AuthContext] Error fetching/hydrating user document on auth state change:", error.message, error.code, error.stack);
              toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
              setUserData(null);
         } finally {
@@ -250,7 +278,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
     return unsubscribe;
-  }, [router, toast, createUserDocument]);
+  }, [router, toast, hydrateAndSyncUserData]);
 
 
   const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
@@ -258,7 +286,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
-      await createUserDocument(userCredential.user, username, gender, false);
+      // createUserDocument şimdi hydrateAndSyncUserData tarafından onAuthStateChanged'de ele alınacak
+      // await createUserDocument(userCredential.user, username, gender, false);
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
@@ -274,24 +303,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [createUserDocument, router, toast]);
+  }, [router, toast]);
 
   const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userDocRef = doc(db, "users", userCredential.user.uid);
-      const docSnap = await getDoc(userDocRef);
-      if (docSnap.exists() && docSnap.data().isBanned) {
-        await signOut(auth);
-        toast({ title: "Erişim Engellendi", description: "Hesabınız askıya alınmıştır. Destek için iletişime geçin.", variant: "destructive", duration: 7000 });
-        router.push('/login?reason=banned_login_check');
-        setIsUserLoading(false);
-        return;
-      }
-      if (docSnap.exists()) {
-        await updateDoc(userDocRef, { lastSeen: serverTimestamp() });
-      }
+      // Kullanıcı verisi ve ban kontrolü onAuthStateChanged tarafından ele alınacak
       router.push('/');
       toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
@@ -309,56 +327,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      const userDocRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(userDocRef);
-      if (!docSnap.exists()) {
-        await createUserDocument(user, user.displayName || undefined, "belirtilmemiş", true);
-      } else {
-        const firestoreData = docSnap.data() as UserData;
-         if (firestoreData.isBanned) {
-            await signOut(auth);
-            toast({ title: "Erişim Engellendi", description: "Hesabınız askıya alınmıştır. Destek için iletişime geçin.", variant: "destructive", duration: 7000 });
-            router.push('/login?reason=banned_google_check');
-            setIsUserLoading(false);
-            return;
-        }
-        
-        const updatesToFirestore: Partial<UserData> = {
-            lastSeen: serverTimestamp() as Timestamp,
-            isPremium: checkUserPremium(firestoreData),
-        };
-        
-        if (user.displayName && user.displayName !== firestoreData.displayName) {
-            updatesToFirestore.displayName = user.displayName;
-        }
-        if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
-            updatesToFirestore.photoURL = user.photoURL;
-        } else if (!firestoreData.photoURL && user.photoURL) {
-             updatesToFirestore.photoURL = user.photoURL;
-        }
-        if (firestoreData.bio === undefined) updatesToFirestore.bio = "";
-        if (firestoreData.gender === undefined) updatesToFirestore.gender = "belirtilmemiş";
-        if (firestoreData.privacySettings === undefined) {
-            updatesToFirestore.privacySettings = {
-                postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true, showProfileViewCount: true, showOnlineStatus: true
-            };
-        }
-        if (firestoreData.premiumStatus === undefined) updatesToFirestore.premiumStatus = 'none';
-        if (firestoreData.premiumExpiryDate === undefined) updatesToFirestore.premiumExpiryDate = null;
-        if (firestoreData.reportCount === undefined) updatesToFirestore.reportCount = 0;
-        if (firestoreData.isBanned === undefined) updatesToFirestore.isBanned = false;
-        if (firestoreData.profileViewCount === undefined) updatesToFirestore.profileViewCount = 0;
-
-
-        if (Object.keys(updatesToFirestore).length > 0) {
-            await updateDoc(userDocRef, updatesToFirestore);
-            setUserData({ ...firestoreData, ...updatesToFirestore, lastSeen: Timestamp.now(), isPremium: checkUserPremium({...firestoreData, ...updatesToFirestore}) });
-        } else {
-            setUserData({...firestoreData, lastSeen: Timestamp.now(), isPremium: checkUserPremium(firestoreData)});
-        }
-      }
+      await signInWithPopup(auth, provider);
+      // Kullanıcı verisi ve ban kontrolü onAuthStateChanged tarafından ele alınacak
       router.push('/');
       toast({ title: "Başarılı!", description: "Google ile giriş yapıldı." });
     } catch (error: any) {
@@ -374,7 +344,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [createUserDocument, router, toast]);
+  }, [router, toast]);
 
   const logOut = useCallback(async () => {
     setIsUserLoading(true);
@@ -413,27 +383,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const fileExtension = photoBlob.type.split('/')[1] || 'png';
         const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
-        if (!validExtensions.includes(fileExtension)) {
+        if (!validExtensions.includes(fileExtension.toLowerCase())) {
             toast({ title: "Dosya Hatası", description: `Desteklenmeyen dosya türü: ${photoBlob.type}. Lütfen ${validExtensions.join(', ')} uzantılı bir dosya seçin.`, variant: "destructive" });
             setIsUserLoading(false);
             return false;
         }
         
-        const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
+        const photoFileName = `profileImage-${uuidv4()}.${fileExtension}`;
+        const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/${photoFileName}`);
+
+        // Eski resmi sil (eğer varsa ve placeholder değilse)
+        const currentPhotoURLForDelete = userData?.photoURL || auth.currentUser?.photoURL;
+        if (currentPhotoURLForDelete && !currentPhotoURLForDelete.includes('placehold.co')) {
+            try {
+                const oldPhotoRef = storageRef(storage, currentPhotoURLForDelete);
+                await deleteObject(oldPhotoRef).catch(e => console.warn("Eski profil resmi silinirken hata (yoksayıldı):", e));
+            } catch (e) {
+                console.warn("Eski profil resmi referansı alınırken hata (yoksayıldı):", e);
+            }
+        }
+
         await uploadBytes(photoRef, photoBlob);
         finalPhotoURL = await getDownloadURL(photoRef);
       } else if (updates.removePhoto) {
         finalPhotoURL = null;
-        const currentPhotoURL = userData?.photoURL || auth.currentUser?.photoURL;
-        if (currentPhotoURL) {
+        const currentPhotoURLForDelete = userData?.photoURL || auth.currentUser?.photoURL;
+        if (currentPhotoURLForDelete && !currentPhotoURLForDelete.includes('placehold.co')) {
           try {
-            const oldPhotoFileName = currentPhotoURL.split('/').pop()?.split('?')[0];
-            if (oldPhotoFileName && oldPhotoFileName.includes("profileImage.")) { 
-                 const oldPhotoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/${decodeURIComponent(oldPhotoFileName)}`);
-                 await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error (ignored):", e.message));
-            }
+            const oldPhotoRef = storageRef(storage, currentPhotoURLForDelete);
+            await deleteObject(oldPhotoRef).catch(e => console.warn("Profil resmi silinirken hata (yoksayıldı):", e.message));
           } catch (e) {
-            console.warn("Could not delete old profile picture from storage (error caught but ignored):", e);
+            console.warn("Could not delete profile picture from storage (error caught but ignored):", e);
           }
         }
       }
@@ -461,13 +441,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (updates.privacySettings) {
         firestoreUpdates.privacySettings = {
-          ...(userData?.privacySettings || {
-            postsVisibleToFriendsOnly: false,
-            activeRoomsVisibleToFriendsOnly: false,
-            feedShowsEveryone: true,
-            showProfileViewCount: true,
-            showOnlineStatus: true,
-          }),
+          ...(userData?.privacySettings || defaultPrivacySettings),
           ...updates.privacySettings,
         };
       }
@@ -489,9 +463,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateFirebaseProfile(auth.currentUser, authUpdates);
       }
 
-      if (hasFirestoreUpdates || updates.lastSeen) { // Ensure lastSeen update even if no other firestore changes
+      if (hasFirestoreUpdates || updates.lastSeen) {
         const finalFirestorePayload = { ...firestoreUpdates };
-        if (updates.lastSeen && !hasFirestoreUpdates) { // If only lastSeen is updated
+        if (updates.lastSeen && !hasFirestoreUpdates) { 
             finalFirestorePayload.lastSeen = updates.lastSeen;
         }
         await updateDoc(userDocRef, finalFirestorePayload);
@@ -499,14 +473,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       setUserData(prev => {
         if (!prev) return null;
-        return {
-          ...prev,
-          ...(authUpdates.displayName && { displayName: authUpdates.displayName }),
-          ...(authUpdates.photoURL !== undefined && { photoURL: authUpdates.photoURL }),
-          ...(firestoreUpdates.bio && { bio: firestoreUpdates.bio }),
-          ...(firestoreUpdates.privacySettings && { privacySettings: firestoreUpdates.privacySettings }),
-          ...(updates.lastSeen && { lastSeen: updates.lastSeen }),
-        };
+        // Sadece gerçekten güncellenen alanları yansıt
+        const newLocalData = { ...prev };
+        if (authUpdates.displayName !== undefined) newLocalData.displayName = authUpdates.displayName;
+        if (authUpdates.photoURL !== undefined) newLocalData.photoURL = authUpdates.photoURL;
+        if (firestoreUpdates.bio !== undefined) newLocalData.bio = firestoreUpdates.bio;
+        if (firestoreUpdates.privacySettings !== undefined) newLocalData.privacySettings = firestoreUpdates.privacySettings;
+        if (updates.lastSeen !== undefined) newLocalData.lastSeen = updates.lastSeen;
+        return newLocalData;
       });
 
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
@@ -574,7 +548,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const currentReportCount = reportedUserSnap.data().reportCount || 0;
         finalReportCount = currentReportCount + 1;
         const updates: Partial<UserData> = { reportCount: finalReportCount };
-        if (finalReportCount >= REPORT_BAN_THRESHOLD) {
+        if (finalReportCount >= REPORT_BAN_THRESHOLD && !reportedUserSnap.data().isBanned) {
           updates.isBanned = true;
           shouldBeBanned = true;
         }
@@ -609,7 +583,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       let nameToStore = blockedUserName;
       let photoToStore = blockedUserPhoto;
 
-      if (!nameToStore && !photoToStore) { // Fetch if not provided
+      if (!nameToStore && !photoToStore) { 
         const targetUserDoc = await getDoc(doc(db, "users", blockedUserId));
         if(targetUserDoc.exists()){
           nameToStore = targetUserDoc.data()?.displayName || "Bilinmeyen Kullanıcı";
@@ -759,8 +733,10 @@ export interface FriendRequest {
   createdAt: Timestamp;
 }
 
-export const checkUserPremium = (user: UserData | null): boolean => {
+export const checkUserPremium = (user: UserData | Partial<UserData> | null): boolean => {
   if (!user) return false;
   return user.premiumStatus !== 'none' && user.premiumStatus !== undefined &&
          (!user.premiumExpiryDate || !isPast(user.premiumExpiryDate.toDate()));
 };
+
+    
