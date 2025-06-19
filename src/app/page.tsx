@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star, Gamepad2 } from "lucide-react"; // Gamepad2 eklendi
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star, Gamepad2 } from "lucide-react";
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -13,9 +13,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { motion, AnimatePresence } from "framer-motion";
 import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
-import RoomInFeedCard, { type ChatRoomFeedDisplayData as RoomInFeedCardData } from "@/components/feed/RoomInFeedCard"; // İsim değişikliği
+import RoomInFeedCard, { type ChatRoomFeedDisplayData as RoomInFeedCardData } from "@/components/feed/RoomInFeedCard";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, Timestamp, where, limit, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, Timestamp, where, limit, getDocs } from "firebase/firestore"; // onSnapshot kaldırıldı
 import { isPast } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -79,11 +79,10 @@ const feedItemEntryVariants = {
 
 const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
-const POSTS_FETCH_LIMIT = 10;
-const ROOMS_FETCH_LIMIT = 3;
-const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000;
+const POSTS_FETCH_LIMIT = 15; // Artırıldı
+const ROOMS_FETCH_LIMIT = 5;  // Artırıldı
+const REFRESH_BUTTON_TIMER_MS = 1 * 60 * 1000; // 1 dakikaya düşürüldü
 
-// RoomInFeedCardData tipini güncelledik
 export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (RoomInFeedCardData & { feedItemType: 'room' });
 
 
@@ -95,7 +94,7 @@ export default function HomePage() {
   const [isCreatePostDialogOpen, setIsCreatePostDialogOpen] = useState(false);
 
   const [allPosts, setAllPosts] = useState<Post[]>([]);
-  const [activeRooms, setActiveRooms] = useState<RoomInFeedCardData[]>([]); // Tip güncellendi
+  const [activeRooms, setActiveRooms] = useState<RoomInFeedCardData[]>([]);
   const [combinedFeedItems, setCombinedFeedItems] = useState<FeedDisplayItem[]>([]);
 
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
@@ -181,7 +180,7 @@ export default function HomePage() {
         limit(ROOMS_FETCH_LIMIT)
       );
       const roomsSnapshot = await getDocs(roomsQuery);
-      const fetchedRoomsData: RoomInFeedCardData[] = []; // Tip güncellendi
+      const fetchedRoomsData: RoomInFeedCardData[] = [];
       roomsSnapshot.forEach((doc) => {
         const roomData = doc.data();
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
@@ -194,8 +193,8 @@ export default function HomePage() {
             createdAt: roomData.createdAt as Timestamp,
             isPremiumRoom: roomData.isPremiumRoom || false,
             creatorIsPremium: roomData.creatorIsPremium || false,
-            isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (roomData.gameInitialized ?? false), // isGameEnabledInRoom eklendi
-          } as RoomInFeedCardData); // Tip güncellendi
+            isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (roomData.gameInitialized ?? false),
+          } as RoomInFeedCardData);
         }
       });
       setActiveRooms(fetchedRoomsData);
@@ -211,57 +210,72 @@ export default function HomePage() {
     }
   }, [currentUser, startRefreshButtonTimer]);
 
-  useEffect(() => {
+  const fetchPosts = useCallback(async (isManualRefresh = false) => {
     if (!currentUser) {
       setAllPosts([]);
       setIsLoadingPosts(false);
-      return () => {};
+      if (isManualRefresh && isRefreshingFeed) setIsRefreshingFeed(false); // Sadece manual refresh için flag'i resetle
+      return;
     }
-    setIsLoadingPosts(true);
-    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
 
-    const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+    if (isManualRefresh) {
+      setIsRefreshingFeed(true); // Manual refresh ise flag'i set et
+      setShowRefreshButton(false);
+      if (refreshButtonTimerRef.current) {
+        clearTimeout(refreshButtonTimerRef.current);
+      }
+    } else {
+      setIsLoadingPosts(true);
+    }
+
+    try {
+      const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
+      const snapshot = await getDocs(postsQuery);
       const fetchedPostsData: Post[] = [];
       snapshot.forEach((doc) => {
         fetchedPostsData.push({ id: doc.id, ...doc.data() } as Post);
       });
       setAllPosts(fetchedPostsData);
+    } catch (error) {
+      console.error("Error fetching posts with getDocs: ", error);
+    } finally {
       setIsLoadingPosts(false);
-      if (!isRefreshingFeed) {
-          startRefreshButtonTimer();
+      if (isManualRefresh) {
+        setIsRefreshingFeed(false); // Manual refresh ise flag'i resetle
+        startRefreshButtonTimer();
       }
-    }, (error) => {
-      console.error("Error fetching posts with onSnapshot: ", error);
-      setIsLoadingPosts(false);
-    });
-
-    return () => unsubscribePosts();
+    }
   }, [currentUser, isRefreshingFeed, startRefreshButtonTimer]);
 
 
   useEffect(() => {
     if (currentUser) {
       fetchActiveRooms();
+      fetchPosts(); // Initial fetch for posts
+      startRefreshButtonTimer();
     } else {
       setIsLoadingRooms(false);
       setActiveRooms([]);
+      setIsLoadingPosts(false);
+      setAllPosts([]);
     }
-  }, [currentUser, fetchActiveRooms]);
+  }, [currentUser, fetchActiveRooms, fetchPosts, startRefreshButtonTimer]);
+
 
   useEffect(() => {
     if (currentUser) {
       if (userData?.privacySettings?.feedShowsEveryone === false) {
         setLoadingFriends(true);
         const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-        const unsubscribeFriends = onSnapshot(friendsRef, (snapshot) => {
+        // Use getDocs for friends list as well, assuming it doesn't need to be strictly real-time for feed filtering
+        getDocs(friendsRef).then(snapshot => {
           const friendIds = snapshot.docs.map(doc => doc.id);
           setFriends(friendIds);
           setLoadingFriends(false);
-        }, (error) => {
+        }).catch(error => {
           console.error("Error fetching friends for feed:", error);
           setLoadingFriends(false);
         });
-        return () => unsubscribeFriends();
       } else {
         setFriends([]);
         setLoadingFriends(false);
@@ -269,20 +283,15 @@ export default function HomePage() {
 
       setLoadingBlockedUsers(true);
       const blockedUsersRef = collection(db, `users/${currentUser.uid}/blockedUsers`);
-      const unsubscribeBlocked = onSnapshot(blockedUsersRef, (snapshot) => {
+      // Use getDocs for blocked users
+      getDocs(blockedUsersRef).then(snapshot => {
           const ids = snapshot.docs.map(doc => doc.id);
           setBlockedUserIds(ids);
           setLoadingBlockedUsers(false);
-      }, (error) => {
+      }).catch(error => {
           console.error("Error fetching blocked users:", error);
           setLoadingBlockedUsers(false);
       });
-      return () => {
-        if (userData?.privacySettings?.feedShowsEveryone === false) {
-
-        }
-        unsubscribeBlocked();
-      };
 
     } else {
       setFriends([]);
@@ -315,8 +324,8 @@ export default function HomePage() {
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
     const combined = [...postItems, ...roomItems].sort((a, b) => {
-        const aIsPremiumContent = (a.feedItemType === 'room' && (a as RoomInFeedCardData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium); // Tip güncellendi
-        const bIsPremiumContent = (b.feedItemType === 'room' && (b as RoomInFeedCardData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium); // Tip güncellendi
+        const aIsPremiumContent = (a.feedItemType === 'room' && (a as RoomInFeedCardData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium);
+        const bIsPremiumContent = (b.feedItemType === 'room' && (b as RoomInFeedCardData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium);
 
         if (aIsPremiumContent && !bIsPremiumContent) return -1;
         if (!aIsPremiumContent && bIsPremiumContent) return 1;
@@ -340,8 +349,8 @@ export default function HomePage() {
   const handleRefreshClick = useCallback(() => {
     if (isRefreshingFeed) return;
     fetchActiveRooms(true);
-    setIsRefreshingFeed(true);
-  }, [isRefreshingFeed, fetchActiveRooms]);
+    fetchPosts(true); // Refresh posts as well
+  }, [isRefreshingFeed, fetchActiveRooms, fetchPosts]);
 
   if (authLoading || (currentUser && isUserDataLoading && !userData)) {
     return (
@@ -449,6 +458,7 @@ export default function HomePage() {
               <div className="p-6 pt-4">
                 <CreatePostForm onPostCreated={() => {
                     setIsCreatePostDialogOpen(false);
+                    fetchPosts(true); // Re-fetch posts after creation
                 }} />
               </div>
             </DialogContent>

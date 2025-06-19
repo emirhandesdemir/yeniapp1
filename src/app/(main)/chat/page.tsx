@@ -3,9 +3,9 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2 } from "lucide-react"; // Gamepad2 eklendi
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react"; // useRef eklendi
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore";
 import { useAuth, checkUserPremium } from "@/contexts/AuthContext";
@@ -52,7 +52,7 @@ interface ChatRoom {
   voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[];
   image?: string;
   imageAiHint?: string;
-  isGameEnabledInRoom?: boolean; // Eklendi
+  isGameEnabledInRoom?: boolean;
 }
 
 interface GameSettings {
@@ -65,6 +65,7 @@ const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
 const PREMIUM_USER_ROOM_CAPACITY = 50;
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
+const ROOM_CREATION_RATE_LIMIT_MS = 60 * 1000; // 1 dakika
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
 const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk';
@@ -119,6 +120,7 @@ export default function ChatRoomsPage() {
 
   const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false);
   const [editingRoomDetails, setEditingRoomDetails] = useState<ChatRoom | null>(null);
+  const lastRoomCreationTimeRef = useRef<number>(0);
 
 
   useEffect(() => {
@@ -199,7 +201,7 @@ export default function ChatRoomsPage() {
               voiceParticipantPreviews: voicePreviews,
               creatorIsPremium: roomData.creatorIsPremium || false,
               isPremiumRoom: roomData.isPremiumRoom || false,
-              isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (gameSettings?.isGameEnabled ?? false), // Eklendi
+              isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (gameSettings?.isGameEnabled ?? false),
           } as ChatRoom;
         }
         return null;
@@ -241,6 +243,17 @@ export default function ChatRoomsPage() {
       return;
     }
 
+    const currentTime = Date.now();
+    if (currentTime - lastRoomCreationTimeRef.current < ROOM_CREATION_RATE_LIMIT_MS) {
+        const timeLeft = Math.ceil((ROOM_CREATION_RATE_LIMIT_MS - (currentTime - lastRoomCreationTimeRef.current)) / 1000);
+        toast({
+            title: "Lütfen Bekleyin",
+            description: `Çok sık oda oluşturuyorsunuz. ${timeLeft} saniye sonra tekrar deneyin.`,
+            variant: "destructive"
+        });
+        return;
+    }
+
     const userIsCreatorPremium = isCurrentUserPremium();
 
     if (!userIsCreatorPremium && (userData.diamonds ?? 0) < ROOM_CREATION_COST) {
@@ -271,8 +284,8 @@ export default function ChatRoomsPage() {
     const imageUrl = "https://placehold.co/600x400.png";
     const imageHint = "community discussion";
 
-    const currentTime = new Date();
-    const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
+    const currentTimestamp = new Date();
+    const expiresAtDate = addMinutes(currentTimestamp, ROOM_DEFAULT_DURATION_MINUTES);
 
     const roomMaxParticipants = userIsCreatorPremium ? PREMIUM_USER_ROOM_CAPACITY : MAX_PARTICIPANTS_PER_ROOM;
     const isGameInitiallyEnabled = gameSettings?.isGameEnabled ?? false;
@@ -292,7 +305,7 @@ export default function ChatRoomsPage() {
       participantCount: 0,
       voiceParticipantCount: 0,
       maxParticipants: roomMaxParticipants,
-      isGameEnabledInRoom: isGameInitiallyEnabled, // Eklendi
+      isGameEnabledInRoom: isGameInitiallyEnabled,
       gameInitialized: false,
       currentGameQuestionId: null,
       nextGameQuestionTimestamp: null,
@@ -313,6 +326,7 @@ export default function ChatRoomsPage() {
       } else {
         toast({ title: "Başarılı", description: `Premium kullanıcı olduğunuz için "${newRoomName}" odası ücretsiz oluşturuldu!` });
       }
+      lastRoomCreationTimeRef.current = Date.now(); // Update last creation time
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
 
@@ -330,6 +344,7 @@ export default function ChatRoomsPage() {
         isGameEnabledInRoom: roomDataToCreate.isGameEnabledInRoom,
       } as ChatRoom);
       setIsEditRoomModalOpen(true);
+      fetchRooms(); // Refresh room list
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -364,6 +379,18 @@ export default function ChatRoomsPage() {
         });
         return;
     }
+
+    const currentTime = Date.now();
+    if (currentTime - lastRoomCreationTimeRef.current < ROOM_CREATION_RATE_LIMIT_MS) {
+        const timeLeft = Math.ceil((ROOM_CREATION_RATE_LIMIT_MS - (currentTime - lastRoomCreationTimeRef.current)) / 1000);
+        toast({
+            title: "Lütfen Bekleyin",
+            description: `Çok sık oda oluşturuyorsunuz. ${timeLeft} saniye sonra tekrar deneyin.`,
+            variant: "destructive"
+        });
+        return;
+    }
+
     setIsCreateModalOpen(true);
 };
 
@@ -589,7 +616,7 @@ export default function ChatRoomsPage() {
           initialName={editingRoomDetails.name}
           initialDescription={editingRoomDetails.description}
           initialImage={editingRoomDetails.image}
-          initialIsGameEnabledInRoom={editingRoomDetails.isGameEnabledInRoom} // Eklendi
+          initialIsGameEnabledInRoom={editingRoomDetails.isGameEnabledInRoom}
         />
       )}
 
