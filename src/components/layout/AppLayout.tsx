@@ -256,6 +256,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isClient && currentUser && userData) {
       const checkPermissionAndSubscribe = async () => {
+        if (typeof Notification === 'undefined') {
+          console.warn("Notification API is not available in this environment. Skipping push subscription.");
+          return;
+        }
         const currentPermission = Notification.permission;
         if (currentPermission === 'default') {
           const newPermission = await requestNotificationPermission();
@@ -274,8 +278,38 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }, [isClient, currentUser, userData]);
 
 
-  const handleAcceptCall = useCallback(async () => { /* ... existing code ... */ }, [activeIncomingCall, router, toast]);
-  const handleRejectCall = useCallback(async () => { /* ... existing code ... */ }, [activeIncomingCall, toast]);
+  const handleAcceptCall = useCallback(async () => {
+    if (!activeIncomingCall) return;
+    try {
+      await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), {
+        status: 'active', // Callee signals active, caller will confirm on its side
+        updatedAt: serverTimestamp()
+      });
+      setIsCallModalOpen(false);
+      router.push(`/call/${activeIncomingCall.callId}`);
+    } catch (error) {
+      console.error("Error accepting call:", error);
+      toast({ title: "Çağrı Hatası", description: "Çağrı kabul edilirken bir sorun oluştu.", variant: "destructive" });
+    }
+  }, [activeIncomingCall, router, toast]);
+
+  const handleRejectCall = useCallback(async () => {
+    if (!activeIncomingCall) return;
+    try {
+      await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), {
+        status: 'rejected',
+        endedReason: 'callee_rejected',
+        updatedAt: serverTimestamp()
+      });
+      toast({ title: "Çağrı Reddedildi", description: `${activeIncomingCall.callerName || 'Arayan'} çağrısı reddedildi.` });
+    } catch (error) {
+      console.error("Error rejecting call:", error);
+      toast({ title: "Çağrı Hatası", description: "Çağrı reddedilirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsCallModalOpen(false);
+      setActiveIncomingCall(null);
+    }
+  }, [activeIncomingCall, toast]);
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -402,3 +436,4 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
