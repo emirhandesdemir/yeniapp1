@@ -24,7 +24,7 @@ let auth: Auth;
 let db: Firestore;
 let storage: FirebaseStorage;
 let analytics: Analytics | null = null;
-let messaging: Messaging | null = null; // FCM için eklendi
+let messaging: Messaging | null = null;
 
 try {
   app = initializeApp(firebaseConfig);
@@ -38,20 +38,33 @@ try {
       try {
         analytics = getAnalytics(app);
       } catch (error) {
-        console.error("Firebase Analytics başlatma hatası:", error);
+        console.warn("Firebase Analytics başlatma hatası (yoksayıldı):", error);
       }
     } else {
       console.warn("Firebase Analytics: measurementId, firebaseConfig içinde tanımlanmamış. Analytics başlatılmayacak.");
     }
-    // Initialize Firebase Messaging only on the client side
-    try {
-        messaging = getMessaging(app);
-    } catch (error) {
-        console.error("Firebase Messaging başlatma hatası (client-side):", error);
+
+    // Initialize Firebase Messaging only on the client side if supported
+    if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
+        try {
+            messaging = getMessaging(app);
+        } catch (error: any) {
+            if (error.code === 'messaging/unsupported-browser') {
+                console.warn("Firebase Messaging: Bu tarayıcı desteklemiyor veya gerekli API'ler eksik. (Kod: messaging/unsupported-browser)");
+            } else {
+                console.error("Firebase Messaging başlatma hatası (client-side):", error);
+            }
+            messaging = null; // Ensure messaging is null if init fails
+        }
+    } else if (typeof window !== 'undefined') { // Check typeof window again for clarity if first block is skipped
+        console.warn("Firebase Messaging: Service Worker, Push API veya Notification API bu tarayıcıda desteklenmiyor. Messaging başlatılmayacak.");
+        messaging = null; // Ensure messaging is null if APIs are not supported
     }
   }
 } catch (error) {
   console.error("Firebase başlatma sırasında genel hata oluştu:", error);
+  // Potansiyel olarak, burada da auth, db, storage gibi servisleri null yapmak gerekebilir
+  // eğer initializeApp başarısız olursa. Şimdilik mevcut yapıyı koruyoruz.
 }
 
 export { app, auth, db, storage, analytics, messaging };
