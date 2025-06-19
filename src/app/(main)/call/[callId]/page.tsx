@@ -33,7 +33,7 @@ const STUN_SERVERS = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
-const CALL_TIMEOUT_SECONDS = 30;
+const CALL_TIMEOUT_SECONDS = 30; // 30 saniye sonra cevapsız sayılacak
 
 export default function DirectCallPage() {
   const params = useParams();
@@ -407,6 +407,3 @@ export default function DirectCallPage() {
     </div>
   );
 }
-
-
-    

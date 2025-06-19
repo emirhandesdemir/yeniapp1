@@ -132,9 +132,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
-  const notifiedRequestIdsRef = useRef(new Set<string>()); // Ref for immediate access
+  const notifiedRequestIdsRef = useRef(new Set<string>());
 
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
+  const lastShownDmTimestampsRef = useRef<{[key: string]: number}>({});
+
 
   const [activeIncomingCall, setActiveIncomingCall] = useState<IncomingCallInfo | null>(null);
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
@@ -148,17 +150,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         if (storedNotifiedIds) {
           const ids = new Set<string>(JSON.parse(storedNotifiedIds));
           setNotifiedRequestIds(ids);
-          notifiedRequestIdsRef.current = ids; // Sync ref
+          notifiedRequestIdsRef.current = ids; 
+        }
+        const storedDmTimestamps = localStorage.getItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY);
+        if (storedDmTimestamps) {
+            const timestamps = JSON.parse(storedDmTimestamps);
+            setLastShownDmTimestamps(timestamps);
+            lastShownDmTimestampsRef.current = timestamps;
         }
       } catch (e) {
-        console.warn("Error reading notified request IDs from localStorage", e);
+        console.warn("Error reading from localStorage", e);
       }
     }
   }, []);
   
   useEffect(() => {
-    notifiedRequestIdsRef.current = notifiedRequestIds; // Keep ref in sync with state
+    notifiedRequestIdsRef.current = notifiedRequestIds; 
   }, [notifiedRequestIds]);
+
+  useEffect(() => {
+    lastShownDmTimestampsRef.current = lastShownDmTimestamps;
+  }, [lastShownDmTimestamps]);
 
 
   const handleCloseOnboarding = useCallback(() => {
@@ -177,19 +189,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         if (currentUser && userData && !isUserDataLoading && !onboardingCompleted) {
           setShowOnboarding(true);
         }
-        const storedDmTimestamps = localStorage.getItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY);
-        if (storedDmTimestamps) {
-          setLastShownDmTimestamps(JSON.parse(storedDmTimestamps));
-        }
       } catch (error) {
-        console.warn("Error accessing localStorage:", error);
+        console.warn("Error accessing localStorage for onboarding:", error);
       }
     }
   }, [isClient, currentUser, userData, isUserDataLoading]);
 
 
   useEffect(() => {
-    if (!currentUser?.uid || !isClient) { // isClient eklendi
+    if (!currentUser?.uid || !isClient) { 
       setIncomingRequests([]);
       if (!incomingInitialized) {
         setLoadingRequests(false);
@@ -234,7 +242,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             link: '/friends', 
           });
           localNewNotifiedThisSession.add(requestId);
-          notifiedRequestIdsRef.current.add(requestId); // Update ref immediately
+          notifiedRequestIdsRef.current.add(requestId); 
         }
 
         return {
@@ -253,9 +261,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         setIncomingRequests(resolvedRequests);
 
         if (localNewNotifiedThisSession.size > 0 && isClient) {
-           setNotifiedRequestIds(prevIds => { // Update state based on ref
-            const updatedSet = new Set(notifiedRequestIdsRef.current); // Start with the ref's current value
-            // localNewNotifiedThisSession is already added to ref, so this state update is for re-render
+           setNotifiedRequestIds(prevIds => { 
+            const updatedSet = new Set(notifiedRequestIdsRef.current); 
             try {
               localStorage.setItem(NOTIFIED_REQUEST_IDS_STORAGE_KEY, JSON.stringify(Array.from(updatedSet)));
             } catch(e) {
@@ -266,9 +273,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
-        if(incomingInitialized) {
-          // toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
-        }
       } finally {
          setLoadingRequests(false);
          if (!incomingInitialized) {
@@ -277,16 +281,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       }
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
-       if(incomingInitialized){
-            // toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive"});
-       }
        setLoadingRequests(false);
        if (!incomingInitialized) {
         setIncomingInitialized(true);
       }
     });
     return () => unsubscribeIncoming();
-  }, [currentUser?.uid, incomingInitialized, showInAppNotification, isClient]); // notifiedRequestIds kaldırıldı
+  }, [currentUser?.uid, incomingInitialized, showInAppNotification, isClient]); 
 
 
   useEffect(() => {
@@ -305,7 +306,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
                 if (dmData.lastMessageSenderId && dmData.lastMessageSenderId !== currentUser.uid && dmData.lastMessageTimestamp) {
                     const lastMessageTimeMillis = (dmData.lastMessageTimestamp as Timestamp).toMillis();
-                    const lastShownTimeMillis = lastShownDmTimestamps[dmId];
+                    const lastShownTimeMillis = lastShownDmTimestampsRef.current[dmId];
 
 
                     if ((!lastShownTimeMillis || lastMessageTimeMillis > lastShownTimeMillis) && pathname !== `/dm/${dmId}`) {
@@ -327,18 +328,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                             } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
                         }
                         
-                        // DM için in-app bildirim
                         showInAppNotification({
                             title: `Yeni Mesaj: ${senderName}`,
-                            message: dmData.lastMessageText || "Bir mesaj gönderdi.",
+                            message: dmData.lastMessageText ? (dmData.lastMessageText.length > 50 ? dmData.lastMessageText.substring(0, 47) + "..." : dmData.lastMessageText) : "Bir mesaj gönderdi.",
                             type: 'new_dm',
                             avatarUrl: senderAvatar,
                             senderName: senderName,
                             link: `/dm/${dmId}`,
                         });
 
-                        const newTimestamps = { ...lastShownDmTimestamps, [dmId]: lastMessageTimeMillis };
-                        setLastShownDmTimestamps(newTimestamps);
+                        const newTimestamps = { ...lastShownDmTimestampsRef.current, [dmId]: lastMessageTimeMillis };
+                        setLastShownDmTimestamps(newTimestamps); // Update state
                         try {
                           localStorage.setItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY, JSON.stringify(newTimestamps));
                         } catch (error) {
@@ -353,7 +353,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribeDms();
-  }, [currentUser?.uid, pathname, lastShownDmTimestamps, isClient, showInAppNotification]);
+  }, [currentUser?.uid, pathname, isClient, showInAppNotification]);
 
 
   useEffect(() => {

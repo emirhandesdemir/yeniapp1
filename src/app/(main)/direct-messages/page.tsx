@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone, Star, UserPlus } from "lucide-react";
-import { useAuth, type UserData } from "@/contexts/AuthContext";
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs, updateDoc } from "firebase/firestore"; // updateDoc eklendi
+import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs, updateDoc, onSnapshot } from "firebase/firestore"; // onSnapshot eklendi
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -91,6 +91,7 @@ export default function DirectMessagesPage() {
                   const userSnap = await getDoc(userDocRef);
                   if (userSnap.exists()) {
                       otherParticipantData = { uid: userSnap.id, ...userSnap.data() } as UserData;
+                      otherParticipantData.isPremium = checkUserPremium(otherParticipantData);
                   }
               } catch (error) {
                   console.error("Error fetching other participant details:", error);
@@ -112,7 +113,7 @@ export default function DirectMessagesPage() {
 
       return unsubscribe; // Cleanup fonksiyonu
 
-    } catch (error) { // Bu blok genellikle onSnapshot'ın ilk getDocs kısmı için, ama onSnapshot'ta error callback var.
+    } catch (error) { 
         console.error("Error setting up DM conversations listener:", error);
         toast({ title: "Hata", description: "Mesajlar dinlenirken bir sorun oluştu.", variant: "destructive"});
         setLoadingConversations(false);
@@ -123,7 +124,10 @@ export default function DirectMessagesPage() {
     let unsubscribe: (() => void) | undefined;
     
     const setupListener = async () => {
-        unsubscribe = await fetchConversations();
+        const unsub = await fetchConversations();
+        if (typeof unsub === 'function') {
+            unsubscribe = unsub;
+        }
     }
     setupListener();
     
