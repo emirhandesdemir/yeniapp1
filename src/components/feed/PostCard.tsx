@@ -21,7 +21,7 @@ import CommentForm from "./CommentForm";
 import CommentCard, { type CommentData } from "./CommentCard";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion"; // Added for animation
+import { motion } from "framer-motion";
 
 export interface Post {
   id: string;
@@ -53,6 +53,18 @@ interface PostCardProps {
   post: Post;
 }
 
+const heartVariants = {
+  liked: {
+    scale: [1, 1.3, 0.9, 1.1, 1],
+    transition: { duration: 0.4, ease: "easeInOut" }
+  },
+  unliked: {
+    scale: 1,
+    transition: { duration: 0.2, ease: "easeInOut" }
+  }
+};
+
+
 const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   const { currentUser, userData } = useAuth();
   const { toast } = useToast();
@@ -60,7 +72,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   const [optimisticHasLiked, setOptimisticHasLiked] = useState(false);
   const [optimisticLikeCount, setOptimisticLikeCount] = useState(0);
 
-  const [isLiking, setIsLiking] = useState(false); // To prevent multiple quick clicks
+  const [isLiking, setIsLiking] = useState(false);
   const [isReposting, setIsReposting] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<CommentData[]>([]);
@@ -147,19 +159,18 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 
     setIsLiking(true);
     const postRef = doc(db, "posts", post.id);
-    const currentlyLiked = optimisticHasLiked; // Use optimistic state for current action
+    const currentlyLiked = optimisticHasLiked;
 
-    // Optimistic UI update
     setOptimisticHasLiked(!currentlyLiked);
     setOptimisticLikeCount(prevCount => currentlyLiked ? prevCount - 1 : prevCount + 1);
 
     try {
-      if (currentlyLiked) { // If it was liked, now we are unliking
+      if (currentlyLiked) {
         await updateDoc(postRef, {
           likeCount: increment(-1),
           likedBy: arrayRemove(currentUser.uid)
         });
-      } else { // If it was not liked, now we are liking
+      } else {
         await updateDoc(postRef, {
           likeCount: increment(1),
           likedBy: arrayUnion(currentUser.uid)
@@ -168,7 +179,6 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     } catch (error) {
       console.error("Error liking/unliking post:", error);
       toast({ title: "Hata", description: "Beğeni işlemi sırasında bir sorun oluştu.", variant: "destructive" });
-      // Revert optimistic update on error
       setOptimisticHasLiked(currentlyLiked);
       setOptimisticLikeCount(prevCount => currentlyLiked ? prevCount + 1 : prevCount - 1);
     } finally {
@@ -382,17 +392,25 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
           variant="ghost"
           size="sm"
           className={cn(
-            "px-2 py-1.5",
-            optimisticHasLiked ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500'
+            "px-2 py-1.5 group",
+            optimisticHasLiked ? 'text-red-500 hover:bg-red-500/10' : 'text-muted-foreground hover:text-red-500 hover:bg-red-500/10'
           )}
           onClick={handleLikePost}
           disabled={isLiking || !currentUser}
         >
           <motion.div
-            animate={{ scale: optimisticHasLiked && !isLiking ? [1, 1.3, 1] : 1 }}
-            transition={{ duration: 0.3 }}
+            variants={heartVariants}
+            animate={optimisticHasLiked ? "liked" : "unliked"}
+            whileTap={{ scale: 0.8 }}
           >
-            <Heart className={`h-4 w-4 mr-1.5 ${optimisticHasLiked ? 'fill-current' : ''}`} />
+            <Heart
+              className={cn(
+                "h-4 w-4 mr-1.5 transition-all duration-150",
+                optimisticHasLiked
+                  ? "fill-red-500 stroke-red-500"
+                  : "fill-none stroke-current group-hover:stroke-red-500"
+              )}
+            />
           </motion.div>
           <span className="text-xs">{optimisticLikeCount}</span>
         </Button>
@@ -432,3 +450,4 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 });
 PostCard.displayName = 'PostCard';
 export default PostCard;
+
