@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon } from "lucide-react"; // SettingsIcon eklendi
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -48,6 +48,7 @@ import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import Image from 'next/image';
 import ChatMessageItem from '@/components/chat/ChatMessageItem';
 import VoiceParticipantGrid from '@/components/chat/VoiceParticipantGrid';
+import EditChatRoomDialog from '@/components/chat/EditChatRoomDialog'; // Eklendi
 
 interface Message {
   id: string;
@@ -78,6 +79,8 @@ interface ChatRoomDetails {
   gameInitialized?: boolean;
   voiceParticipantCount?: number;
   currentGameAnswerDeadline?: Timestamp | null;
+  image?: string; // Eklendi
+  imageAiHint?: string; // Eklendi
 }
 
 export interface ActiveTextParticipant {
@@ -141,8 +144,8 @@ const CAPACITY_INCREASE_COST = 5;
 const CAPACITY_INCREASE_SLOTS = 1;
 const PREMIUM_USER_ROOM_CAPACITY = 50;
 
-const SPEAKING_THRESHOLD = 5; 
-const SILENCE_DELAY_MS = 1000; 
+const SPEAKING_THRESHOLD = 5;
+const SILENCE_DELAY_MS = 1000;
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -210,6 +213,8 @@ export default function ChatRoomPage() {
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
   const localIsSpeakingRef = useRef(localIsSpeaking);
+
+  const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false); // Eklendi
 
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
@@ -434,7 +439,7 @@ export default function ChatRoomPage() {
 
     try {
         if (signal.type === 'offer') {
-            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer" ) { 
+            if (pc.signalingState !== "stable" && pc.signalingState !== "have-local-offer" ) {
                 console.warn(`[WebRTC] Setting remote offer from ${fromUid} while signaling state is ${pc.signalingState}. This might indicate a glare condition or race.`);
             }
             if (signal.sdp) {
@@ -464,7 +469,7 @@ export default function ChatRoomPage() {
             }
             negotiatingRef.current[fromUid] = false;
         } else if (signal.type === 'candidate') {
-            if (signal.candidate && signal.candidate.candidate) { 
+            if (signal.candidate && signal.candidate.candidate) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
                     console.log(`[WebRTC] Added ICE candidate from ${fromUid}.`);
@@ -560,7 +565,7 @@ export default function ChatRoomPage() {
 
   const detectSpeaking = useCallback(() => {
     if (!audioContextRef.current || !analyserRef.current || !dataArrayRef.current) {
-      speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking); 
+      speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking);
       return;
     }
     analyserRef.current.getByteFrequencyData(dataArrayRef.current);
@@ -572,7 +577,7 @@ export default function ChatRoomPage() {
 
     if (average > SPEAKING_THRESHOLD) {
       if (!localIsSpeakingRef.current) {
-        setLocalIsSpeaking(true); 
+        setLocalIsSpeaking(true);
         updateSpeakingStatusInFirestore(true);
       }
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -600,7 +605,7 @@ export default function ChatRoomPage() {
         }
         if (!analyserRef.current && audioContextRef.current) {
             analyserRef.current = audioContextRef.current.createAnalyser();
-            analyserRef.current.fftSize = 256; 
+            analyserRef.current.fftSize = 256;
             const bufferLength = analyserRef.current.frequencyBinCount;
             dataArrayRef.current = new Uint8Array(bufferLength);
             const source = audioContextRef.current.createMediaStreamSource(localStreamRef.current);
@@ -640,14 +645,14 @@ export default function ChatRoomPage() {
         audioContextRef.current = null;
       }).catch(e => {
           console.error("Error closing AudioContext:", e);
-          audioContextRef.current = null; 
+          audioContextRef.current = null;
       });
     } else if (audioContextRef.current && audioContextRef.current.state === 'closed') {
         console.log("[WebRTC Speaking] AudioContext was already closed.");
         audioContextRef.current = null;
     }
-    
-    if (localIsSpeakingRef.current) { 
+
+    if (localIsSpeakingRef.current) {
       setLocalIsSpeaking(false);
       updateSpeakingStatusInFirestore(false);
     }
@@ -677,7 +682,7 @@ export default function ChatRoomPage() {
         throw new Error("No active tracks in media stream");
       }
       localStreamRef.current = stream;
-      
+
       // Mute by admin check before enabling local track for others
       const selfVoiceDocRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
       const selfVoiceDocSnap = await getDoc(selfVoiceDocRef);
@@ -846,7 +851,7 @@ export default function ChatRoomPage() {
               handleLeaveVoiceChat(true);
               return;
           }
-          
+
           // Handle admin mute propagation to local stream
           if (selfInFirestore && localStreamRef.current) {
             const isAdminMuted = selfInFirestore.isMutedByAdmin === true;
@@ -1156,7 +1161,9 @@ export default function ChatRoomPage() {
             nextGameQuestionTimestamp: data.nextGameQuestionTimestamp,
             gameInitialized: data.gameInitialized,
             voiceParticipantCount: data.voiceParticipantCount || 0,
-            currentGameAnswerDeadline: data.currentGameAnswerDeadline
+            currentGameAnswerDeadline: data.currentGameAnswerDeadline,
+            image: data.image,
+            imageAiHint: data.imageAiHint,
         };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
@@ -1408,7 +1415,7 @@ export default function ChatRoomPage() {
 
   const handleAdminToggleMuteUserVoice = useCallback(async (targetUserId: string, currentAdminMuteState?: boolean) => {
     if (!currentUser || !roomId || !isCurrentUserRoomCreator || targetUserId === currentUser.uid) return;
-    
+
     const newAdminMuteState = !currentAdminMuteState;
     try {
       const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, targetUserId);
@@ -1486,6 +1493,7 @@ export default function ChatRoomPage() {
   }
 
   return (
+    <>
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
       {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
         console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
@@ -1525,7 +1533,10 @@ export default function ChatRoomPage() {
               </>
             </Link>
           </Button>
-          <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <AvatarImage src={`https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint="group chat" /> <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback> </Avatar>
+          <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+            <AvatarImage src={roomDetails.image || `https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint={roomDetails.imageAiHint || "group chat"} />
+            <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback>
+          </Avatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-semibold text-foreground truncate" title={roomDetails.name}>{roomDetails.name}</h2>
@@ -1568,6 +1579,9 @@ export default function ChatRoomPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setIsEditRoomModalOpen(true)}>
+                    <SettingsIcon className="mr-2 h-4 w-4" /> Oda Ayarları
+                </DropdownMenuItem>
                 {!isRoomExpired && roomDetails.expiresAt && (
                   <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading || isIncreasingCapacity}>
                     {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -1580,6 +1594,7 @@ export default function ChatRoomPage() {
                     Katılımcı Artır
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
                   <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
                 </DropdownMenuItem>
@@ -1601,6 +1616,20 @@ export default function ChatRoomPage() {
         {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
       </form>
     </div>
+      {isEditRoomModalOpen && roomDetails && (
+        <EditChatRoomDialog
+          isOpen={isEditRoomModalOpen}
+          onClose={() => {
+            setIsEditRoomModalOpen(false);
+            // Oda detayları zaten onSnapshot ile güncelleniyor olmalı
+            // veya edit dialog içindeki kaydetme sonrası güncelleniyor.
+          }}
+          roomId={roomDetails.id}
+          initialName={roomDetails.name}
+          initialDescription={roomDetails.description || ""}
+          initialImage={roomDetails.image}
+        />
+      )}
+    </>
   );
 }
-

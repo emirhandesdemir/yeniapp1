@@ -3,12 +3,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star } from "lucide-react"; // Star eklendi
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore";
-import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { useAuth, checkUserPremium } from "@/contexts/AuthContext";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import EditChatRoomDialog from "@/components/chat/EditChatRoomDialog"; // Added import
 
 interface ChatRoomVoiceParticipantPreview {
   uid: string;
@@ -42,13 +43,15 @@ interface ChatRoom {
   description: string;
   creatorId: string;
   creatorName: string;
-  creatorIsPremium?: boolean; 
-  isPremiumRoom?: boolean; 
+  creatorIsPremium?: boolean;
+  isPremiumRoom?: boolean;
   createdAt: Timestamp;
   expiresAt: Timestamp;
   participantCount?: number;
   maxParticipants: number;
   voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[];
+  image?: string; // Added for passing to EditChatRoomDialog
+  imageAiHint?: string; // Added for passing to EditChatRoomDialog
 }
 
 interface GameSettings {
@@ -112,6 +115,10 @@ export default function ChatRoomsPage() {
     }
     return true;
   });
+
+  const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false);
+  const [editingRoomDetails, setEditingRoomDetails] = useState<ChatRoom | null>(null);
+
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -185,9 +192,9 @@ export default function ChatRoomsPage() {
           } catch (error) {
             console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
           }
-          return { 
-              id: docSnapshot.id, 
-              ...roomData, 
+          return {
+              id: docSnapshot.id,
+              ...roomData,
               voiceParticipantPreviews: voicePreviews,
               creatorIsPremium: roomData.creatorIsPremium || false,
               isPremiumRoom: roomData.isPremiumRoom || false,
@@ -214,7 +221,7 @@ export default function ChatRoomsPage() {
       setLoading(false);
     }
   }, [toast]);
-  
+
   useEffect(() => {
     document.title = 'Sohbet Odaları - HiweWalk';
     fetchRooms();
@@ -259,7 +266,7 @@ export default function ChatRoomsPage() {
     setIsCreatingRoom(true);
 
 
-    const imageUrl = "https://placehold.co/600x400.png";
+    const imageUrl = "https://placehold.co/600x400.png"; // Default placeholder
     const imageHint = "community discussion";
 
     const currentTime = new Date();
@@ -274,7 +281,7 @@ export default function ChatRoomsPage() {
       creatorId: currentUser.uid,
       creatorName: userData.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
       creatorIsPremium: userIsCreatorPremium,
-      isPremiumRoom: userIsCreatorPremium, 
+      isPremiumRoom: userIsCreatorPremium,
       createdAt: serverTimestamp(),
       expiresAt: Timestamp.fromDate(expiresAtDate),
       image: imageUrl,
@@ -295,7 +302,7 @@ export default function ChatRoomsPage() {
 
 
     try {
-      await addDoc(collection(db, "chatRooms"), roomDataToCreate);
+      const newRoomRef = await addDoc(collection(db, "chatRooms"), roomDataToCreate);
       if (!userIsCreatorPremium) {
         await updateUserDiamonds((userData.diamonds ?? 0) - ROOM_CREATION_COST);
         toast({ title: "Başarılı", description: `"${newRoomName}" odası oluşturuldu. ${ROOM_CREATION_COST} elmas harcandı.` });
@@ -304,7 +311,15 @@ export default function ChatRoomsPage() {
       }
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
-      fetchRooms();
+      // Open edit dialog for the new room
+      setEditingRoomDetails({
+        id: newRoomRef.id,
+        ...roomDataToCreate,
+        createdAt: Timestamp.now(), // approximate, will be serverTimestamp
+        expiresAt: Timestamp.fromDate(expiresAtDate) // use calculated one
+      } as ChatRoom);
+      setIsEditRoomModalOpen(true);
+      // fetchRooms(); // Refresh list after edit dialog is closed
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -552,6 +567,21 @@ export default function ChatRoomsPage() {
         </Dialog>
       </div>
 
+      {editingRoomDetails && (
+        <EditChatRoomDialog
+          isOpen={isEditRoomModalOpen}
+          onClose={() => {
+            setIsEditRoomModalOpen(false);
+            setEditingRoomDetails(null);
+            fetchRooms(); // Refresh the list after closing the edit dialog
+          }}
+          roomId={editingRoomDetails.id}
+          initialName={editingRoomDetails.name}
+          initialDescription={editingRoomDetails.description}
+          initialImage={editingRoomDetails.image} // Pass current image (placeholder)
+        />
+      )}
+
       {chatRooms.length === 0 && !loading ? (
         <Card className="col-span-full text-center py-10 sm:py-16 bg-card border border-border/20 rounded-xl shadow-lg">
             <CardHeader>
@@ -657,8 +687,8 @@ export default function ChatRoomsPage() {
                   asChild
                   className={cn(
                     "w-full text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105",
-                    isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' : 
-                    room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' : 
+                    isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' :
+                    room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' :
                     'bg-primary hover:bg-primary/80 text-primary-foreground'
                   )}
                   disabled={isFull}
@@ -677,5 +707,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-
     
