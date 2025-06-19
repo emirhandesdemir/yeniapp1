@@ -32,7 +32,6 @@ export function useInAppNotification() {
   return context;
 }
 
-// Basit bir ID üretici
 let notificationIdCounter = 0;
 const generateId = () => `inapp-notif-${notificationIdCounter++}`;
 
@@ -43,12 +42,7 @@ export function InAppNotificationProvider({ children }: { children: ReactNode })
     const id = generateId();
     const newNotification = { ...notificationData, id };
     setNotifications(prev => {
-      // Basitlik için sadece bir bildirim gösterelim. Eskisini kaldırıp yenisini ekleyebiliriz.
-      // Daha karmaşık bir kuyruk yönetimi de yapılabilir.
-      // Ya da aynı anda birden fazla bildirim gösterilmek isteniyorsa, InAppNotificationBanner'ı map ile render edip
-      // pozisyonlarını ayarlamak gerekir (örn: y ekseninde stackleyerek).
-      // Şimdilik en son geleni en üste alıp, mevcutları temizleyebiliriz veya sadece bir tane gösterebiliriz.
-      // Bu örnekte, en fazla 1 bildirim aktif olacak şekilde yapıyoruz, yenisi gelince eskisi (varsa) gider.
+      // Sadece bir bildirim göster, yenisi gelince eskisi (varsa) gider.
       return [newNotification]; 
     });
     return id;
@@ -58,8 +52,6 @@ export function InAppNotificationProvider({ children }: { children: ReactNode })
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
-  // Sadece ilk bildirimi alıp InAppNotificationBanner'a iletiyoruz
-  // Eğer birden fazla bildirim aynı anda gösterilmek istenirse burası güncellenmeli
   const currentNotification = notifications.length > 0 ? notifications[0] : null;
 
   const contextValue = useMemo(() => ({
@@ -75,7 +67,7 @@ export function InAppNotificationProvider({ children }: { children: ReactNode })
           <InAppNotificationBanner
             key={currentNotification.id}
             notification={currentNotification}
-            onDismiss={dismissNotification}
+            onDismiss={dismissNotification} 
           />
         )}
       </AnimatePresence>

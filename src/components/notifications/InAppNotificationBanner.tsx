@@ -15,7 +15,7 @@ interface InAppNotificationBannerProps {
   onDismiss: (id: string) => void;
 }
 
-const AUTO_DISMISS_DURATION = 7000; // 7 saniye
+const AUTO_DISMISS_DURATION = 5000; // 5 saniye olarak güncellendi
 
 export default function InAppNotificationBanner({ notification, onDismiss }: InAppNotificationBannerProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -24,6 +24,8 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
   const handleDismiss = () => {
     if (isExiting) return;
     setIsExiting(true);
+    // Animasyonun bitmesi için kısa bir süre tanıyıp sonra state'ten kaldıralım
+    // Bu doğrudan onDismiss'i çağıracak, context halledecek
     onDismiss(notification.id);
   };
 
@@ -35,10 +37,10 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
       }, AUTO_DISMISS_DURATION);
     }
     return () => clearTimeout(timer);
-  }, [isHovered, notification.id, onDismiss, isExiting]);
+  }, [isHovered, notification.id, onDismiss, isExiting]); // handleDismiss bağımlılıklardan çıkarıldı, useCallback ile sarılabilir ama şimdilik sorun yaratmaz
 
   const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.y < -50 || info.velocity.y < -300) { // Swipe up to dismiss
+    if (info.offset.y < -30 || info.velocity.y < -200) { // Eşik değerler biraz düşürüldü
       handleDismiss();
     }
   };
@@ -50,7 +52,7 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
       case 'new_dm':
         return <MessageSquareText className="h-6 w-6 text-green-500" />;
       default:
-        return <UserPlus className="h-6 w-6 text-primary" />;
+        return <UserPlus className="h-6 w-6 text-primary" />; // Varsayılan ikon
     }
   };
 
@@ -67,19 +69,20 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
       exit={{ opacity: 0, y: -100, transition: { duration: 0.3, ease: "easeIn" } }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       drag="y"
-      dragConstraints={{ top: 0, bottom: 0 }}
+      dragConstraints={{ top: 0, bottom: 0 }} // Sadece dikey sürüklemeye izin ver
+      dragElastic={0.2} // Sürükleme direncini ayarla
       onDragEnd={handleDragEnd}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "fixed top-4 left-1/2 -translate-x-1/2 z-[150] w-[calc(100%-2rem)] max-w-md p-1 rounded-xl shadow-2xl cursor-grab active:cursor-grabbing",
-        "bg-card border border-border/60 backdrop-blur-lg bg-opacity-80 dark:bg-opacity-70",
+        "bg-card border border-border/60 backdrop-blur-lg bg-opacity-90 dark:bg-opacity-80", // Opaklık biraz artırıldı
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       )}
-      style={{ WebkitBackdropFilter: 'blur(10px)'}} // Safari için backdrop-filter
+      style={{ WebkitBackdropFilter: 'blur(12px)'}} // Safari için backdrop-filter
       aria-live="assertive"
       aria-atomic="true"
-      role="alertdialog" // Daha uygun rol
+      role="alertdialog"
       aria-labelledby={`notification-title-${notification.id}`}
       aria-describedby={`notification-message-${notification.id}`}
     >
@@ -103,7 +106,7 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleDismiss}
+          onClick={(e) => { e.stopPropagation(); handleDismiss(); }} // Event'in yayılmasını engelle
           className="h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0 ml-auto -mr-1 -mt-1"
           aria-label="Bildirimi kapat"
         >
@@ -118,7 +121,11 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
 
   if (notification.link) {
     return (
-      <Link href={notification.link} onClick={handleDismiss} className="focus:outline-none">
+      <Link href={notification.link} onClick={(e) => { 
+          // e.preventDefault(); // Linke gitmeyi engellememek için kaldırıldı, ama handleDismiss çağrılmalı
+          handleDismiss(); 
+          // router.push(notification.link) çağrısı burada yapılabilir veya Link'in kendi davranışı yeterli olacaktır.
+      }} className="focus:outline-none" draggable="false"> {/* draggable false eklendi */}
         {content}
       </Link>
     );

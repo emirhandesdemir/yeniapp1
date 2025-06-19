@@ -2,7 +2,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // useRef eklendi
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -38,7 +38,7 @@ import {
   getDoc,
   orderBy,
   updateDoc,
-  setDoc, // DM oluşturmak için eklendi
+  setDoc,
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
@@ -47,14 +47,14 @@ import { useInAppNotification, type InAppNotificationData } from '@/contexts/InA
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeUserToPush } from '@/lib/notificationUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { generateDmChatId } from '@/lib/utils'; // DM ID üretmek için eklendi
+import { generateDmChatId } from '@/lib/utils';
 
 interface FriendRequestForPopover {
   id: string;
   fromUserId: string;
   fromUsername: string;
   fromAvatarUrl: string | null;
-  fromUserIsPremium?: boolean; // Eklendi
+  fromUserIsPremium?: boolean;
   createdAt: Timestamp;
   userProfile?: UserData;
 }
@@ -132,6 +132,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [notifiedRequestIds, setNotifiedRequestIds] = useState<Set<string>>(new Set());
+  const notifiedRequestIdsRef = useRef(new Set<string>()); // Ref for immediate access
+
   const [lastShownDmTimestamps, setLastShownDmTimestamps] = useState<{[key: string]: number}>({});
 
   const [activeIncomingCall, setActiveIncomingCall] = useState<IncomingCallInfo | null>(null);
@@ -144,13 +146,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       try {
         const storedNotifiedIds = localStorage.getItem(NOTIFIED_REQUEST_IDS_STORAGE_KEY);
         if (storedNotifiedIds) {
-          setNotifiedRequestIds(new Set(JSON.parse(storedNotifiedIds)));
+          const ids = new Set<string>(JSON.parse(storedNotifiedIds));
+          setNotifiedRequestIds(ids);
+          notifiedRequestIdsRef.current = ids; // Sync ref
         }
       } catch (e) {
         console.warn("Error reading notified request IDs from localStorage", e);
       }
     }
   }, []);
+  
+  useEffect(() => {
+    notifiedRequestIdsRef.current = notifiedRequestIds; // Keep ref in sync with state
+  }, [notifiedRequestIds]);
+
 
   const handleCloseOnboarding = useCallback(() => {
     setShowOnboarding(false);
@@ -180,7 +189,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
 
   useEffect(() => {
-    if (!currentUser?.uid) {
+    if (!currentUser?.uid || !isClient) { // isClient eklendi
       setIncomingRequests([]);
       if (!incomingInitialized) {
         setLoadingRequests(false);
@@ -199,7 +208,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
-      const newNotifiedThisSession = new Set<string>();
+      const localNewNotifiedThisSession = new Set<string>();
 
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
@@ -215,16 +224,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             console.error(`Error fetching profile for sender ${data.fromUserId} for notification:`, profileError);
         }
 
-        if (data.status === "pending" && userProfileData && !notifiedRequestIds.has(requestId) && isClient) {
+        if (data.status === "pending" && userProfileData && !notifiedRequestIdsRef.current.has(requestId) && isClient) {
           showInAppNotification({
             title: "Yeni Arkadaşlık İsteği",
             message: `${userProfileData.displayName || 'Bir kullanıcı'} sana arkadaşlık isteği gönderdi.`,
             type: 'friend_request',
             avatarUrl: userProfileData.photoURL,
             senderName: userProfileData.displayName,
-            link: '/friends', // `/friends` sayfasına yönlendirme
+            link: '/friends', 
           });
-          newNotifiedThisSession.add(requestId);
+          localNewNotifiedThisSession.add(requestId);
+          notifiedRequestIdsRef.current.add(requestId); // Update ref immediately
         }
 
         return {
@@ -242,10 +252,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
 
-        if (newNotifiedThisSession.size > 0 && isClient) {
-           setNotifiedRequestIds(prevIds => {
-            const updatedSet = new Set(prevIds);
-            newNotifiedThisSession.forEach(id => updatedSet.add(id));
+        if (localNewNotifiedThisSession.size > 0 && isClient) {
+           setNotifiedRequestIds(prevIds => { // Update state based on ref
+            const updatedSet = new Set(notifiedRequestIdsRef.current); // Start with the ref's current value
+            // localNewNotifiedThisSession is already added to ref, so this state update is for re-render
             try {
               localStorage.setItem(NOTIFIED_REQUEST_IDS_STORAGE_KEY, JSON.stringify(Array.from(updatedSet)));
             } catch(e) {
@@ -257,7 +267,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("Error resolving request promises for notifications:", error);
         if(incomingInitialized) {
-          toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
+          // toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir hata oluştu.", variant: "destructive"});
         }
       } finally {
          setLoadingRequests(false);
@@ -268,7 +278,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }, (error) => {
       console.error("Error fetching incoming requests for popover:", error);
        if(incomingInitialized){
-            toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive"});
+            // toast({title: "Bildirim Hatası", description: "Arkadaşlık istekleri yüklenirken bir sorun oluştu.", variant: "destructive"});
        }
        setLoadingRequests(false);
        if (!incomingInitialized) {
@@ -276,7 +286,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       }
     });
     return () => unsubscribeIncoming();
-  }, [currentUser?.uid, incomingInitialized, toast, showInAppNotification, notifiedRequestIds, isClient]);
+  }, [currentUser?.uid, incomingInitialized, showInAppNotification, isClient]); // notifiedRequestIds kaldırıldı
 
 
   useEffect(() => {
@@ -316,8 +326,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                                 }
                             } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
                         }
-                        // DM bildirimi için logic
-                        // showInAppNotification(...);
+                        
+                        // DM için in-app bildirim
+                        showInAppNotification({
+                            title: `Yeni Mesaj: ${senderName}`,
+                            message: dmData.lastMessageText || "Bir mesaj gönderdi.",
+                            type: 'new_dm',
+                            avatarUrl: senderAvatar,
+                            senderName: senderName,
+                            link: `/dm/${dmId}`,
+                        });
 
                         const newTimestamps = { ...lastShownDmTimestamps, [dmId]: lastMessageTimeMillis };
                         setLastShownDmTimestamps(newTimestamps);
@@ -494,7 +512,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       batch.set(myFriendRef, {
         displayName: request.userProfile.displayName,
         photoURL: request.userProfile.photoURL,
-        isPremium: request.userProfile.isPremium || false, // UserProfile'dan premium bilgisini al
+        isPremium: request.userProfile.isPremium || false, 
         addedAt: serverTimestamp()
       });
       
@@ -502,12 +520,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       batch.set(theirFriendRef, {
         displayName: userData.displayName,
         photoURL: userData.photoURL,
-        isPremium: checkUserPremium(userData), // Mevcut kullanıcının premium durumunu kontrol et
+        isPremium: checkUserPremium(userData), 
         addedAt: serverTimestamp()
       });
       await batch.commit();
 
-      // DM sohbetini oluştur/kontrol et
       const dmChatId = generateDmChatId(currentUser.uid, request.fromUserId);
       const dmChatDocRef = doc(db, "directMessages", dmChatId);
       const dmChatDocSnap = await getDoc(dmChatDocRef);
@@ -528,11 +545,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             },
           },
           createdAt: serverTimestamp(),
-          lastMessageTimestamp: null, // İlk oluşturulduğunda mesaj yok
+          lastMessageTimestamp: null, 
         });
       } else {
-        // Eğer DM zaten varsa, participantInfo'yu güncelle (isim/avatar değişmiş olabilir)
-        await updateDoc(dmChatDocRef, {
+         await updateDoc(dmChatDocRef, {
             [`participantInfo.${currentUser.uid}`]: {
                 displayName: userData.displayName,
                 photoURL: userData.photoURL,

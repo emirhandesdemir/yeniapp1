@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone, Star, UserPlus } from "lucide-react";
 import { useAuth, type UserData } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs } from "firebase/firestore";
+import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs, updateDoc } from "firebase/firestore"; // updateDoc eklendi
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -60,59 +60,78 @@ export default function DirectMessagesPage() {
         where("participantUids", "array-contains", currentUser.uid),
         orderBy("lastMessageTimestamp", "desc")
       );
-      const snapshot = await getDocs(dmQuery);
-
-      if (snapshot.empty) {
-        setConversations([]);
-        setLoadingConversations(false);
-        return;
-      }
-
-      const convPromises = snapshot.docs.map(async (docSnapshot) => {
-        const data = docSnapshot.data() as DirectMessageConversation;
-        data.id = docSnapshot.id;
-
-        const otherUid = data.participantUids.find(uid => uid !== currentUser.uid);
-        let otherParticipantData: UserData | undefined;
-
-        if (otherUid && data.participantInfo && data.participantInfo[otherUid]) {
-            otherParticipantData = {
-                uid: otherUid,
-                displayName: data.participantInfo[otherUid].displayName,
-                photoURL: data.participantInfo[otherUid].photoURL,
-                isPremium: data.participantInfo[otherUid].isPremium || false,
-                email: null, 
-                diamonds: 0, 
-                createdAt: Timestamp.now(), 
-            };
-        } else if (otherUid) {
-            try {
-                const userDocRef = doc(db, "users", otherUid);
-                const userSnap = await getDoc(userDocRef);
-                if (userSnap.exists()) {
-                    otherParticipantData = { uid: userSnap.id, ...userSnap.data() } as UserData;
-                }
-            } catch (error) {
-                console.error("Error fetching other participant details:", error);
-            }
+      // onSnapshot ile gerçek zamanlı dinleme
+      const unsubscribe = onSnapshot(dmQuery, async (snapshot) => {
+        if (snapshot.empty) {
+          setConversations([]);
+          setLoadingConversations(false); // İlk yükleme tamamlandı
+          return;
         }
 
-        return { ...data, otherParticipant: otherParticipantData };
+        const convPromises = snapshot.docs.map(async (docSnapshot) => {
+          const data = docSnapshot.data() as DirectMessageConversation;
+          data.id = docSnapshot.id;
+
+          const otherUid = data.participantUids.find(uid => uid !== currentUser.uid);
+          let otherParticipantData: UserData | undefined;
+
+          if (otherUid && data.participantInfo && data.participantInfo[otherUid]) {
+              otherParticipantData = {
+                  uid: otherUid,
+                  displayName: data.participantInfo[otherUid].displayName,
+                  photoURL: data.participantInfo[otherUid].photoURL,
+                  isPremium: data.participantInfo[otherUid].isPremium || false,
+                  email: null, 
+                  diamonds: 0, 
+                  createdAt: Timestamp.now(), 
+              };
+          } else if (otherUid) {
+              try {
+                  const userDocRef = doc(db, "users", otherUid);
+                  const userSnap = await getDoc(userDocRef);
+                  if (userSnap.exists()) {
+                      otherParticipantData = { uid: userSnap.id, ...userSnap.data() } as UserData;
+                  }
+              } catch (error) {
+                  console.error("Error fetching other participant details:", error);
+              }
+          }
+
+          return { ...data, otherParticipant: otherParticipantData };
+        });
+
+        const resolvedConversations = (await Promise.all(convPromises))
+            .filter(conv => conv.otherParticipant !== undefined) as DirectMessageConversation[];
+        setConversations(resolvedConversations);
+        setLoadingConversations(false); // İlk yükleme tamamlandı
+      }, (error) => {
+        console.error("Error fetching DM conversations with onSnapshot:", error);
+        toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive"});
+        setLoadingConversations(false);
       });
 
-      const resolvedConversations = (await Promise.all(convPromises))
-          .filter(conv => conv.otherParticipant !== undefined) as DirectMessageConversation[];
-      setConversations(resolvedConversations);
-    } catch (error) {
-        console.error("Error fetching DM conversations with getDocs:", error);
-        toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive"});
-    } finally {
-      setLoadingConversations(false);
+      return unsubscribe; // Cleanup fonksiyonu
+
+    } catch (error) { // Bu blok genellikle onSnapshot'ın ilk getDocs kısmı için, ama onSnapshot'ta error callback var.
+        console.error("Error setting up DM conversations listener:", error);
+        toast({ title: "Hata", description: "Mesajlar dinlenirken bir sorun oluştu.", variant: "destructive"});
+        setLoadingConversations(false);
     }
   }, [currentUser?.uid, isAuthLoading, toast]);
 
   useEffect(() => {
-    fetchConversations();
+    let unsubscribe: (() => void) | undefined;
+    
+    const setupListener = async () => {
+        unsubscribe = await fetchConversations();
+    }
+    setupListener();
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [fetchConversations]);
 
 
@@ -145,11 +164,11 @@ export default function DirectMessagesPage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
-        callerIsPremium: currentUserIsCurrentlyPremium,
+        callerIsPremium: currentUserIsCurrentlyPremium, 
         calleeId: targetDmConv.otherParticipant.uid,
         calleeName: targetDmConv.otherParticipant.displayName,
         calleeAvatar: targetDmConv.otherParticipant.photoURL,
-        calleeIsPremium: targetDmConv.otherParticipant.isPremium,
+        calleeIsPremium: targetDmConv.otherParticipant.isPremium, 
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

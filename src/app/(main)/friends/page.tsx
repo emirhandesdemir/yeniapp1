@@ -24,7 +24,8 @@ import {
   getDoc,
   limit,
   getDocs,
-  setDoc
+  setDoc,
+  updateDoc, // updateDoc eklendi
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -58,8 +59,8 @@ interface SearchResultUser extends UserData {
   isFriend?: boolean;
   isRequestSent?: boolean;
   isRequestReceived?: boolean;
-  outgoingRequestId?: string | null; // outgoingRequestId eklendi
-  incomingRequestId?: string | null; // incomingRequestId eklendi
+  outgoingRequestId?: string | null; 
+  incomingRequestId?: string | null; 
   isPremium?: boolean; 
   isBlockedByCurrentUser?: boolean;
 }
@@ -93,11 +94,10 @@ export default function FriendsPage() {
       return;
     }
     setLoadingFriends(true);
-    try {
-      const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-      const q = query(friendsRef); 
-      const snapshot = await getDocs(q);
-
+    const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
+    const q = query(friendsRef, orderBy("addedAt", "desc")); 
+    
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
         const friendData = friendDoc.data();
         try {
@@ -127,18 +127,31 @@ export default function FriendsPage() {
         } as Friend;
       });
       
-      const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
-      setMyFriends(resolvedFriends);
-    } catch (error) {
-      console.error("Error fetching friends with getDocs:", error);
+      try {
+        const resolvedFriends = (await Promise.all(friendsPromises)).filter(f => f !== null) as Friend[];
+        setMyFriends(resolvedFriends);
+      } catch (error) {
+         console.error("Error resolving friend profiles:", error);
+         toast({ title: "Hata", description: "Arkadaş profilleri yüklenirken bir sorun oluştu.", variant: "destructive" });
+      } finally {
+        setLoadingFriends(false);
+      }
+    }, (error) => {
+      console.error("Error fetching friends with onSnapshot:", error);
       toast({ title: "Hata", description: "Arkadaşlar yüklenirken bir sorun oluştu.", variant: "destructive" });
-    } finally {
       setLoadingFriends(false);
-    }
+    });
+    
+    return unsubscribe;
   }, [currentUser?.uid, toast]);
 
   useEffect(() => {
-    fetchFriends();
+    const unsubscribe = fetchFriends();
+    return () => {
+      unsubscribe.then(unsub => {
+        if (unsub) unsub();
+      }).catch(err => console.error("Error unsubscribing from friends listener:", err));
+    };
   }, [fetchFriends]);
 
 
@@ -149,11 +162,6 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
-      // Büyük/küçük harf duyarsız arama için displayName'i küçük harfe çevirip arama yapabiliriz,
-      // ancak Firestore'da bu tür sorgular doğrudan desteklenmez.
-      // Genellikle Algolia gibi harici bir arama servisi kullanılır veya
-      // displayName'in küçük harf versiyonu da ayrı bir alanda saklanır.
-      // Şimdilik basit bir >= ve <= sorgusu kullanacağız.
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
@@ -200,7 +208,7 @@ export default function FriendsPage() {
             const incomingSnap = await getDocs(incomingQuery);
             if(!incomingSnap.empty) {
               processedUser.isRequestReceived = true;
-              processedUser.incomingRequestId = incomingSnap.docs[0].id; // Gelen istek ID'sini sakla
+              processedUser.incomingRequestId = incomingSnap.docs[0].id; 
             }
           }
         }
@@ -254,18 +262,18 @@ export default function FriendsPage() {
         return;
     }
     const requestId = targetUser.outgoingRequestId;
-    setActionLoading(requestId, true); // actionKey olarak requestId kullanıldı.
+    setActionLoading(requestId, true); 
     try {
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
        setSearchResults(prev => prev.map(u =>
-        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u // isRequestReceived da false yapılabilir
+        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u
       ));
     } catch (error) {
       console.error("Error cancelling friend request:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği iptal edilemedi.", variant: "destructive" });
     } finally {
-      setActionLoading(requestId, false); // actionKey olarak requestId kullanıldı.
+      setActionLoading(requestId, false);
     }
   }, [currentUser, toast, setActionLoading]);
 
@@ -298,7 +306,6 @@ export default function FriendsPage() {
         });
         await batch.commit();
 
-        // DM sohbetini oluştur/kontrol et
         const dmChatId = generateDmChatId(currentUser.uid, targetUser.uid);
         const dmChatDocRef = doc(db, "directMessages", dmChatId);
         const dmChatDocSnap = await getDoc(dmChatDocRef);
@@ -332,20 +339,21 @@ export default function FriendsPage() {
                     displayName: targetUser.displayName,
                     photoURL: targetUser.photoURL,
                     isPremium: targetUser.isPremium,
-                }
-            });
+                },
+                 lastMessageTimestamp: dmChatDocSnap.data()?.lastMessageTimestamp || serverTimestamp() // Mevcutsa koru, yoksa güncelle
+            }, { merge: true });
         }
 
         toast({ title: "Başarılı", description: `${targetUser.displayName} ile arkadaş oldunuz.` });
         setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isFriend: true, isRequestReceived: false, incomingRequestId: null } : u));
-        fetchFriends(); // Arkadaş listesini yenile
+        // fetchFriends(); // onSnapshot zaten listeyi güncelleyecektir.
     } catch (error) {
         console.error("Error accepting friend request:", error);
         toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
     } finally {
         setActionLoading(requestId, false);
     }
-  }, [currentUser, userData, toast, setActionLoading, fetchFriends, isCurrentUserPremium]);
+  }, [currentUser, userData, toast, setActionLoading, isCurrentUserPremium]);
 
   const handleDeclineIncomingRequest = useCallback(async (targetUser: SearchResultUser) => {
     if (!currentUser || !targetUser.incomingRequestId) return;
@@ -395,7 +403,7 @@ export default function FriendsPage() {
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
-      fetchFriends(); 
+      // fetchFriends(); // onSnapshot zaten listeyi güncelleyecektir.
       setSearchResults(prevResults => prevResults.map(sr =>
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null, incomingRequestId: null } : sr
       ));
@@ -405,7 +413,7 @@ export default function FriendsPage() {
     } finally {
       setActionLoading(friendId, false);
     }
-  }, [currentUser, toast, setActionLoading, fetchFriends]);
+  }, [currentUser, toast, setActionLoading]);
 
   const handleInitiateCall = useCallback(async (targetFriend: Friend) => {
     if (!currentUser || !userData || !targetFriend.uid) {
@@ -461,7 +469,7 @@ export default function FriendsPage() {
             setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isBlockedByCurrentUser: false} : u));
         }
     } else {
-        await blockUser(targetUser.uid);
+        await blockUser(targetUser.uid, targetUser.displayName, targetUser.photoURL); // displayName ve photoURL eklendi
          if ('isBlockedByCurrentUser' in targetUser) {
             setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isBlockedByCurrentUser: true, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null, incomingRequestId: null } : u));
         }
