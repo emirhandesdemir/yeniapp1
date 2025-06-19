@@ -19,6 +19,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { User, Mail, Lock, Loader2, VenetianMask, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
+import { useToast } from "@/hooks/use-toast"; // useToast eklendi
 
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
@@ -39,6 +40,8 @@ const formSchema = z.object({
 export default function SignupForm() {
   const { signUp, signInWithGoogle, isUserLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+  const { toast } = useToast(); // useToast hook'u çağrıldı
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -51,11 +54,58 @@ export default function SignupForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    await signUp(values.email, values.password, values.username, values.gender);
+    if (!recaptchaSiteKey) {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA site anahtarı yapılandırılmamış.", variant: "destructive"});
+      await signUp(values.email, values.password, values.username, values.gender);
+      return;
+    }
+
+    if (typeof grecaptcha === 'undefined' || typeof grecaptcha.enterprise === 'undefined') {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA yüklenemedi. Lütfen sayfayı yenileyin.", variant: "destructive" });
+      await signUp(values.email, values.password, values.username, values.gender);
+      return;
+    }
+
+    grecaptcha.enterprise.ready(async () => {
+      try {
+        const token = await grecaptcha.enterprise.execute(recaptchaSiteKey, { action: 'SIGNUP' });
+        console.log("reCAPTCHA token (Signup):", token);
+        // TODO: Bu 'token'ı ve 'values' bilgilerini
+        // kendi backend'inize gönderip reCAPTCHA token'ını doğrulatın.
+        // Sadece doğrulama başarılı olursa Firebase signUp çağrılmalıdır.
+        // Bu prototipte backend doğrulama adımı atlanmıştır.
+        await signUp(values.email, values.password, values.username, values.gender);
+      } catch (error) {
+        console.error("reCAPTCHA execute error (Signup):", error);
+        toast({ title: "reCAPTCHA Doğrulama Hatası", description: "Güvenlik doğrulaması başarısız oldu.", variant: "destructive" });
+        // İsteğe bağlı: reCAPTCHA başarısız olursa signup işlemini durdur
+        // return;
+      }
+    });
   }
 
   const handleGoogleSignUp = async () => {
-    await signInWithGoogle();
+    if (!recaptchaSiteKey) {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA site anahtarı yapılandırılmamış.", variant: "destructive"});
+      await signInWithGoogle();
+      return;
+    }
+    if (typeof grecaptcha === 'undefined' || typeof grecaptcha.enterprise === 'undefined') {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA yüklenemedi. Lütfen sayfayı yenileyin.", variant: "destructive" });
+      await signInWithGoogle();
+      return;
+    }
+    grecaptcha.enterprise.ready(async () => {
+      try {
+        const token = await grecaptcha.enterprise.execute(recaptchaSiteKey, { action: 'SIGNUP_GOOGLE' });
+        console.log("reCAPTCHA token (Google Sign Up):", token);
+        // TODO: Bu token'ı backend'e gönderip doğrulatın.
+        await signInWithGoogle();
+      } catch (error) {
+        console.error("reCAPTCHA execute error (Google Sign Up):", error);
+        toast({ title: "reCAPTCHA Doğrulama Hatası", description: "Güvenlik doğrulaması başarısız oldu.", variant: "destructive" });
+      }
+    });
   };
 
   return (
@@ -198,4 +248,3 @@ export default function SignupForm() {
     </Form>
   );
 }
-

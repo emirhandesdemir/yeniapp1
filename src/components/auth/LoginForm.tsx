@@ -28,7 +28,6 @@ const GoogleIcon = () => (
   </svg>
 );
 
-
 const formSchema = z.object({
   email: z.string().email({ message: "Geçerli bir e-posta adresi girin." }),
   password: z.string().min(6, { message: "Şifre en az 6 karakter olmalıdır." }),
@@ -38,6 +37,7 @@ export default function LoginForm() {
   const { logIn, signInWithGoogle, isUserLoading } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -48,11 +48,59 @@ export default function LoginForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    await logIn(values.email, values.password);
+    if (!recaptchaSiteKey) {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA site anahtarı yapılandırılmamış.", variant: "destructive"});
+      await logIn(values.email, values.password); // Devam et, ama idealde engellenmeli
+      return;
+    }
+
+    if (typeof grecaptcha === 'undefined' || typeof grecaptcha.enterprise === 'undefined') {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA yüklenemedi. Lütfen sayfayı yenileyin.", variant: "destructive" });
+      await logIn(values.email, values.password); // Devam et
+      return;
+    }
+    
+    grecaptcha.enterprise.ready(async () => {
+      try {
+        const token = await grecaptcha.enterprise.execute(recaptchaSiteKey, { action: 'LOGIN' });
+        console.log("reCAPTCHA token (Login):", token);
+        // TODO: Bu 'token'ı ve 'values' (email, password) bilgilerini
+        // kendi backend'inize gönderip reCAPTCHA token'ını doğrulatın.
+        // Sadece doğrulama başarılı olursa Firebase logIn çağrılmalıdır.
+        // Bu prototipte backend doğrulama adımı atlanmıştır.
+        await logIn(values.email, values.password);
+      } catch (error) {
+        console.error("reCAPTCHA execute error (Login):", error);
+        toast({ title: "reCAPTCHA Doğrulama Hatası", description: "Güvenlik doğrulaması başarısız oldu.", variant: "destructive" });
+        // İsteğe bağlı: reCAPTCHA başarısız olursa login işlemini durdur
+        // return; 
+      }
+    });
   }
 
   const handleGoogleSignIn = async () => {
-    await signInWithGoogle();
+     if (!recaptchaSiteKey) {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA site anahtarı yapılandırılmamış.", variant: "destructive"});
+      await signInWithGoogle(); // Devam et
+      return;
+    }
+     if (typeof grecaptcha === 'undefined' || typeof grecaptcha.enterprise === 'undefined') {
+      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA yüklenemedi. Lütfen sayfayı yenileyin.", variant: "destructive" });
+      await signInWithGoogle(); // Devam et
+      return;
+    }
+    grecaptcha.enterprise.ready(async () => {
+       try {
+        const token = await grecaptcha.enterprise.execute(recaptchaSiteKey, { action: 'LOGIN_GOOGLE' });
+        console.log("reCAPTCHA token (Google Sign In):", token);
+        // TODO: Bu token'ı backend'e gönderip doğrulatın.
+        // Başarılı olursa signInWithGoogle çağrılmalı.
+        await signInWithGoogle();
+      } catch (error) {
+        console.error("reCAPTCHA execute error (Google Sign In):", error);
+        toast({ title: "reCAPTCHA Doğrulama Hatası", description: "Güvenlik doğrulaması başarısız oldu.", variant: "destructive" });
+      }
+    });
   };
 
   return (
@@ -141,4 +189,3 @@ export default function LoginForm() {
     </Form>
   );
 }
-

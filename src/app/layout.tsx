@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
+import Script from 'next/script'; // Import Script component
 
 export const metadata: Metadata = {
   title: 'Sohbet Küresi',
@@ -17,6 +18,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
@@ -42,6 +45,12 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#ADD8E6" />
         <link rel="shortcut icon" href="/favicon.ico" />
+        {recaptchaSiteKey && (
+           <Script
+            src={`https://www.google.com/recaptcha/enterprise.js?render=${recaptchaSiteKey}`}
+            strategy="beforeInteractive" // or "lazyOnload"
+          />
+        )}
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col">
         <ThemeProvider
