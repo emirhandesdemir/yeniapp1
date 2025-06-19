@@ -1,115 +1,105 @@
 
 "use client";
 
-// OneSignal is now loaded globally via script tag in layout.tsx
+import { messaging } from '@/lib/firebase'; // Firebase'den messaging import edildi
+import { getToken, deleteToken } from 'firebase/messaging';
 
-export async function requestNotificationPermission(): Promise<NotificationPermission | 'default'> {
-  if (typeof window !== 'undefined' && window.OneSignal && window.OneSignal.Notifications) {
-    try {
-      const permission = await window.OneSignal.Notifications.requestPermission();
-      console.log('OneSignal Notification permission:', permission);
-      return permission ? 'granted' : 'denied'; // OneSignal returns boolean
-    } catch (error) {
-      console.error('Error requesting OneSignal notification permission:', error);
-      return 'default'; // Fallback or 'denied' based on error
-    }
-  } else if (typeof window !== 'undefined' && ('Notification' in window)) {
-    // Fallback to native browser permission if OneSignal isn't ready
-    console.warn('OneSignal SDK not fully available, falling back to native Notification.requestPermission()');
-    try {
-        const permission = await Notification.requestPermission();
-        console.log('Native Notification permission:', permission);
-        return permission;
-    } catch (error) {
-        console.error('Error requesting native notification permission:', error);
-        return 'default';
-    }
+// ===================================================================================
+// ÖNEMLİ: BURADAKİ "YOUR_VAPID_KEY_HERE" DEĞERİNİ KENDİ VAPID ANAHTARINIZLA DEĞİŞTİRİN!
+// Firebase Proje Ayarları > Cloud Messaging > Web configuration > Web Push certificates
+// bölümünden VAPID anahtarınızı (Key pair) alabilirsiniz.
+const VAPID_KEY = "YOUR_VAPID_KEY_HERE";
+// ===================================================================================
+
+export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    console.error('Notification API not available in this environment.');
+    return 'default';
   }
-  console.error('Notification API or OneSignal SDK not available in this environment.');
-  return 'default';
+  try {
+    const permission = await Notification.requestPermission();
+    console.log('Notification permission status:', permission);
+    if (permission === 'granted' && VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
+        console.warn("Bildirim izni verildi ancak VAPID anahtarı girilmemiş. Lütfen notificationUtils.ts dosyasındaki VAPID_KEY değerini güncelleyin.");
+    }
+    return permission;
+  } catch (error) {
+    console.error('Error requesting notification permission:', error);
+    return 'default';
+  }
 }
 
 export async function subscribeUserToPush(): Promise<string | null> {
-  if (typeof window === 'undefined' || !window.OneSignal || !window.OneSignal.User || !window.OneSignal.User.PushSubscription) {
-    console.warn('OneSignal SDK not available or not initialized. Cannot subscribe.');
+  if (typeof window === 'undefined' || !messaging) {
+    console.warn('Firebase Messaging not initialized. Cannot subscribe.');
+    if (VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
+        console.error("PUSH ABONELİĞİ HATASI: VAPID anahtarı girilmemiş. Lütfen src/lib/notificationUtils.ts dosyasındaki VAPID_KEY değerini Firebase projenizdeki anahtarla güncelleyin.");
+    }
+    return null;
+  }
+
+  if (VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
+    console.error("PUSH ABONELİĞİ BAŞARISIZ: VAPID anahtarı girilmemiş. Lütfen src/lib/notificationUtils.ts dosyasındaki VAPID_KEY değerini Firebase projenizdeki anahtarla güncelleyin.");
+    alert("UYARI: Bildirimler için VAPID anahtarı yapılandırılmamış. Lütfen geliştiriciye bildirin.");
     return null;
   }
 
   try {
-    const isOptedIn = window.OneSignal.User.PushSubscription.optedIn;
-    if (isOptedIn) {
-      console.log('User is already subscribed to OneSignal push notifications.');
-      const playerId = window.OneSignal.User.PushSubscription.id || window.OneSignal.User.onesignalId;
-      if (playerId) {
-        localStorage.setItem('oneSignalPlayerId', playerId);
+    const permission = await requestNotificationPermission();
+    if (permission === 'granted') {
+      const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
+      if (currentToken) {
+        console.log('FCM Token:', currentToken);
+        // Bu token'ı backend'inize gönderip kullanıcıyla ilişkilendirmeniz gerekir.
+        // Örneğin: await sendTokenToServer(currentToken);
+        localStorage.setItem('fcmToken', currentToken); // İstemci tarafında saklama örneği
+        return currentToken;
+      } else {
+        console.log('No registration token available. Request permission to generate one.');
+        localStorage.removeItem('fcmToken');
+        return null;
       }
-      return playerId;
-    }
-
-    // If not opted in, prompt the user.
-    const permission = await window.OneSignal.Notifications.requestPermission();
-    if (permission) { // OneSignal's requestPermission resolves to true if granted
-      await window.OneSignal.User.PushSubscription.optIn();
-      console.log('User subscribed to OneSignal push notifications.');
-      const playerId = window.OneSignal.User.PushSubscription.id || window.OneSignal.User.onesignalId;
-      if (playerId) {
-        localStorage.setItem('oneSignalPlayerId', playerId);
-        console.log("OneSignal Player ID:", playerId, " (Send this to your backend)");
-      }
-      return playerId;
     } else {
-      console.log('User denied push notification permission via OneSignal.');
-      localStorage.removeItem('oneSignalPlayerId');
+      console.log('Notification permission not granted.');
+      localStorage.removeItem('fcmToken');
       return null;
     }
   } catch (error) {
-    console.error('Error subscribing user to OneSignal push notifications:', error);
-    localStorage.removeItem('oneSignalPlayerId');
+    console.error('Error getting FCM token:', error);
+    localStorage.removeItem('fcmToken');
     return null;
   }
 }
 
 export async function unsubscribeUserFromPush(): Promise<boolean> {
-  if (typeof window === 'undefined' || !window.OneSignal || !window.OneSignal.User || !window.OneSignal.User.PushSubscription) {
-    console.warn('OneSignal SDK not available. Cannot unsubscribe.');
+  if (typeof window === 'undefined' || !messaging) {
+    console.warn('Firebase Messaging not initialized. Cannot unsubscribe.');
     return false;
   }
   try {
-    await window.OneSignal.User.PushSubscription.optOut();
-    console.log('User unsubscribed from OneSignal push notifications.');
-    localStorage.removeItem('oneSignalPlayerId');
-    // TODO: Notify your backend that the user has unsubscribed.
-    return true;
+    const currentToken = localStorage.getItem('fcmToken'); // Veya getToken ile tekrar alınabilir
+    if (currentToken) {
+      await deleteToken(messaging);
+      console.log('FCM Token deleted.');
+      localStorage.removeItem('fcmToken');
+      // TODO: Backend'inizden de token'ı silmeniz gerekebilir.
+      return true;
+    }
+    return false;
   } catch (error) {
-    console.error('Error unsubscribing user from OneSignal push notifications:', error);
+    console.error('Error deleting FCM token:', error);
     return false;
   }
 }
 
 export async function isPushSubscribed(): Promise<boolean> {
-  if (typeof window === 'undefined' || !window.OneSignal || !window.OneSignal.User || !window.OneSignal.User.PushSubscription) {
-    return false;
-  }
-  try {
-    const optedIn = window.OneSignal.User.PushSubscription.optedIn;
-    return optedIn;
-  } catch (error) {
-    console.error("Error checking OneSignal subscription status:", error);
-    return false;
-  }
+  if (typeof window === 'undefined') return false;
+  const permission = Notification.permission;
+  const token = localStorage.getItem('fcmToken'); // Basit kontrol için localStorage kullanılabilir
+  return permission === 'granted' && !!token;
 }
 
-export function getNotificationPermissionStatus(): NotificationPermission | 'default' {
-    if (typeof window !== 'undefined' && window.OneSignal && window.OneSignal.Notifications) {
-        const permission = window.OneSignal.Notifications.permission;
-        // OneSignal's permission is a boolean, map to NotificationPermission string
-        if (permission === true) return 'granted';
-        if (permission === false) return 'denied'; 
-    }
-    // Fallback or if OneSignal's direct permission string isn't easily available
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-        return Notification.permission;
-    }
-    return 'default';
+export function getNotificationPermissionStatus(): NotificationPermission {
+  if (typeof window === 'undefined' || !('Notification'in window)) return 'default';
+  return Notification.permission;
 }
-

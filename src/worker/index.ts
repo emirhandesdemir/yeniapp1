@@ -3,15 +3,31 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-// Import OneSignal's Service Worker script
-// Bu satırın en üstte veya diğer importlardan önce olması önemlidir.
-try {
-  importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
-} catch (e) {
-  console.error('[Service Worker] Failed to import OneSignal SDK:', e);
-}
-
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { initializeApp } from "firebase/app";
+import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
+import { firebaseConfig } from "@/lib/firebase"; // Firebase config import
+
+// Initialize Firebase
+try {
+  const app = initializeApp(firebaseConfig);
+  const messaging = getMessaging(app);
+
+  onBackgroundMessage(messaging, (payload) => {
+    console.log('[Service Worker] FCM Background Message Received:', payload);
+
+    const notificationTitle = payload.notification?.title || "Yeni Bildirim";
+    const notificationOptions: NotificationOptions = {
+      body: payload.notification?.body || "",
+      icon: payload.notification?.icon || '/icons/icon-192x192.png',
+      badge: '/icons/badge-72x72.png', // Example badge
+      data: payload.data || { url: '/' }, // Ensure data has a URL for click action
+    };
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  });
+} catch (e) {
+    console.error('[Service Worker] Firebase Messaging initialization failed:', e);
+}
 
 // Clean up old caches
 cleanupOutdatedCaches();
@@ -36,37 +52,27 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-
-// Gelen push mesajlarını dinle (OneSignal bunu kendi içinde halleder, bu blok kaldırılabilir veya OneSignal'a özel bir durum için tutulabilir)
-/*
-self.addEventListener('push', (event) => {
-  // This event listener might be handled by OneSignal's imported script.
-  // If you need custom push handling *in addition* to OneSignal,
-  // ensure it doesn't conflict with OneSignal's operations.
-  console.log('[Service Worker] Push Received (custom handler).');
-});
-*/
-
-// Bildirime tıklama olayını dinle
-// OneSignal SDK'sı kendi bildirim tıklama olaylarını yönetir.
-// Eğer OneSignal bildirimleri için özel bir davranış isteniyorsa,
-// bu OneSignal paneli üzerinden veya SDK'nın event listener'ları aracılığıyla yapılandırılmalıdır.
-// Bu genel 'notificationclick' listener, OneSignal dışı bildirimler için kalabilir veya
-// OneSignal'ın kendi listener'larıyla çakışmaması için dikkatli yönetilmelidir.
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification click Received (custom handler).');
-  event.notification.close(); 
+  console.log('[Service Worker] Notification click Received.');
+  event.notification.close();
+
+  const targetUrl = event.notification.data?.url || '/';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      const urlToOpen = event.notification.data?.url || '/'; 
-
       for (const client of clientList) {
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
+        if (client.url === targetUrl && 'focus' in client) {
+          try {
+            return client.focus();
+          } catch (e) {
+            // Fallback for browsers that might have issues with focus()
+            if (self.clients.openWindow) {
+              return self.clients.openWindow(targetUrl);
+            }
+          }
         }
       }
-      if (self.clients.openWindow) return self.clients.openWindow(urlToOpen);
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
   );
 });

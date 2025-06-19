@@ -1,14 +1,14 @@
 
-// Import the functions you need from the SDKs you need
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, type Analytics } from "firebase/analytics";
+import { getMessaging, type Messaging } from "firebase/messaging"; // FCM için eklendi
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig: FirebaseOptions = {
+export const firebaseConfig: FirebaseOptions = {
   apiKey: "AIzaSyAUPc1suCoz5DtJb9v2BA9qG2QZ_0h-eHs",
   authDomain: "yeni-tinder.firebaseapp.com",
   projectId: "yeni-tinder",
@@ -24,6 +24,7 @@ let auth: Auth;
 let db: Firestore;
 let storage: FirebaseStorage;
 let analytics: Analytics | null = null;
+let messaging: Messaging | null = null; // FCM için eklendi
 
 try {
   app = initializeApp(firebaseConfig);
@@ -31,21 +32,26 @@ try {
   db = getFirestore(app);
   storage = getStorage(app);
 
-  // Initialize Analytics only on the client side and if measurementId is present
-  if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
-    try {
-      analytics = getAnalytics(app);
-    } catch (error) {
-      console.error("Firebase Analytics başlatma hatası:", error);
-      // analytics null olarak kalacak
+  if (typeof window !== 'undefined') {
+    // Initialize Analytics only on the client side and if measurementId is present
+    if (firebaseConfig.measurementId) {
+      try {
+        analytics = getAnalytics(app);
+      } catch (error) {
+        console.error("Firebase Analytics başlatma hatası:", error);
+      }
+    } else {
+      console.warn("Firebase Analytics: measurementId, firebaseConfig içinde tanımlanmamış. Analytics başlatılmayacak.");
     }
-  } else if (typeof window !== 'undefined' && !firebaseConfig.measurementId) {
-    console.warn("Firebase Analytics: measurementId, firebaseConfig içinde tanımlanmamış. Analytics başlatılmayacak.");
+    // Initialize Firebase Messaging only on the client side
+    try {
+        messaging = getMessaging(app);
+    } catch (error) {
+        console.error("Firebase Messaging başlatma hatası (client-side):", error);
+    }
   }
 } catch (error) {
   console.error("Firebase başlatma sırasında genel hata oluştu:", error);
-  // Hata durumunda app, auth, db, storage değişkenleri tanımsız kalabilir.
-  // Uygulamanın bu durumu uygun şekilde işlemesi gerekebilir.
 }
 
-export { app, auth, db, storage, analytics };
+export { app, auth, db, storage, analytics, messaging };

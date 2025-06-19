@@ -27,7 +27,7 @@ const customRuntimeCaching = [
         maxAgeSeconds: 60 * 60 * 24 * 30, // 30 gün
       },
       cacheableResponse: {
-        statuses: [0, 200], // 0, Firebase SDK'sı opak yanıtları önbelleğe aldığında kullanılır
+        statuses: [0, 200],
       },
     },
   },
@@ -66,10 +66,11 @@ const customRuntimeCaching = [
       },
     },
   },
+  // OneSignal SDK caching rule removed
 ];
 
 
-const withPWA = withPWAInit({
+const pwaConfig = {
   dest: 'public',
   register: true,
   skipWaiting: true,
@@ -77,11 +78,13 @@ const withPWA = withPWAInit({
   runtimeCaching: customRuntimeCaching,
   buildExcludes: [/middleware-manifest\.json$/], 
   fallbacks: { 
-    document: '/offline', // Çevrimdışı yedek sayfası eklendi
+    document: '/offline',
   },
-  swSrc: 'src/worker/index.ts', // Özel service worker dosyasının yolu
-  swDest: 'public/sw.js', // Derlenmiş service worker'ın çıkış yolu
-});
+  swSrc: 'src/worker/index.ts',
+  swDest: 'public/sw.js',
+};
+
+const withPWA = withPWAInit(pwaConfig);
 
 const securityHeaders = [
   {
@@ -111,7 +114,6 @@ const securityHeaders = [
 ];
 
 const currentNextConfig: NextConfig = {
-  /* config options here */
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -135,7 +137,6 @@ const currentNextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Tüm yollara uygula
         source: '/:path*',
         headers: securityHeaders,
       },
@@ -143,4 +144,8 @@ const currentNextConfig: NextConfig = {
   },
 };
 
-export default withPWA(currentNextConfig);
+const finalConfig = process.env.NODE_ENV === 'development'
+  ? currentNextConfig
+  : withPWA(currentNextConfig);
+
+export default finalConfig;
