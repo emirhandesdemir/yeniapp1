@@ -23,6 +23,9 @@
   "orientation": "portrait",
   "id": "Hiwewalk_v1",
   "dir": "auto",
-  "scope": "hiwewalk.netlify.app",
-  "lang": "tr"
+  "scope": "/",
+  "lang": "tr",
+  "permissions": [
+    "background-sync"
+  ]
 }
