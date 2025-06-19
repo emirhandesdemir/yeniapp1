@@ -141,6 +141,9 @@ const CAPACITY_INCREASE_COST = 5;
 const CAPACITY_INCREASE_SLOTS = 1;
 const PREMIUM_USER_ROOM_CAPACITY = 50;
 
+const SPEAKING_THRESHOLD = 5; // Adjust as needed (0-255 for ByteFrequencyData)
+const SILENCE_DELAY_MS = 1000; // Time to wait before marking as not speaking
+
 export default function ChatRoomPage() {
   const params = useParams();
   const router = useRouter();
@@ -200,9 +203,20 @@ export default function ChatRoomPage() {
 
   const [isIncreasingCapacity, setIsIncreasingCapacity] = useState(false);
 
+  // Speaking detection refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const speakingDetectionFrameIdRef = useRef<number | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
+  const localIsSpeakingRef = useRef(localIsSpeaking);
+
+
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
   useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
+  useEffect(() => { localIsSpeakingRef.current = localIsSpeaking; }, [localIsSpeaking]);
 
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
@@ -257,14 +271,20 @@ export default function ChatRoomPage() {
       }
       return newStreams;
     });
-    delete negotiatingRef.current[targetUid]; 
+    delete negotiatingRef.current[targetUid];
   }, []);
 
-  const createPeerConnection = useCallback((targetUid: string): RTCPeerConnection => {
+  const createPeerConnection = useCallback((targetUid: string): RTCPeerConnection | null => {
     console.log(`[WebRTC] Attempting to create PeerConnection for ${targetUid}.`);
     if (peerConnectionsRef.current[targetUid]) {
       console.warn(`[WebRTC] PeerConnection for ${targetUid} already exists. Reusing. State: ${peerConnectionsRef.current[targetUid].connectionState}`);
       return peerConnectionsRef.current[targetUid];
+    }
+
+    if (!localStreamRef.current || !localStreamRef.current.active || localStreamRef.current.getAudioTracks().length === 0) {
+      console.error(`[WebRTC] Cannot create PeerConnection for ${targetUid}: Local stream is not available, not active, or has no audio tracks.`);
+      toast({title: "Lokal Akış Hatası", description: "Peer bağlantısı oluşturulamadı: Mikrofon akışınız aktif değil.", variant: "destructive"});
+      return null;
     }
 
     const pc = new RTCPeerConnection(STUN_SERVERS);
@@ -294,7 +314,7 @@ export default function ChatRoomPage() {
             track.onmute = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} muted.`);
             track.onended = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} ended.`);
           });
-        
+
           setActiveRemoteStreams(prev => {
             if (prev[targetUid] === remoteStream && prev[targetUid]?.active === remoteStream.active) {
                 console.log(`[WebRTC ontrack] Stream for ${targetUid} is already the same object and active status. No update to activeRemoteStreams.`);
@@ -323,11 +343,11 @@ export default function ChatRoomPage() {
     };
 
     pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC] ICE connection state with ${targetUid}: ${pc.iceConnectionState}`);
+        console.log(`[WebRTC] ICE connection state with ${targetUid}: ${pc.iceConnectionState}. RTC Signalling State: ${pc.signalingState}, Connection State: ${pc.connectionState}, ICE Gathering State: ${pc.iceGatheringState}`);
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] Connection state with ${targetUid}: ${pc.connectionState}`);
+      console.log(`[WebRTC] Connection state with ${targetUid}: ${pc.connectionState}. RTC Signalling State: ${pc.signalingState}, ICE Connection State: ${pc.iceConnectionState}, ICE Gathering State: ${pc.iceGatheringState}`);
       if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
         console.warn(`[WebRTC] Connection with ${targetUid} is ${pc.connectionState}. Cleaning up.`);
         cleanupPeerConnection(targetUid);
@@ -392,7 +412,11 @@ export default function ChatRoomPage() {
 
     if (!pc && signal.type === 'offer') {
         console.log(`[WebRTC] No PC for ${fromUid} for incoming offer, creating one as non-initiator.`);
-        pc = createPeerConnection(fromUid);
+        pc = createPeerConnection(fromUid)!;
+        if (!pc) {
+          console.error(`[WebRTC] Failed to create peer connection for ${fromUid} upon receiving offer.`);
+          return;
+        }
     } else if (!pc) {
         console.warn(`[WebRTC] Received ${signal.type} from ${fromUid} but no PC exists and signal is not an offer. Ignoring.`);
         return;
@@ -509,6 +533,109 @@ export default function ChatRoomPage() {
   }, [currentUser, roomId, handleIncomingSignal, toast, isCurrentUserInVoiceChat]);
 
 
+  // Speaking detection logic
+  const updateSpeakingStatusInFirestore = useCallback(async (isSpeaking: boolean) => {
+    if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) return;
+    try {
+      const participantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
+      await updateDoc(participantRef, { isSpeaking });
+    } catch (error) {
+      console.warn(`[WebRTC] Error updating speaking status for ${currentUser.uid} to ${isSpeaking}:`, error);
+    }
+  }, [currentUser, roomId]);
+
+  const detectSpeaking = useCallback(() => {
+    if (!audioContextRef.current || !analyserRef.current || !dataArrayRef.current) {
+      speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking); // Keep trying if not ready
+      return;
+    }
+    analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+    let sum = 0;
+    for (let i = 0; i < dataArrayRef.current.length; i++) {
+      sum += dataArrayRef.current[i];
+    }
+    const average = sum / dataArrayRef.current.length;
+
+    if (average > SPEAKING_THRESHOLD) {
+      if (!localIsSpeakingRef.current) {
+        setLocalIsSpeaking(true); // Update local state first for immediate feedback
+        updateSpeakingStatusInFirestore(true);
+      }
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        if (localIsSpeakingRef.current) {
+          setLocalIsSpeaking(false);
+          updateSpeakingStatusInFirestore(false);
+        }
+      }, SILENCE_DELAY_MS);
+    }
+    speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking);
+  }, [updateSpeakingStatusInFirestore]);
+
+  const startSpeakingDetection = useCallback(() => {
+    if (!localStreamRef.current || !localStreamRef.current.active || localStreamRef.current.getAudioTracks().length === 0) {
+      console.warn("[WebRTC Speaking] Cannot start speaking detection: Local stream not ready.");
+      return;
+    }
+    try {
+        if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        if (audioContextRef.current.state === 'suspended') {
+            audioContextRef.current.resume().catch(e => console.error("Error resuming AudioContext:", e));
+        }
+        if (!analyserRef.current && audioContextRef.current) {
+            analyserRef.current = audioContextRef.current.createAnalyser();
+            analyserRef.current.fftSize = 256; 
+            const bufferLength = analyserRef.current.frequencyBinCount;
+            dataArrayRef.current = new Uint8Array(bufferLength);
+            const source = audioContextRef.current.createMediaStreamSource(localStreamRef.current);
+            source.connect(analyserRef.current);
+        }
+        if (speakingDetectionFrameIdRef.current) cancelAnimationFrame(speakingDetectionFrameIdRef.current);
+        speakingDetectionFrameIdRef.current = requestAnimationFrame(detectSpeaking);
+        console.log("[WebRTC Speaking] Speaking detection started.");
+    } catch (e) {
+        console.error("[WebRTC Speaking] Error starting speaking detection:", e);
+    }
+  }, [detectSpeaking]);
+
+  const stopSpeakingDetection = useCallback(() => {
+    console.log("[WebRTC Speaking] Stopping speaking detection.");
+    if (speakingDetectionFrameIdRef.current) {
+      cancelAnimationFrame(speakingDetectionFrameIdRef.current);
+      speakingDetectionFrameIdRef.current = null;
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (analyserRef.current) {
+        // Disconnect source from analyser if source exists
+        // analyserRef.current.disconnect(); This might not be needed if source is destroyed with stream
+        analyserRef.current = null;
+    }
+    dataArrayRef.current = null;
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().then(() => {
+        console.log("[WebRTC Speaking] AudioContext closed.");
+        audioContextRef.current = null;
+      }).catch(e => {
+          console.error("Error closing AudioContext:", e);
+          audioContextRef.current = null; // Ensure it's nulled even on error
+      });
+    } else if (audioContextRef.current && audioContextRef.current.state === 'closed') {
+        console.log("[WebRTC Speaking] AudioContext was already closed.");
+        audioContextRef.current = null;
+    }
+    
+    if (localIsSpeakingRef.current) { // Check ref before setting state
+      setLocalIsSpeaking(false);
+      updateSpeakingStatusInFirestore(false);
+    }
+  }, [updateSpeakingStatusInFirestore]);
+
+
   const handleJoinVoiceChat = useCallback(async () => {
     if (!currentUser || !userData || !roomId || !roomDetails || isProcessingVoiceJoinLeave) return;
     if (isCurrentUserInVoiceChatRef.current) { toast({ title: "Bilgi", description: "Zaten sesli sohbettesiniz." }); return; }
@@ -532,6 +659,7 @@ export default function ChatRoomPage() {
         throw new Error("No active tracks in media stream");
       }
       localStreamRef.current = stream;
+      startSpeakingDetection();
 
       await setDoc(doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid), {
         uid: currentUser.uid,
@@ -556,7 +684,7 @@ export default function ChatRoomPage() {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Joining: Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          createPeerConnection(participantData.id); 
+          createPeerConnection(participantData.id);
         }
       });
 
@@ -568,6 +696,7 @@ export default function ChatRoomPage() {
         localStreamRef.current = null;
         console.log("[WebRTC] Local stream stopped due to join error.");
       }
+      stopSpeakingDetection();
       setIsCurrentUserInVoiceChat(false);
       try {
         const voiceParticipantRef = doc(db, `chatRooms/${roomId}/voiceParticipants`, currentUser.uid);
@@ -584,7 +713,7 @@ export default function ChatRoomPage() {
     } finally {
       setIsProcessingVoiceJoinLeave(false);
     }
-  }, [currentUser, userData, roomId, roomDetails, toast, createPeerConnection, isCurrentUserPremium]);
+  }, [currentUser, userData, roomId, roomDetails, toast, createPeerConnection, isCurrentUserPremium, startSpeakingDetection, stopSpeakingDetection]);
 
   const handleLeaveVoiceChat = useCallback(async (isPageUnload = false) => {
     if (!currentUser || !roomId || !isCurrentUserInVoiceChatRef.current) {
@@ -594,6 +723,7 @@ export default function ChatRoomPage() {
     if (!isPageUnload) setIsProcessingVoiceJoinLeave(true);
 
     console.log("[WebRTC] Leaving voice chat...");
+    stopSpeakingDetection();
     Object.keys(peerConnectionsRef.current).forEach(peerUid => {
       cleanupPeerConnection(peerUid);
     });
@@ -649,7 +779,7 @@ export default function ChatRoomPage() {
       if (!isPageUnload) setIsProcessingVoiceJoinLeave(false);
     }
     return Promise.resolve();
-  }, [currentUser, roomId, cleanupPeerConnection, toast]);
+  }, [currentUser, roomId, cleanupPeerConnection, toast, stopSpeakingDetection]);
 
 
   useEffect(() => {
@@ -660,11 +790,30 @@ export default function ChatRoomPage() {
       if (unsubscribeVoiceParticipants) unsubscribeVoiceParticipants();
       const voiceParticipantsQuery = query(collection(db, `chatRooms/${roomId}/voiceParticipants`), orderBy("joinedAt", "asc"));
       unsubscribeVoiceParticipants = onSnapshot(voiceParticipantsQuery, (snapshot) => {
-          const newVoiceParticipantsData: ActiveVoiceParticipantData[] = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ActiveVoiceParticipantData));
-          setActiveVoiceParticipants(newVoiceParticipantsData);
-          console.log("[WebRTC Voice Listener] Active voice participants updated:", newVoiceParticipantsData.map(p=>p.displayName));
+          let newVoiceParticipantsData: ActiveVoiceParticipantData[] = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ActiveVoiceParticipantData));
 
           const selfInFirestore = newVoiceParticipantsData.find(p => p.id === currentUser.uid);
+
+          if (isCurrentUserInVoiceChatRef.current && selfInFirestore && selfInFirestore.isSpeaking !== localIsSpeakingRef.current && !selfMuted) {
+            // This means another client (or an admin action) changed our speaking status, or local detection is fighting with Firestore.
+            // If we are locally detected as speaking, trust that for a brief moment for UI responsiveness.
+            console.log(`[WebRTC Voice Listener] Speaking status for local user (${currentUser.uid}) might differ. Firestore: ${selfInFirestore.isSpeaking}, Local Detection: ${localIsSpeakingRef.current}. SelfMuted: ${selfMuted}`);
+          }
+
+          // Ensure local speaking status is reflected if not muted
+          if (isCurrentUserInVoiceChatRef.current && !selfMuted) {
+            newVoiceParticipantsData = newVoiceParticipantsData.map(p =>
+              p.id === currentUser.uid ? { ...p, isSpeaking: localIsSpeakingRef.current } : p
+            );
+          } else if (isCurrentUserInVoiceChatRef.current && selfMuted) {
+             newVoiceParticipantsData = newVoiceParticipantsData.map(p =>
+              p.id === currentUser.uid ? { ...p, isSpeaking: false } : p // Force false if self-muted
+            );
+          }
+
+
+          setActiveVoiceParticipants(newVoiceParticipantsData);
+          // console.log("[WebRTC Voice Listener] Active voice participants updated:", newVoiceParticipantsData.map(p=>({name:p.displayName, speaking: p.isSpeaking})));
 
           if (isCurrentUserInVoiceChatRef.current && !selfInFirestore && !isProcessingVoiceJoinLeave) {
               console.warn(`[WebRTC Voice Listener] Current user (${currentUser.uid}) thought they were in call, but not found in Firestore. Forcing local leave. isProcessingVoiceJoinLeave: ${isProcessingVoiceJoinLeave}. Active voice participants:`, newVoiceParticipantsData.map(p => p.id));
@@ -676,7 +825,7 @@ export default function ChatRoomPage() {
               newVoiceParticipantsData.forEach(p => {
                   if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                       console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
-                      createPeerConnection(p.id); 
+                      createPeerConnection(p.id);
                   }
               });
               Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
@@ -699,7 +848,7 @@ export default function ChatRoomPage() {
         unsubscribeVoiceParticipants();
       }
     };
-  }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave]);
+  }, [roomId, currentUser, toast, cleanupPeerConnection, createPeerConnection, handleLeaveVoiceChat, isProcessingVoiceJoinLeave, selfMuted]);
 
   useEffect(() => {
     const fetchGameAssets = async () => {
@@ -1303,16 +1452,16 @@ export default function ChatRoomPage() {
             key={uid}
             autoPlay
             playsInline
-            controls={process.env.NODE_ENV === 'development'} 
+            controls={process.env.NODE_ENV === 'development'}
             ref={audioEl => {
               if (audioEl) {
-                if (audioEl.srcObject !== stream) { 
+                if (audioEl.srcObject !== stream) {
                     console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
                     audioEl.srcObject = stream;
                 }
-                if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) { 
+                if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) {
                      audioEl.play().catch(error => {
-                        if (error.name !== 'AbortError') { 
+                        if (error.name !== 'AbortError') {
                              console.warn(`[WebRTC RENDER REF] Error explicitly playing audio for ${uid}:`, error);
                         }
                      });
@@ -1433,4 +1582,5 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-    
+
+

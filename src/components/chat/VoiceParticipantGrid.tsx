@@ -4,7 +4,7 @@
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, UserCog, VolumeX, Crown, UserX, Star } from "lucide-react"; // Star eklendi
+import { Mic, MicOff, UserCog, VolumeX, Crown, UserX, Star } from "lucide-react";
 import type { ActiveVoiceParticipantData } from '@/app/(main)/chat/[roomId]/page';
 import {
   DropdownMenu,
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
+import { motion } from 'framer-motion';
 
 interface VoiceParticipantSlotProps {
   participant: ActiveVoiceParticipantData;
@@ -43,19 +44,19 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
   const nameTextSize = isHostSlot ? "text-sm" : "text-xs";
 
   return (
-    <div
+    <motion.div
       className={cn(
         "relative flex flex-col items-center p-1 rounded-full cursor-pointer group transition-all duration-200 ease-in-out transform hover:scale-105",
-        participant.isSpeaking && !isHostSlot ? 'scale-105' : '',
-        participant.isSpeaking && isHostSlot ? 'scale-102' : '',
       )}
       onClick={onClick}
+      animate={{ scale: participant.isSpeaking ? (isHostSlot ? 1.02 : 1.05) : 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 15 }}
     >
         <div className="relative">
             <Avatar className={cn(
                 avatarSizeClass,
                 "mb-1 border-2 transition-all duration-150",
-                participant.isSpeaking ? 'border-green-500 shadow-lg scale-105 ring-2 ring-green-500/50 ring-offset-2 ring-offset-card' : 'border-transparent'
+                participant.isSpeaking ? 'border-green-500 shadow-lg ring-2 ring-green-500/50 ring-offset-2 ring-offset-card' : 'border-transparent'
             )}>
                 <AvatarImage src={participant.photoURL || `https://placehold.co/96x96.png`} data-ai-hint="voice chat user large" />
                 <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
@@ -99,7 +100,7 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-    </div>
+    </motion.div>
   );
 });
 VoiceParticipantSlot.displayName = 'VoiceParticipantSlot';
@@ -213,4 +214,3 @@ const VoiceParticipantGrid: React.FC<{
 VoiceParticipantGrid.displayName = 'VoiceParticipantGrid';
 export default VoiceParticipantGrid;
 
-    
