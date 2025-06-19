@@ -4,14 +4,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, Timestamp, doc, updateDoc, query, orderBy, runTransaction } from "firebase/firestore";
-import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star, Users, Ban, CheckCircle, AlertOctagon } from "lucide-react";
+import { Loader2, Gem, UserCog as AdminUserCogIcon, ShieldAlert, Star, Users, Ban, CheckCircle, AlertOctagon, ShieldCheck, ShieldX } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -48,44 +48,40 @@ export default function AdminUsersContent() {
   const [processingAction, setProcessingAction] = useState(false);
 
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      if (adminUserData?.role !== 'admin') {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      try {
-        const usersCollectionRef = collection(db, "users");
-        const q = query(usersCollectionRef, orderBy("createdAt", "desc"));
-        const querySnapshot = await getDocs(q);
-        const usersList = querySnapshot.docs.map(docSnapshot => {
-          const userData = docSnapshot.data() as UserData;
-          return {
-            uid: docSnapshot.id,
-            ...userData,
-            isPremium: checkUserPremium(userData), // isPremium eklendi
-          } as UserData;
-        });
-        setUsers(usersList);
-      } catch (error) {
-        console.error("Error fetching users:", error);
-        toast({
-          title: "Hata",
-          description: "Kullanıcılar yüklenirken bir sorun oluştu.",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (adminUserData?.role === 'admin') {
-        fetchUsers();
-    } else if (adminUserData !== undefined) {
-        setLoading(false);
+  const fetchUsers = useCallback(async () => {
+    if (adminUserData?.role !== 'admin') {
+      setLoading(false);
+      return;
     }
-  }, [adminUserData, toast]);
+    setLoading(true);
+    try {
+      const usersCollectionRef = collection(db, "users");
+      const q = query(usersCollectionRef, orderBy("createdAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const usersList = querySnapshot.docs.map(docSnapshot => {
+        const userData = docSnapshot.data() as UserData;
+        return {
+          uid: docSnapshot.id,
+          ...userData,
+          isPremium: checkUserPremium(userData),
+        } as UserData;
+      });
+      setUsers(usersList);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      toast({
+        title: "Hata",
+        description: "Kullanıcılar yüklenirken bir sorun oluştu.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [adminUserData?.role, toast]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const handleOpenEditRoleDialog = useCallback((user: UserData) => {
     setSelectedUser(user);
@@ -118,7 +114,7 @@ export default function AdminUsersContent() {
     try {
       const userDocRef = doc(db, "users", selectedUser.uid);
       await updateDoc(userDocRef, { role: newRole });
-      setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, role: newRole } : u));
+      await fetchUsers(); // Refresh the list
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının rolü güncellendi.` });
       setIsEditRoleDialogOpen(false);
       setSelectedUser(null);
@@ -128,7 +124,7 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  }, [selectedUser, newRole, toast]);
+  }, [selectedUser, newRole, toast, fetchUsers]);
 
   const handleUpdateDiamonds = useCallback(async () => {
     if (!selectedUser || typeof diamondAdjustment !== 'number') return;
@@ -139,7 +135,7 @@ export default function AdminUsersContent() {
       const updatedDiamonds = Math.max(0, currentDiamonds + diamondAdjustment);
 
       await updateDoc(userDocRef, { diamonds: updatedDiamonds });
-      setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, diamonds: updatedDiamonds } : u));
+      await fetchUsers(); // Refresh the list
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının elmasları güncellendi.` });
       setIsEditDiamondsDialogOpen(false);
       setSelectedUser(null);
@@ -149,7 +145,7 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  }, [selectedUser, diamondAdjustment, toast]);
+  }, [selectedUser, diamondAdjustment, toast, fetchUsers]);
 
   const handleUpdatePremiumStatus = useCallback(async () => {
     if (!selectedUser || !newPremiumStatus) return;
@@ -169,12 +165,10 @@ export default function AdminUsersContent() {
       await updateDoc(userDocRef, {
         premiumStatus: newPremiumStatus,
         premiumExpiryDate: newExpiryDate,
-        isPremium: newIsPremium, // isPremium da güncelleniyor
+        isPremium: newIsPremium,
       });
 
-      setUsers(prevUsers => prevUsers.map(u =>
-        u.uid === selectedUser.uid ? { ...u, premiumStatus: newPremiumStatus, premiumExpiryDate: newExpiryDate, isPremium: newIsPremium } : u
-      ));
+      await fetchUsers(); // Refresh the list
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının premium durumu güncellendi.` });
       setIsEditPremiumDialogOpen(false);
       setSelectedUser(null);
@@ -184,7 +178,7 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  }, [selectedUser, newPremiumStatus, toast]);
+  }, [selectedUser, newPremiumStatus, toast, fetchUsers]);
 
   const handleModerateUser = useCallback(async () => {
     if (!selectedUser) return;
@@ -197,7 +191,7 @@ export default function AdminUsersContent() {
       };
       
       await updateDoc(userDocRef, updates);
-      setUsers(prevUsers => prevUsers.map(u => u.uid === selectedUser.uid ? { ...u, ...updates } : u));
+      await fetchUsers(); // Refresh the list
       toast({ title: "Başarılı", description: `${selectedUser.displayName || selectedUser.email || selectedUser.uid}' kullanıcısının moderasyon durumu güncellendi.` });
       setIsModerateUserDialogOpen(false);
       setSelectedUser(null);
@@ -207,7 +201,7 @@ export default function AdminUsersContent() {
     } finally {
       setProcessingAction(false);
     }
-  }, [selectedUser, moderateUserIsBanned, moderateUserReportCount, toast]);
+  }, [selectedUser, moderateUserIsBanned, moderateUserReportCount, toast, fetchUsers]);
 
 
   const getAvatarFallbackText = useCallback((name?: string | null, email?: string | null) => {
@@ -286,7 +280,7 @@ export default function AdminUsersContent() {
                 </TableHeader>
                 <TableBody>
                   {users.map((user) => (
-                    <TableRow key={user.uid} className={user.isBanned ? 'bg-destructive/10' : ''}>
+                    <TableRow key={user.uid} className={user.isBanned ? 'bg-destructive/10 hover:bg-destructive/20' : ''}>
                       <TableCell>
                         <div className="relative">
                             <Avatar className="h-9 w-9 sm:h-10 sm:w-10 rounded-md">
@@ -323,9 +317,9 @@ export default function AdminUsersContent() {
                       </TableCell>
                       <TableCell className="text-center">
                         {user.isBanned ? (
-                          <Badge variant="destructive" className="text-xs">Evet</Badge>
+                          <Badge variant="destructive" className="text-xs"><Ban className="mr-1 h-3 w-3 inline-block"/>Evet</Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs">Hayır</Badge>
+                          <Badge variant="outline" className="text-xs"><ShieldCheck className="mr-1 h-3 w-3 inline-block text-green-500"/>Hayır</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-xs">
@@ -334,7 +328,7 @@ export default function AdminUsersContent() {
                           : user.createdAt ? new Date(user.createdAt as any).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Bilinmiyor'}
                       </TableCell>
                       <TableCell className="text-right space-x-0.5 sm:space-x-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenModerateUserDialog(user)} aria-label="Kullanıcıyı Moderasyon" className="hover:text-orange-500 h-7 w-7 sm:h-8 sm:w-8" disabled={user.uid === adminAuthUser?.uid || processingAction}>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenModerateUserDialog(user)} aria-label="Kullanıcıyı Moderasyon" className="hover:text-orange-500 h-7 w-7 sm:h-8 sm:w-8" disabled={processingAction}>
                           <AlertOctagon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEditRoleDialog(user)} aria-label="Rolü Düzenle" className="hover:text-primary h-7 w-7 sm:h-8 sm:w-8" disabled={user.uid === adminAuthUser?.uid || processingAction}>
@@ -492,18 +486,18 @@ export default function AdminUsersContent() {
                     Kullanıcı Banlı
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Aktif edilirse kullanıcı hesabı askıya alınır.
+                    Aktif edilirse kullanıcı hesabı askıya alınır ve giriş yapamaz.
                   </p>
                 </div>
                 <Switch
                   id="isBannedSwitch"
                   checked={moderateUserIsBanned}
                   onCheckedChange={setModerateUserIsBanned}
-                  disabled={processingAction}
+                  disabled={processingAction || selectedUser.uid === adminAuthUser?.uid}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="reportCountInput" className="text-sm">Şikayet Sayısı</Label>
+                <Label htmlFor="reportCountInput" className="text-sm">Şikayet Sayısı (Mevcut: {selectedUser.reportCount || 0})</Label>
                 <Input
                   id="reportCountInput"
                   type="number"
@@ -513,7 +507,7 @@ export default function AdminUsersContent() {
                   className="h-9"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Kullanıcının aldığı toplam şikayet sayısı. {moderateUserIsBanned && "Kullanıcı banlıyken bu sayı değiştirilemez."}
+                  Şikayet sayısı {REPORT_BAN_THRESHOLD} veya üzerine ulaştığında kullanıcı otomatik banlanabilir (bu ayar şu an manuel). {moderateUserIsBanned && "Kullanıcı banlıyken bu sayı değiştirilemez."}
                 </p>
               </div>
             </div>
@@ -522,7 +516,7 @@ export default function AdminUsersContent() {
             <DialogClose asChild>
               <Button type="button" variant="outline" disabled={processingAction} size="sm">İptal</Button>
             </DialogClose>
-            <Button onClick={handleModerateUser} disabled={processingAction || !selectedUser} size="sm">
+            <Button onClick={handleModerateUser} disabled={processingAction || !selectedUser || selectedUser.uid === adminAuthUser?.uid} size="sm">
               {processingAction && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Kaydet
             </Button>
@@ -533,5 +527,3 @@ export default function AdminUsersContent() {
     </div>
   );
 }
-
-    

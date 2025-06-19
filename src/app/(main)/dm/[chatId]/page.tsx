@@ -65,6 +65,7 @@ interface DmPartnerDetails {
   photoURL: string | null;
   email?: string | null;
   isPremium?: boolean; 
+  isBanned?: boolean;
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500;
@@ -80,11 +81,12 @@ export default function DirectMessagePage() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { currentUser, userData, isUserLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, isCurrentUserPremium } = useAuth();
+  const { currentUser, userData, isUserLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [isPartnerBlocked, setIsPartnerBlocked] = useState(false);
+  const [isPartnerBlockedByCurrentUser, setIsPartnerBlockedByCurrentUser] = useState(false); // Mevcut kullanıcının DM partnerini engelleyip engellemediği
+  const [isCurrentUserBlockedByPartner, setIsCurrentUserBlockedByPartner] = useState(false); // Mevcut kullanıcının DM partneri tarafından engellenip engellenmediği
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
 
@@ -115,16 +117,20 @@ export default function DirectMessagePage() {
             if (docSnap.exists()) {
                 const partnerData = docSnap.data() as UserData;
                 setDmPartnerDetails({
-                uid: partnerUid,
-                displayName: partnerData.displayName,
-                photoURL: partnerData.photoURL,
-                email: partnerData.email,
-                isPremium: checkUserPremium(partnerData), 
+                    uid: partnerUid,
+                    displayName: partnerData.displayName,
+                    photoURL: partnerData.photoURL,
+                    email: partnerData.email,
+                    isPremium: checkUserPremium(partnerData), 
+                    isBanned: partnerData.isBanned || false,
                 });
                 document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
                 
-                const blocked = await checkIfUserBlocked(partnerUid);
-                setIsPartnerBlocked(blocked);
+                const blockedByCurrent = await checkIfUserBlocked(partnerUid);
+                setIsPartnerBlockedByCurrentUser(blockedByCurrent);
+
+                const currentBlockedByPartner = await checkIfCurrentUserIsBlockedBy(partnerUid);
+                setIsCurrentUserBlockedByPartner(currentBlockedByPartner);
 
             } else {
                 toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
@@ -138,7 +144,7 @@ export default function DirectMessagePage() {
         }
     };
     fetchPartnerDetails();
-  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked]);
+  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
 
 
   useEffect(() => {
@@ -205,12 +211,18 @@ export default function DirectMessagePage() {
 
   const handleSendMessage = useCallback(async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading || isPartnerBlocked) {
-        if(isPartnerBlocked) {
-            toast({ title: "Engellendi", description: "Bu kullanıcıyı engellediğiniz için mesaj gönderemezsiniz.", variant: "destructive"});
-        }
+    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) {
         return;
     }
+    if (isCurrentUserBlockedByPartner) {
+        toast({ title: "Engellendiniz", description: "Bu kullanıcı tarafından engellendiğiniz için mesaj gönderemezsiniz.", variant: "destructive"});
+        return;
+    }
+    if (isPartnerBlockedByCurrentUser) {
+        toast({ title: "Engellendi", description: "Bu kullanıcıyı engellediğiniz için mesaj gönderemezsiniz. Engeli kaldırmayı deneyin.", variant: "destructive"});
+        return;
+    }
+
 
     if (isSending) return;
 
@@ -279,13 +291,18 @@ export default function DirectMessagePage() {
     } finally {
       setIsSending(false);
     }
-  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast, isCurrentUserPremium, isPartnerBlocked]);
+  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast, isCurrentUserPremium, isPartnerBlockedByCurrentUser, isCurrentUserBlockedByPartner]);
 
   const handleVoiceCall = useCallback(async () => {
     if (!currentUser || !userData || !dmPartnerDetails) {
       toast({ title: "Hata", description: "Arama başlatılamadı. Kullanıcı bilgileri eksik.", variant: "destructive" });
       return;
     }
+    if (isCurrentUserBlockedByPartner || isPartnerBlockedByCurrentUser) {
+      toast({ title: "Engellendi", description: "Engellenmiş bir kullanıcı ile arama başlatamazsınız.", variant: "destructive"});
+      return;
+    }
+
     const callId = doc(collection(db, "directCalls")).id;
     const currentUserIsCurrentlyPremium = isCurrentUserPremium();
     try {
@@ -310,7 +327,7 @@ export default function DirectMessagePage() {
       console.error("Error initiating call from DM header:", error);
       toast({ title: "Arama Hatası", description: "Arama başlatılırken bir sorun oluştu.", variant: "destructive" });
     }
-  }, [currentUser, userData, dmPartnerDetails, router, toast, isCurrentUserPremium]);
+  }, [currentUser, userData, dmPartnerDetails, router, toast, isCurrentUserPremium, isPartnerBlockedByCurrentUser, isCurrentUserBlockedByPartner]);
 
   const handleVideoCall = useCallback(() => {
     toast({
@@ -329,12 +346,12 @@ export default function DirectMessagePage() {
   const handleBlockOrUnblockUser = async () => {
     if (!currentUser || !dmPartnerDetails) return;
     setIsUserLoading(true);
-    if (isPartnerBlocked) {
+    if (isPartnerBlockedByCurrentUser) {
         await unblockUser(dmPartnerDetails.uid);
-        setIsPartnerBlocked(false);
+        setIsPartnerBlockedByCurrentUser(false);
     } else {
-        await blockUser(dmPartnerDetails.uid);
-        setIsPartnerBlocked(true);
+        await blockUser(dmPartnerDetails.uid, dmPartnerDetails.displayName, dmPartnerDetails.photoURL);
+        setIsPartnerBlockedByCurrentUser(true);
     }
     setIsUserLoading(false);
   };
@@ -345,6 +362,21 @@ export default function DirectMessagePage() {
       <div className="flex flex-1 items-center justify-center h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="ml-2 text-lg">Sohbet yükleniyor...</p>
+      </div>
+    );
+  }
+  
+  if (isCurrentUserBlockedByPartner) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center h-screen bg-card p-6 text-center">
+        <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold text-destructive mb-2">Engellendiniz</h2>
+        <p className="text-muted-foreground mb-6">
+          {dmPartnerDetails.displayName || "Bu kullanıcı"} tarafından engellendiğiniz için bu sohbeti görüntüleyemezsiniz.
+        </p>
+        <Button variant="outline" onClick={() => router.push('/direct-messages')}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Direkt Mesajlara Dön
+        </Button>
       </div>
     );
   }
@@ -373,11 +405,11 @@ export default function DirectMessagePage() {
             </Link>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 text-muted-foreground hover:text-primary">
+          <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 text-muted-foreground hover:text-primary" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
             <Phone className="h-5 w-5" />
             <span className="sr-only">Sesli Ara</span>
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 text-muted-foreground hover:text-primary">
+          <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 text-muted-foreground hover:text-primary" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
             <Video className="h-5 w-5" />
             <span className="sr-only">Görüntülü Ara</span>
           </Button>
@@ -397,9 +429,9 @@ export default function DirectMessagePage() {
                 <Flag className="mr-2 h-4 w-4 text-orange-500" />
                 Kullanıcıyı Şikayet Et
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleBlockOrUnblockUser} className={isPartnerBlocked ? "text-green-600 focus:text-green-700 focus:bg-green-500/10" : "text-destructive focus:text-destructive focus:bg-destructive/10"}>
+              <DropdownMenuItem onClick={handleBlockOrUnblockUser} className={isPartnerBlockedByCurrentUser ? "text-green-600 focus:text-green-700 focus:bg-green-500/10" : "text-destructive focus:text-destructive focus:bg-destructive/10"}>
                 <Ban className="mr-2 h-4 w-4" />
-                {isPartnerBlocked ? "Engeli Kaldır" : "Kullanıcıyı Engelle"}
+                {isPartnerBlockedByCurrentUser ? "Engeli Kaldır" : "Kullanıcıyı Engelle"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -437,24 +469,24 @@ export default function DirectMessagePage() {
 
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlocked} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
             <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
           <Input
-            placeholder={isPartnerBlocked ? "Bu kullanıcı engellendi" : "Mesajınızı yazın..."}
+            placeholder={isPartnerBlockedByCurrentUser ? "Bu kullanıcıyı engellediniz" : isCurrentUserBlockedByPartner ? "Bu kullanıcı tarafından engellendiniz" : "Mesajınızı yazın..."}
             value={newMessage}
             onChange={handleNewMessageInputChange}
             className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
             autoComplete="off"
-            disabled={isSending || isUserLoading || isPartnerBlocked}
+            disabled={isSending || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlocked} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
               <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
-            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlocked}>
+            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
               {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               <span className="sr-only">Gönder</span>
             </Button>
@@ -484,5 +516,3 @@ export default function DirectMessagePage() {
     </div>
   );
 }
-
-    

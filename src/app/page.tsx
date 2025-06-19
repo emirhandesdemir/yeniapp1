@@ -79,7 +79,7 @@ const feedItemEntryVariants = {
 
 const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
-const POSTS_FETCH_LIMIT = 10; // Bu limit onSnapshot'ta da kullanılacak
+const POSTS_FETCH_LIMIT = 10; 
 const ROOMS_FETCH_LIMIT = 3;
 const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000; 
 
@@ -88,7 +88,7 @@ export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (ChatRoomFeedD
 
 export default function HomePage() {
   const router = useRouter();
-  const { currentUser, userData, loading: authLoading, isUserDataLoading } = useAuth();
+  const { currentUser, userData, loading: authLoading, isUserDataLoading, checkIfUserBlocked } = useAuth();
 
   const [isWelcomeCardVisible, setIsWelcomeCardVisible] = useState(true);
   const [isCreatePostDialogOpen, setIsCreatePostDialogOpen] = useState(false);
@@ -103,6 +103,9 @@ export default function HomePage() {
   
   const [friends, setFriends] = useState<string[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(true);
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+  const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(true);
+
 
   const [showRefreshButton, setShowRefreshButton] = useState(false);
   const refreshButtonTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -160,7 +163,7 @@ export default function HomePage() {
       setIsLoadingRooms(true);
     }
     
-    if (isManualRefresh) { // Only reset timer elements if it's a manual refresh
+    if (isManualRefresh) { 
         setShowRefreshButton(false); 
         if (refreshButtonTimerRef.current) {
         clearTimeout(refreshButtonTimerRef.current);
@@ -204,14 +207,13 @@ export default function HomePage() {
         startRefreshButtonTimer(); 
       }
     }
-  }, [currentUser, startRefreshButtonTimer]); // startRefreshButtonTimer eklendi
+  }, [currentUser, startRefreshButtonTimer]);
 
-  // Real-time listener for posts
   useEffect(() => {
     if (!currentUser) {
       setAllPosts([]);
       setIsLoadingPosts(false);
-      return () => {}; // Return an empty function for cleanup
+      return () => {};
     }
     setIsLoadingPosts(true);
     const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
@@ -223,7 +225,7 @@ export default function HomePage() {
       });
       setAllPosts(fetchedPostsData);
       setIsLoadingPosts(false);
-      if (!isRefreshingFeed) { // Sadece ilk yüklemede veya onSnapshot sonrası timer'ı başlat
+      if (!isRefreshingFeed) {
           startRefreshButtonTimer();
       }
     }, (error) => {
@@ -231,52 +233,88 @@ export default function HomePage() {
       setIsLoadingPosts(false);
     });
 
-    return () => unsubscribePosts(); // Cleanup listener on component unmount or currentUser change
+    return () => unsubscribePosts(); 
   }, [currentUser, isRefreshingFeed, startRefreshButtonTimer]);
 
 
   useEffect(() => {
     if (currentUser) {
-      fetchActiveRooms(); // Fetch rooms once on load
+      fetchActiveRooms(); 
     } else {
       setIsLoadingRooms(false);
       setActiveRooms([]);
     }
-  }, [currentUser, fetchActiveRooms]); // fetchActiveRooms eklendi
+  }, [currentUser, fetchActiveRooms]);
 
+  // Fetch friends and blocked users
   useEffect(() => {
-    if (currentUser && userData?.privacySettings?.feedShowsEveryone === false) {
-      setLoadingFriends(true);
-      const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-      const unsubscribeFriends = onSnapshot(friendsRef, (snapshot) => {
-        const friendIds = snapshot.docs.map(doc => doc.id);
-        setFriends(friendIds);
+    if (currentUser) {
+      // Fetch friends if needed for filtering
+      if (userData?.privacySettings?.feedShowsEveryone === false) {
+        setLoadingFriends(true);
+        const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
+        const unsubscribeFriends = onSnapshot(friendsRef, (snapshot) => {
+          const friendIds = snapshot.docs.map(doc => doc.id);
+          setFriends(friendIds);
+          setLoadingFriends(false);
+        }, (error) => {
+          console.error("Error fetching friends for feed:", error);
+          setLoadingFriends(false);
+        });
+        return () => unsubscribeFriends();
+      } else {
+        setFriends([]); 
         setLoadingFriends(false);
+      }
+
+      // Fetch blocked users
+      setLoadingBlockedUsers(true);
+      const blockedUsersRef = collection(db, `users/${currentUser.uid}/blockedUsers`);
+      const unsubscribeBlocked = onSnapshot(blockedUsersRef, (snapshot) => {
+          const ids = snapshot.docs.map(doc => doc.id);
+          setBlockedUserIds(ids);
+          setLoadingBlockedUsers(false);
       }, (error) => {
-        console.error("Error fetching friends for feed:", error);
-        setLoadingFriends(false);
+          console.error("Error fetching blocked users:", error);
+          setLoadingBlockedUsers(false);
       });
-      return () => unsubscribeFriends();
+      return () => { // Cleanup both if friends were also fetched
+        if (userData?.privacySettings?.feedShowsEveryone === false) {
+            // No explicit unsubscribe needed if it was from getDocs, but if it were onSnapshot:
+            // if (typeof unsubscribeFriends === 'function') unsubscribeFriends();
+        }
+        unsubscribeBlocked();
+      };
+
     } else {
-      setFriends([]); 
+      setFriends([]);
+      setBlockedUserIds([]);
       setLoadingFriends(false);
+      setLoadingBlockedUsers(false);
     }
   }, [currentUser, userData?.privacySettings?.feedShowsEveryone]);
+
 
   useEffect(() => {
     const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true; 
 
-    if (isLoadingPosts || isLoadingRooms || (!feedShowsEveryone && loadingFriends)) {
+    if (isLoadingPosts || isLoadingRooms || loadingBlockedUsers || (!feedShowsEveryone && loadingFriends)) {
       return; 
     }
 
     let filteredPosts = allPosts;
+    // Filter out posts from users blocked by the current user
+    if (blockedUserIds.length > 0) {
+        filteredPosts = filteredPosts.filter(post => !blockedUserIds.includes(post.userId));
+    }
+
+    // If feed only shows friends, further filter by friends
     if (!feedShowsEveryone && currentUser) {
-      filteredPosts = allPosts.filter(post => 
+      filteredPosts = filteredPosts.filter(post => 
         post.userId === currentUser.uid || friends.includes(post.userId)
       );
     }
-
+    
     const postItems: FeedDisplayItem[] = filteredPosts.map(p => ({ ...p, feedItemType: 'post' }));
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
@@ -293,7 +331,7 @@ export default function HomePage() {
     });
     setCombinedFeedItems(combined);
 
-  }, [allPosts, activeRooms, isLoadingPosts, isLoadingRooms, userData?.privacySettings?.feedShowsEveryone, friends, loadingFriends, currentUser]);
+  }, [allPosts, activeRooms, isLoadingPosts, isLoadingRooms, userData?.privacySettings?.feedShowsEveryone, friends, loadingFriends, currentUser, blockedUserIds, loadingBlockedUsers]);
 
   useEffect(() => {
     return () => {
@@ -305,11 +343,8 @@ export default function HomePage() {
 
   const handleRefreshClick = useCallback(() => {
     if (isRefreshingFeed) return;
-    fetchActiveRooms(true); // Fetch rooms again on manual refresh
-    // Posts will auto-refresh due to onSnapshot, but we can set isRefreshingFeed
+    fetchActiveRooms(true); 
     setIsRefreshingFeed(true); 
-    // onSnapshot listener for posts will eventually set isRefreshingFeed to false via setIsLoadingPosts(false)
-    // and then call startRefreshButtonTimer
   }, [isRefreshingFeed, fetchActiveRooms]);
 
   if (authLoading || (currentUser && isUserDataLoading && !userData)) { 
@@ -418,7 +453,6 @@ export default function HomePage() {
               <div className="p-6 pt-4">
                 <CreatePostForm onPostCreated={() => {
                     setIsCreatePostDialogOpen(false);
-                    // fetchFeedItems(true); // onSnapshot posts will update automatically
                 }} />
               </div>
             </DialogContent>
@@ -439,7 +473,7 @@ export default function HomePage() {
           )}
 
 
-          {(isLoadingPosts || isLoadingRooms) && combinedFeedItems.length === 0 && !isRefreshingFeed && ( 
+          {(isLoadingPosts || isLoadingRooms || loadingBlockedUsers || (! (userData?.privacySettings?.feedShowsEveryone ?? true) && loadingFriends) ) && combinedFeedItems.length === 0 && !isRefreshingFeed && ( 
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }}
@@ -464,7 +498,7 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {!isLoadingPosts && !isLoadingRooms && !isRefreshingFeed && combinedFeedItems.length === 0 && (
+          {!isLoadingPosts && !isLoadingRooms && !loadingBlockedUsers && !isRefreshingFeed && combinedFeedItems.length === 0 && (
              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                 <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
                     <CardHeader className="pb-2">
@@ -486,7 +520,7 @@ export default function HomePage() {
              </motion.div>
           )}
 
-          {(!isLoadingPosts || !isLoadingRooms || combinedFeedItems.length > 0) && !isRefreshingFeed && ( // Show if not loading OR if there are items (to prevent flicker during refresh)
+          {(!isLoadingPosts || !isLoadingRooms || combinedFeedItems.length > 0) && !isRefreshingFeed && ( 
             <div className="space-y-4">
               {combinedFeedItems.map((item, index) => {
                 if (item.feedItemType === 'post') {

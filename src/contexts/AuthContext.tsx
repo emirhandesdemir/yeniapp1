@@ -13,17 +13,17 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, db, storage } from '@/lib/firebase'; // storage import edildi
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; // storage fonksiyonları import edildi
+import { auth, db, storage } from '@/lib/firebase';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction, deleteDoc, query, orderBy, getDocs } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useRouter } from 'next/navigation';
 import { Flame, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { isPast } from 'date-fns';
-import { v4 as uuidv4 } from 'uuid'; // For unique filenames if needed
+import { v4 as uuidv4 } from 'uuid';
 
 const INITIAL_DIAMONDS = 30;
-const REPORT_BAN_THRESHOLD = 5; // 5 şikayette banla
+const REPORT_BAN_THRESHOLD = 5;
 
 export interface PrivacySettings {
   postsVisibleToFriendsOnly?: boolean;
@@ -46,12 +46,19 @@ export interface UserData {
   privacySettings?: PrivacySettings;
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
-  isPremium?: boolean;
+  isPremium?: boolean; // Dinamik olarak hesaplanacak veya senkronize edilecek
   reportCount?: number;
   isBanned?: boolean;
   profileViewCount?: number;
   lastSeen?: Timestamp | null;
 }
+
+export interface BlockedUserData {
+  blockedAt: Timestamp;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
 
 interface AuthContextType {
   currentUser: User | null;
@@ -69,9 +76,10 @@ interface AuthContextType {
   isAdminPanelOpen: boolean;
   setIsAdminPanelOpen: (isOpen: boolean) => void;
   reportUser: (reportedUserId: string, reason?: string) => Promise<void>;
-  blockUser: (blockedUserId: string) => Promise<void>;
-  unblockUser: (blockedUserId: string) => Promise<void>; // Eklendi
-  checkIfUserBlocked: (targetUserId: string) => Promise<boolean>; // Eklendi
+  blockUser: (blockedUserId: string, blockedUserName?: string | null, blockedUserPhoto?: string | null) => Promise<void>;
+  unblockUser: (blockedUserId: string) => Promise<void>;
+  checkIfUserBlocked: (targetUserId: string) => Promise<boolean>;
+  checkIfCurrentUserIsBlockedBy: (targetUserId: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -100,94 +108,58 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const isCurrentUserPremium = useCallback(() => {
     if (!userData) return false;
-    return userData.premiumStatus !== 'none' && userData.premiumStatus !== undefined &&
-           (!userData.premiumExpiryDate || !isPast(userData.premiumExpiryDate.toDate()));
+    return checkUserPremium(userData);
   }, [userData]);
 
   const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş', isGoogleSignUp: boolean = false) => {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = user.photoURL;
     
-    const currentPremiumStatus = isGoogleSignUp ? 'none' : 'none'; 
+    const currentPremiumStatus = 'none'; 
     const currentPremiumExpiryDate = null;
-    const dynamicIsPremium = currentPremiumStatus !== 'none' && (!currentPremiumExpiryDate || !isPast(currentPremiumExpiryDate.toDate()));
+    const dynamicIsPremium = false; // Initially false, will be updated
 
-    const dataToSetForLog: Partial<UserData> & {createdAt: string} = {
-      uid: user.uid,
-      email: user.email,
-      displayName: username || user.displayName,
-      photoURL: initialPhotoURL,
-      diamonds: INITIAL_DIAMONDS,
-      role: "user",
-      createdAt: "serverTimestamp()",
-      bio: "",
-      gender: gender || "belirtilmemiş",
-      privacySettings: {
-        postsVisibleToFriendsOnly: false,
-        activeRoomsVisibleToFriendsOnly: false,
-        feedShowsEveryone: true,
-        showProfileViewCount: true,
-        showOnlineStatus: true,
-      },
-      premiumStatus: currentPremiumStatus,
-      premiumExpiryDate: currentPremiumExpiryDate,
-      isPremium: dynamicIsPremium,
-      reportCount: 0,
-      isBanned: false,
-      profileViewCount: 0,
-      lastSeen: serverTimestamp() as Timestamp,
+    const dataToSave: Omit<UserData, 'createdAt' | 'lastSeen' | 'isPremium'> & { createdAt: Timestamp, lastSeen: Timestamp, isPremium?: boolean } = { 
+        uid: user.uid,
+        email: user.email,
+        displayName: username || user.displayName,
+        photoURL: initialPhotoURL,
+        diamonds: INITIAL_DIAMONDS,
+        role: "user",
+        bio: "",
+        gender: gender || "belirtilmemiş",
+        privacySettings: {
+            postsVisibleToFriendsOnly: false,
+            activeRoomsVisibleToFriendsOnly: false,
+            feedShowsEveryone: true,
+            showProfileViewCount: true,
+            showOnlineStatus: true,
+        },
+        premiumStatus: currentPremiumStatus,
+        premiumExpiryDate: currentPremiumExpiryDate,
+        reportCount: 0,
+        isBanned: false,
+        profileViewCount: 0,
     };
-    console.log(`[AuthContext] createUserDocument called for ${user.uid}. Data to set (actual createdAt will be serverTimestamp):`, dataToSetForLog);
-
+    
     try {
-        const dataToSave: Omit<UserData, 'createdAt' | 'lastSeen'> & { createdAt: Timestamp, lastSeen: Timestamp } = { 
-            uid: user.uid,
-            email: user.email,
-            displayName: username || user.displayName,
-            photoURL: initialPhotoURL,
-            diamonds: INITIAL_DIAMONDS,
-            role: "user",
-            bio: "",
-            gender: gender || "belirtilmemiş",
-            privacySettings: {
-                postsVisibleToFriendsOnly: false,
-                activeRoomsVisibleToFriendsOnly: false,
-                feedShowsEveryone: true,
-                showProfileViewCount: true,
-                showOnlineStatus: true,
-            },
-            premiumStatus: currentPremiumStatus,
-            premiumExpiryDate: currentPremiumExpiryDate,
+        await setDoc(userDocRef, { 
+            ...dataToSave, 
             isPremium: dynamicIsPremium,
-            reportCount: 0,
-            isBanned: false,
-            profileViewCount: 0,
-        };
-        await setDoc(userDocRef, { ...dataToSave, createdAt: serverTimestamp(), lastSeen: serverTimestamp() });
-        console.log(`[AuthContext] Successfully initiated user document creation via createUserDocument for ${user.uid}. Fetching document after creation...`);
-
-        const docSnap = await getDoc(userDocRef);
+            createdAt: serverTimestamp(), 
+            lastSeen: serverTimestamp() 
+        });
+        const docSnap = await getDoc(userDocRef); // Fetch after creation
         if (docSnap.exists()) {
-            const fetchedData = docSnap.data() as UserData;
-            const finalUserData = {
-                ...fetchedData,
-                isPremium: fetchedData.premiumStatus !== 'none' && fetchedData.premiumStatus !== undefined &&
-                           (!fetchedData.premiumExpiryDate || !isPast(fetchedData.premiumExpiryDate.toDate()))
-            };
-            console.log(`[AuthContext] User document for ${user.uid} confirmed exists after createUserDocument. Data:`, finalUserData);
-            setUserData(finalUserData);
+            setUserData({ ...docSnap.data(), uid: docSnap.id, isPremium: checkUserPremium(docSnap.data() as UserData) } as UserData);
         } else {
-            console.warn(`[AuthContext] User document for ${user.uid} NOT found immediately after setDoc in createUserDocument. Using fallback with client-side timestamp.`);
-            const fallbackUserData: UserData = {
+             const fallbackUserData: UserData = {
                 ...dataToSave,
+                isPremium: dynamicIsPremium,
                 createdAt: Timestamp.now(), 
                 lastSeen: Timestamp.now(),
             };
             setUserData(fallbackUserData);
-             toast({
-                title: "Kullanıcı Verisi Senkronizasyonu",
-                description: "Kullanıcı bilgileriniz oluşturuldu (CD) ancak anlık senkronizasyonda bir gecikme olabilir.",
-            });
         }
     } catch (error: any) {
         console.error(`[AuthContext] CRITICAL: Error in createUserDocument for ${user.uid}:`, error.message, error.code, error.stack);
@@ -216,10 +188,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     return; 
                 }
 
-                const dynamicIsPremium = existingData.premiumStatus !== 'none' && existingData.premiumStatus !== undefined &&
-                                       (!existingData.premiumExpiryDate || !isPast(existingData.premiumExpiryDate.toDate()));
+                const updatedIsPremium = checkUserPremium(existingData);
                 const updatedData: UserData = {
                     ...existingData,
+                    uid: docSnap.id,
                     displayName: existingData.displayName !== undefined ? existingData.displayName : (user.displayName || null),
                     photoURL: existingData.photoURL !== undefined ? existingData.photoURL : (user.photoURL || null),
                     email: existingData.email !== undefined ? existingData.email : (user.email || null),
@@ -236,7 +208,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     },
                     premiumStatus: existingData.premiumStatus ?? 'none',
                     premiumExpiryDate: existingData.premiumExpiryDate ?? null,
-                    isPremium: dynamicIsPremium,
+                    isPremium: updatedIsPremium, // Use calculated value
                     reportCount: existingData.reportCount ?? 0,
                     isBanned: existingData.isBanned ?? false,
                     profileViewCount: existingData.profileViewCount ?? 0,
@@ -244,31 +216,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 };
 
                 let needsFirestoreUpdate = false;
-                if (updatedData.displayName !== existingData.displayName || 
-                    updatedData.photoURL !== existingData.photoURL ||
-                    updatedData.email !== existingData.email ||
-                    updatedData.isPremium !== existingData.isPremium ||
-                    updatedData.lastSeen === serverTimestamp() // Eğer local'de serverTimestamp ise, hemen güncelle.
-                    ) {
-                    needsFirestoreUpdate = true;
-                }
+                const firestoreUpdatePayload: Partial<UserData> = {};
+
+                if (updatedData.displayName !== existingData.displayName) { firestoreUpdatePayload.displayName = updatedData.displayName; needsFirestoreUpdate = true; }
+                if (updatedData.photoURL !== existingData.photoURL) { firestoreUpdatePayload.photoURL = updatedData.photoURL; needsFirestoreUpdate = true; }
+                if (updatedData.email !== existingData.email) { firestoreUpdatePayload.email = updatedData.email; needsFirestoreUpdate = true; }
+                if (updatedData.isPremium !== existingData.isPremium) { firestoreUpdatePayload.isPremium = updatedData.isPremium; needsFirestoreUpdate = true; }
                 
-                if (needsFirestoreUpdate && (
-                    (updatedData.displayName !== (user.displayName || null)) ||
-                    (updatedData.photoURL !== (user.photoURL || null)) ||
-                    (updatedData.email !== (user.email || null)) ||
-                    updatedData.lastSeen === serverTimestamp() 
-                  )) {
-                    const updatePayload: Partial<UserData> = {
-                        displayName: updatedData.displayName,
-                        photoURL: updatedData.photoURL,
-                        email: updatedData.email,
-                        isPremium: updatedData.isPremium,
-                        lastSeen: serverTimestamp() as Timestamp,
-                    };
-                    console.log(`[AuthContext] Syncing Firebase Auth display name/photo/lastSeen for ${user.uid} to Firestore.`);
-                    await updateDoc(userDocRef, updatePayload).catch(err => console.error("Error syncing auth profile to firestore:", err));
-                    updatedData.lastSeen = Timestamp.now(); // Optimistic update for local state
+                firestoreUpdatePayload.lastSeen = serverTimestamp() as Timestamp; // Always update lastSeen
+                needsFirestoreUpdate = true; // Ensure lastSeen is updated
+                
+                if (needsFirestoreUpdate) {
+                    await updateDoc(userDocRef, firestoreUpdatePayload).catch(err => console.error("Error syncing auth profile to firestore:", err));
+                    updatedData.lastSeen = Timestamp.now(); 
                 }
                 setUserData(updatedData);
 
@@ -329,7 +289,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setIsUserLoading(false);
         return;
       }
-      // Update lastSeen on login
       if (docSnap.exists()) {
         await updateDoc(userDocRef, { lastSeen: serverTimestamp() });
       }
@@ -365,53 +324,39 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setIsUserLoading(false);
             return;
         }
-        const dynamicIsPremium = firestoreData.premiumStatus !== 'none' && firestoreData.premiumStatus !== undefined &&
-                               (!firestoreData.premiumExpiryDate || !isPast(firestoreData.premiumExpiryDate.toDate()));
-
+        
         const updatesToFirestore: Partial<UserData> = {
-            isPremium: dynamicIsPremium,
             lastSeen: serverTimestamp() as Timestamp,
+            isPremium: checkUserPremium(firestoreData),
         };
-        const currentPrivacySettings = firestoreData.privacySettings || {};
-        updatesToFirestore.privacySettings = {
-            postsVisibleToFriendsOnly: currentPrivacySettings.postsVisibleToFriendsOnly ?? false,
-            activeRoomsVisibleToFriendsOnly: currentPrivacySettings.activeRoomsVisibleToFriendsOnly ?? false,
-            feedShowsEveryone: currentPrivacySettings.feedShowsEveryone ?? true,
-            showProfileViewCount: currentPrivacySettings.showProfileViewCount ?? true,
-            showOnlineStatus: currentPrivacySettings.showOnlineStatus ?? true,
-        };
-        updatesToFirestore.premiumStatus = firestoreData.premiumStatus ?? 'none';
-        updatesToFirestore.premiumExpiryDate = firestoreData.premiumExpiryDate ?? null;
-        updatesToFirestore.reportCount = firestoreData.reportCount ?? 0;
-        updatesToFirestore.isBanned = firestoreData.isBanned ?? false;
-        updatesToFirestore.profileViewCount = firestoreData.profileViewCount ?? 0;
-
-
+        
         if (user.displayName && user.displayName !== firestoreData.displayName) {
             updatesToFirestore.displayName = user.displayName;
         }
         if (user.photoURL && user.photoURL !== firestoreData.photoURL) {
             updatesToFirestore.photoURL = user.photoURL;
         } else if (!firestoreData.photoURL && user.photoURL) {
-            updatesToFirestore.photoURL = user.photoURL;
+             updatesToFirestore.photoURL = user.photoURL;
         }
+        if (firestoreData.bio === undefined) updatesToFirestore.bio = "";
+        if (firestoreData.gender === undefined) updatesToFirestore.gender = "belirtilmemiş";
+        if (firestoreData.privacySettings === undefined) {
+            updatesToFirestore.privacySettings = {
+                postsVisibleToFriendsOnly: false, activeRoomsVisibleToFriendsOnly: false, feedShowsEveryone: true, showProfileViewCount: true, showOnlineStatus: true
+            };
+        }
+        if (firestoreData.premiumStatus === undefined) updatesToFirestore.premiumStatus = 'none';
+        if (firestoreData.premiumExpiryDate === undefined) updatesToFirestore.premiumExpiryDate = null;
+        if (firestoreData.reportCount === undefined) updatesToFirestore.reportCount = 0;
+        if (firestoreData.isBanned === undefined) updatesToFirestore.isBanned = false;
+        if (firestoreData.profileViewCount === undefined) updatesToFirestore.profileViewCount = 0;
 
-        if (firestoreData.bio === undefined) {
-            updatesToFirestore.bio = "";
-        }
-        if (firestoreData.gender === undefined) {
-            updatesToFirestore.gender = "belirtilmemiş";
-        }
 
-        let needsUpdate = true; // Always update lastSeen at least
-        if (updatesToFirestore.displayName && updatesToFirestore.displayName !== firestoreData.displayName) needsUpdate = true;
-        // ... other checks for needsUpdate
-        
-        if (needsUpdate) {
+        if (Object.keys(updatesToFirestore).length > 0) {
             await updateDoc(userDocRef, updatesToFirestore);
-            setUserData({ ...firestoreData, ...updatesToFirestore, lastSeen: Timestamp.now() });
+            setUserData({ ...firestoreData, ...updatesToFirestore, lastSeen: Timestamp.now(), isPremium: checkUserPremium({...firestoreData, ...updatesToFirestore}) });
         } else {
-            setUserData({...firestoreData, isPremium: dynamicIsPremium, lastSeen: Timestamp.now()});
+            setUserData({...firestoreData, lastSeen: Timestamp.now(), isPremium: checkUserPremium(firestoreData)});
         }
       }
       router.push('/');
@@ -435,7 +380,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     try {
       if (currentUser && userData) {
-        // Update lastSeen on logout
         const userDocRef = doc(db, "users", currentUser.uid);
         await updateDoc(userDocRef, { lastSeen: serverTimestamp() }).catch(e => console.warn("Failed to update lastSeen on logout", e));
       }
@@ -457,7 +401,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return false;
     }
     setIsUserLoading(true);
-    console.log("[AuthContext] updateUserProfile: Start", updates);
 
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
@@ -466,7 +409,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     try {
       if (updates.newPhotoBlob) {
-        console.log("[AuthContext] updateUserProfile: Handling newPhotoBlob");
         const photoBlob = updates.newPhotoBlob;
         const fileExtension = photoBlob.type.split('/')[1] || 'png';
         const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
@@ -478,13 +420,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
         
         const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/profileImage.${fileExtension}`);
-        console.log("[AuthContext] updateUserProfile: Before uploadBytes with blob");
         await uploadBytes(photoRef, photoBlob);
-        console.log("[AuthContext] updateUserProfile: After uploadBytes, Before getDownloadURL");
         finalPhotoURL = await getDownloadURL(photoRef);
-        console.log("[AuthContext] updateUserProfile: After getDownloadURL", finalPhotoURL);
       } else if (updates.removePhoto) {
-        console.log("[AuthContext] updateUserProfile: Handling removePhoto");
         finalPhotoURL = null;
         const currentPhotoURL = userData?.photoURL || auth.currentUser?.photoURL;
         if (currentPhotoURL) {
@@ -492,11 +430,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const oldPhotoFileName = currentPhotoURL.split('/').pop()?.split('?')[0];
             if (oldPhotoFileName && oldPhotoFileName.includes("profileImage.")) { 
                  const oldPhotoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/${decodeURIComponent(oldPhotoFileName)}`);
-                 console.log("[AuthContext] updateUserProfile: Attempting to delete old photo", oldPhotoRef.fullPath);
                  await deleteObject(oldPhotoRef).catch(e => console.warn("Old photo deletion minor error (ignored):", e.message));
-                 console.log("[AuthContext] updateUserProfile: Old photo deletion attempt finished.");
-            } else {
-                console.warn("[AuthContext] updateUserProfile: Old photo URL doesn't match expected pattern, skipping deletion:", currentPhotoURL);
             }
           } catch (e) {
             console.warn("Could not delete old profile picture from storage (error caught but ignored):", e);
@@ -542,48 +476,40 @@ export function AuthProvider({ children }: AuthProviderProps) {
         firestoreUpdates.lastSeen = updates.lastSeen;
       }
 
-
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
-      if (!hasAuthUpdates && !hasFirestoreUpdates) {
-        // Sadece lastSeen güncelleniyorsa bile Firestore'a yaz.
-        if (updates.lastSeen && userData?.lastSeen?.toMillis() !== updates.lastSeen?.toMillis()) {
-           await updateDoc(userDocRef, { lastSeen: updates.lastSeen });
-           setUserData(prev => prev ? { ...prev, lastSeen: updates.lastSeen } : null);
-           setIsUserLoading(false);
-           return true;
-        }
+      if (!hasAuthUpdates && !hasFirestoreUpdates && updates.lastSeen === undefined) {
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         setIsUserLoading(false);
         return true;
       }
-
+      
       if (hasAuthUpdates && auth.currentUser) {
-        console.log("[AuthContext] updateUserProfile: Before updateFirebaseProfile", authUpdates);
         await updateFirebaseProfile(auth.currentUser, authUpdates);
-        console.log("[AuthContext] updateUserProfile: After updateFirebaseProfile");
       }
 
-      if (hasFirestoreUpdates) {
-        console.log("[AuthContext] updateUserProfile: Before updateDoc (Firestore)", firestoreUpdates);
-        await updateDoc(userDocRef, firestoreUpdates);
-        console.log("[AuthContext] updateUserProfile: After updateDoc (Firestore)");
+      if (hasFirestoreUpdates || updates.lastSeen) { // Ensure lastSeen update even if no other firestore changes
+        const finalFirestorePayload = { ...firestoreUpdates };
+        if (updates.lastSeen && !hasFirestoreUpdates) { // If only lastSeen is updated
+            finalFirestorePayload.lastSeen = updates.lastSeen;
+        }
+        await updateDoc(userDocRef, finalFirestorePayload);
       }
       
-      const newLocalUserData = { ...userData } as UserData; 
-        if (authUpdates.displayName !== undefined) newLocalUserData.displayName = authUpdates.displayName;
-        if (authUpdates.photoURL !== undefined) newLocalUserData.photoURL = authUpdates.photoURL;
-        if (firestoreUpdates.bio !== undefined) newLocalUserData.bio = firestoreUpdates.bio;
-        if (firestoreUpdates.privacySettings !== undefined) newLocalUserData.privacySettings = firestoreUpdates.privacySettings;
-        if (firestoreUpdates.lastSeen !== undefined) newLocalUserData.lastSeen = firestoreUpdates.lastSeen;
-      
-      if (Object.keys(newLocalUserData).length > 0 && userData !== newLocalUserData) { 
-        setUserData(newLocalUserData);
-      }
+      setUserData(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          ...(authUpdates.displayName && { displayName: authUpdates.displayName }),
+          ...(authUpdates.photoURL !== undefined && { photoURL: authUpdates.photoURL }),
+          ...(firestoreUpdates.bio && { bio: firestoreUpdates.bio }),
+          ...(firestoreUpdates.privacySettings && { privacySettings: firestoreUpdates.privacySettings }),
+          ...(updates.lastSeen && { lastSeen: updates.lastSeen }),
+        };
+      });
 
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
-      console.log("[AuthContext] updateUserProfile: Try block finished, returning true");
       return true;
 
     } catch (error: any) {
@@ -595,7 +521,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       return false;
     } finally {
-      console.log("[AuthContext] updateUserProfile: Finally block, setting isUserLoading to false");
       setIsUserLoading(false);
     }
   }, [toast, userData]);
@@ -659,7 +584,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir." });
       if(shouldBeBanned){
          toast({ title: "Kullanıcı Banlandı", description: `Şikayet edilen kullanıcı ${finalReportCount} şikayete ulaştığı için hesabı askıya alındı.`, variant: "destructive", duration: 7000 });
-         // Admin panelinde kullanıcı listesi otomatik güncellenecek.
       }
 
     } catch (error: any) {
@@ -670,7 +594,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [currentUser, userData, toast]);
 
-  const blockUser = useCallback(async (blockedUserId: string) => {
+  const blockUser = useCallback(async (blockedUserId: string, blockedUserName?: string | null, blockedUserPhoto?: string | null) => {
     if (!currentUser || !userData) {
       toast({ title: "Giriş Gerekli", description: "Kullanıcıyı engellemek için giriş yapmalısınız.", variant: "destructive" });
       return;
@@ -682,20 +606,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     try {
       const blockRef = doc(db, `users/${currentUser.uid}/blockedUsers`, blockedUserId);
-      const targetUserDoc = await getDoc(doc(db, "users", blockedUserId));
-      let blockedUserName = "Bilinmeyen Kullanıcı";
-      let blockedUserPhoto: string | null = null;
-      if(targetUserDoc.exists()){
-        blockedUserName = targetUserDoc.data()?.displayName || "Bilinmeyen Kullanıcı";
-        blockedUserPhoto = targetUserDoc.data()?.photoURL || null;
+      let nameToStore = blockedUserName;
+      let photoToStore = blockedUserPhoto;
+
+      if (!nameToStore && !photoToStore) { // Fetch if not provided
+        const targetUserDoc = await getDoc(doc(db, "users", blockedUserId));
+        if(targetUserDoc.exists()){
+          nameToStore = targetUserDoc.data()?.displayName || "Bilinmeyen Kullanıcı";
+          photoToStore = targetUserDoc.data()?.photoURL || null;
+        }
       }
 
       await setDoc(blockRef, {
         blockedAt: serverTimestamp(),
-        displayName: blockedUserName, 
-        photoURL: blockedUserPhoto,        
+        displayName: nameToStore || "Bilinmeyen Kullanıcı",
+        photoURL: photoToStore,
       });
-      toast({ title: "Kullanıcı Engellendi", description: `${blockedUserName} engellendi.` });
+      toast({ title: "Kullanıcı Engellendi", description: `${nameToStore || 'Kullanıcı'} engellendi.` });
     } catch (error) {
       console.error("Error blocking user:", error);
       toast({ title: "Hata", description: "Kullanıcı engellenirken bir sorun oluştu.", variant: "destructive" });
@@ -729,14 +656,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const docSnap = await getDoc(blockRef);
         return docSnap.exists();
     } catch (error) {
-        console.error("Error checking block status:", error);
-        return false; // Varsayılan olarak engellenmemiş say
+        console.error("Error checking if user blocked target:", error);
+        return false;
     }
   }, [currentUser]);
 
+  const checkIfCurrentUserIsBlockedBy = useCallback(async (targetUserId: string): Promise<boolean> => {
+    if (!currentUser) return false;
+    try {
+        const blockRef = doc(db, `users/${targetUserId}/blockedUsers`, currentUser.uid);
+        const docSnap = await getDoc(blockRef);
+        return docSnap.exists();
+    } catch (error) {
+        console.error("Error checking if current user is blocked by target:", error);
+        return false;
+    }
+  }, [currentUser]);
 
   useEffect(() => {
-    // Uygulama aktif olduğunda (veya belirli aralıklarla) lastSeen güncellemesi
     const intervalId = setInterval(async () => {
       if (currentUser && document.visibilityState === 'visible') {
         const userDocRef = doc(db, "users", currentUser.uid);
@@ -744,10 +681,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           await updateDoc(userDocRef, { lastSeen: serverTimestamp() });
           setUserData(prev => prev ? { ...prev, lastSeen: Timestamp.now() } : null);
         } catch (error) {
-          console.warn("Failed to update lastSeen periodically:", error);
+          // console.warn("Failed to update lastSeen periodically:", error);
         }
       }
-    }, 5 * 60 * 1000); // Her 5 dakikada bir
+    }, 5 * 60 * 1000);
 
     const handleVisibilityChange = async () => {
       if (currentUser && document.visibilityState === 'visible') {
@@ -756,7 +693,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           await updateDoc(userDocRef, { lastSeen: serverTimestamp() });
           setUserData(prev => prev ? { ...prev, lastSeen: Timestamp.now() } : null);
         } catch (error) {
-          console.warn("Failed to update lastSeen on visibility change:", error);
+          // console.warn("Failed to update lastSeen on visibility change:", error);
         }
       }
     };
@@ -767,8 +704,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentUser]);
-
-
 
   if (loading || (currentUser && isUserDataLoading && !(userData && userData.uid === currentUser.uid && !userData.isBanned))) {
     return (
@@ -785,7 +720,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       </div>
     );
   }
-
 
   const value = {
     currentUser,
@@ -806,6 +740,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     blockUser,
     unblockUser,
     checkIfUserBlocked,
+    checkIfCurrentUserIsBlockedBy,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -829,5 +764,3 @@ export const checkUserPremium = (user: UserData | null): boolean => {
   return user.premiumStatus !== 'none' && user.premiumStatus !== undefined &&
          (!user.premiumExpiryDate || !isPast(user.premiumExpiryDate.toDate()));
 };
-
-    

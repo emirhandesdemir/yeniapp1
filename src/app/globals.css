@@ -43,7 +43,7 @@ textarea {
     --secondary-foreground: 220 25% 25%; /* Darker blue-gray text */
     --muted: 240 5% 96%;
     --muted-foreground: 240 4% 46%;
-    --accent: 0 75% 55%; /* Vibrant Red (Replaced Orange) */
+    --accent: 0 75% 55%; /* Vibrant Red */
     --accent-foreground: 0 0% 100%; /* White for high contrast on Red */
     --destructive: 0 80% 60%; /* Vibrant Red */
     --destructive-foreground: 0 0% 98%;
@@ -83,7 +83,7 @@ textarea {
     --secondary-foreground: 220 15% 85%;
     --muted: 240 4% 19%; /* Brighter Dark Muted */
     --muted-foreground: 240 5% 65%;
-    --accent: 0 80% 60%; /* Brighter Vibrant Red (Replaced Orange) */
+    --accent: 0 80% 60%; /* Brighter Vibrant Red */
     --accent-foreground: 0 0% 100%; /* White for high contrast on Red */
     --destructive: 0 75% 60%;
     --destructive-foreground: 0 0% 98%;

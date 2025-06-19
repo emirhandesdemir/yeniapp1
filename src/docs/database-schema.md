@@ -35,7 +35,10 @@ Kullanıcı profil bilgilerini saklar.
     - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `isPremium` (Boolean, isteğe bağlı), `addedAt` (Timestamp)
   - `blockedUsers`: Kullanıcının engellediği diğer kullanıcıları saklar.
     - **Yol:** `/users/{userId}/blockedUsers/{blockedUserId}`
-    - **Alanlar:** `blockedAt` (Timestamp) - Engelleme zamanı, `displayName` (String, isteğe bağlı), `photoURL` (String, nullable, isteğe bağlı)
+    - **Alanlar:** 
+        - `blockedAt` (Timestamp) - Engelleme zamanı
+        - `displayName` (String, nullable) - Engellenen kullanıcının görünen adı (listeleme için kolaylık)
+        - `photoURL` (String, nullable) - Engellenen kullanıcının fotoğraf URL'si (listeleme için kolaylık)
 - **Gerekli İndeksler:**
   - Admin panelinde kullanıcıları kayıt tarihine göre listelemek için (`src/components/admin/sections/AdminUsersContent.tsx`):
     - Koleksiyon: `users`
@@ -278,5 +281,3 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
-
-    

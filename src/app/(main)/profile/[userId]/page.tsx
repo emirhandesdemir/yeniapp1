@@ -8,7 +8,7 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings, Gem, Users, Ban, MoreVertical, Flag } from "lucide-react";
+import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, Eye, EyeOff, Clock, Star, Edit3, Settings, Gem, Users, Ban, MoreVertical, Flag, UserX } from "lucide-react";
 import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
@@ -50,7 +50,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 
@@ -62,14 +61,14 @@ interface PublicProfileChatRoom {
   expiresAt: Timestamp;
 }
 
-const ACTIVE_THRESHOLD_MINUTES = 5; // 5 dakika içinde aktifse "Aktif" sayılır
+const ACTIVE_THRESHOLD_MINUTES = 5; 
 
 export default function UserProfilePage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.userId as string;
 
-  const { currentUser, userData: currentUserData, isUserLoading: isAuthLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
+  const { currentUser, userData: currentUserData, isUserLoading: isAuthLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy } = useAuth();
   const { toast } = useToast();
 
   const [profileUser, setProfileUser] = useState<UserData | null>(null);
@@ -83,7 +82,9 @@ export default function UserProfilePage() {
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
-  const [isBlockedByCurrentUser, setIsBlockedByCurrentUser] = useState(false);
+  
+  const [isBlockedByCurrentUser, setIsBlockedByCurrentUser] = useState(false); // Mevcut kullanıcı bu profili engelledi mi?
+  const [isCurrentUserBlockedByProfileOwner, setIsCurrentUserBlockedByProfileOwner] = useState(false); // Mevcut kullanıcı bu profilin sahibi tarafından engellendi mi?
 
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -106,12 +107,13 @@ export default function UserProfilePage() {
                 document.title = `${fetchedUser.displayName || 'Kullanıcı'} Profili - HiweWalk`;
 
                 if (currentUser && !isOwnProfile) {
-                    const blocked = await checkIfUserBlocked(userId);
-                    setIsBlockedByCurrentUser(blocked);
+                    const blockedByMe = await checkIfUserBlocked(userId);
+                    setIsBlockedByCurrentUser(blockedByMe);
+                    const blockedMe = await checkIfCurrentUserIsBlockedBy(userId);
+                    setIsCurrentUserBlockedByProfileOwner(blockedMe);
                 }
 
-                // Increment profile view count if not own profile and not already viewed in this session (simple session check)
-                if (!isOwnProfile) {
+                if (!isOwnProfile && !isCurrentUserBlockedByProfileOwner) { // Sadece engellenmemişse görüntülenme sayısını artır
                     const viewedProfiles = JSON.parse(sessionStorage.getItem('viewedProfiles') || '{}');
                     if (!viewedProfiles[userId]) {
                         await runTransaction(db, async (transaction) => {
@@ -142,10 +144,10 @@ export default function UserProfilePage() {
         }
     };
     fetchProfileUser();
-  }, [userId, router, toast, isOwnProfile, currentUser, checkIfUserBlocked]);
+  }, [userId, router, toast, isOwnProfile, currentUser, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
 
   useEffect(() => {
-    if (!currentUser || !profileUser || isOwnProfile) {
+    if (!currentUser || !profileUser || isOwnProfile || isCurrentUserBlockedByProfileOwner) {
       if(isOwnProfile) setFriendshipStatus("self");
       return;
     }
@@ -197,11 +199,12 @@ export default function UserProfilePage() {
       }
     };
     checkStatus();
-  }, [currentUser, profileUser, isOwnProfile]);
+  }, [currentUser, profileUser, isOwnProfile, isCurrentUserBlockedByProfileOwner]);
 
   const canViewContent = useCallback((contentType: "posts" | "rooms" | "profileViewCount" | "onlineStatus") => {
     if (!profileUser) return false; 
     if (isOwnProfile) return true; 
+    if (isCurrentUserBlockedByProfileOwner) return false; // Eğer bu profili görüntüleyen kişi, profil sahibi tarafından engellenmişse hiçbir şey göremez.
 
     const privacySettings = profileUser.privacySettings;
     let key: keyof PrivacySettings | undefined;
@@ -215,11 +218,15 @@ export default function UserProfilePage() {
       return true; 
     }
     return friendshipStatus === "friends";
-  }, [profileUser, isOwnProfile, friendshipStatus]);
+  }, [profileUser, isOwnProfile, friendshipStatus, isCurrentUserBlockedByProfileOwner]);
 
 
   useEffect(() => {
-    if (!userId || !profileUser) return;
+    if (!userId || !profileUser || isCurrentUserBlockedByProfileOwner) {
+        setProfilePosts([]);
+        setLoadingPosts(false);
+        return;
+    }
 
     if (!canViewContent("posts")) {
         setProfilePosts([]);
@@ -246,10 +253,14 @@ export default function UserProfilePage() {
         }
     };
     fetchPosts();
-  }, [userId, profileUser, canViewContent]);
+  }, [userId, profileUser, canViewContent, isCurrentUserBlockedByProfileOwner]);
 
   useEffect(() => {
-    if (!userId || !profileUser) return;
+    if (!userId || !profileUser || isCurrentUserBlockedByProfileOwner) {
+        setActiveRooms([]);
+        setLoadingRooms(false);
+        return;
+    }
     
     if (!canViewContent("rooms")) {
         setActiveRooms([]);
@@ -277,7 +288,7 @@ export default function UserProfilePage() {
         }
     };
     fetchActiveRooms();
-  }, [userId, profileUser, canViewContent]);
+  }, [userId, profileUser, canViewContent, isCurrentUserBlockedByProfileOwner]);
 
 
   const handleSendFriendRequest = async () => {
@@ -379,16 +390,20 @@ export default function UserProfilePage() {
   };
 
   const handleDmAction = () => {
-    if (!currentUser || !profileUser) return;
+    if (!currentUser || !profileUser || isCurrentUserBlockedByProfileOwner || isBlockedByCurrentUser) {
+        if(isCurrentUserBlockedByProfileOwner) toast({title:"Engellendiniz", description:"Bu kullanıcı tarafından engellendiğiniz için DM gönderemezsiniz.", variant:"destructive"});
+        if(isBlockedByCurrentUser) toast({title:"Engellendi", description:"Bu kullanıcıyı engellediğiniz için DM gönderemezsiniz.", variant:"destructive"});
+        return;
+    }
     const dmId = generateDmChatId(currentUser.uid, profileUser.uid);
     router.push(`/dm/${dmId}`);
   };
 
   const handleReportUserAction = async () => {
     if (!currentUser || !profileUser) return;
-    setIsReportDialogOpen(false); // Close the reason dialog
+    setIsReportDialogOpen(false); 
     await reportUser(profileUser.uid, reportReason.trim() || "Belirtilmedi");
-    setReportReason(""); // Reset reason
+    setReportReason(""); 
   };
 
   const handleBlockOrUnblockUser = async () => {
@@ -398,8 +413,15 @@ export default function UserProfilePage() {
         await unblockUser(profileUser.uid);
         setIsBlockedByCurrentUser(false);
     } else {
-        await blockUser(profileUser.uid);
+        await blockUser(profileUser.uid, profileUser.displayName, profileUser.photoURL);
         setIsBlockedByCurrentUser(true);
+        // Engelledikten sonra arkadaşlık durumu değişebilir (örn: arkadaşlıktan çıkarma)
+        if (friendshipStatus === "friends") setFriendshipStatus("none");
+        if (friendshipStatus === "request_received" && relevantFriendRequest) {
+            await deleteFirestoreDoc(doc(db, "friendRequests", relevantFriendRequest.id));
+            setFriendshipStatus("none");
+            setRelevantFriendRequest(null);
+        }
     }
     setPerformingAction(false);
   };
@@ -436,6 +458,21 @@ export default function UserProfilePage() {
         <h2 className="text-2xl font-semibold">Kullanıcı Bulunamadı</h2>
         <p className="text-muted-foreground">Bu profile sahip bir kullanıcı bulunamadı veya profil bilgileri yüklenemedi.</p>
         <Button asChild variant="link" className="mt-4"><Link href="/">Anasayfaya Dön</Link></Button>
+      </div>
+    );
+  }
+
+  if (isCurrentUserBlockedByProfileOwner) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center text-center p-6">
+        <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
+        <h2 className="text-2xl font-semibold text-destructive">Erişim Engellendi</h2>
+        <p className="text-muted-foreground max-w-sm mb-6">
+          {profileUser.displayName || "Bu kullanıcı"} tarafından engellendiniz ve bu profili görüntüleyemezsiniz.
+        </p>
+        <Button asChild variant="outline">
+          <Link href="/"><ArrowLeft className="mr-2 h-4 w-4" /> Anasayfaya Dön</Link>
+        </Button>
       </div>
     );
   }
@@ -501,12 +538,11 @@ export default function UserProfilePage() {
                 <Button onClick={handleAcceptFriendRequest} disabled={performingAction} className="bg-blue-500 hover:bg-blue-600 text-white flex-1">
                     <UserCheck className="mr-2 h-4 w-4" /> İsteği Kabul Et
                 </Button>
-                 <Button variant="outline" onClick={() => { 
-                     // Implement decline request logic here if needed, for now use report/block
-                     if(relevantFriendRequest) deleteFirestoreDoc(doc(db, "friendRequests", relevantFriendRequest.id));
+                 <Button variant="destructive" onClick={async () => { 
+                     if(relevantFriendRequest) await deleteFirestoreDoc(doc(db, "friendRequests", relevantFriendRequest.id));
                      setFriendshipStatus("none");
                      setRelevantFriendRequest(null);
-                     toast({title:"İstek Reddedildi (Geçici)", description: "Arkadaşlık isteği şimdilik reddedildi."})
+                     toast({title:"İstek Reddedildi"})
                   }} disabled={performingAction} className="flex-1">Reddet</Button>
             </div>
         );
@@ -573,6 +609,7 @@ export default function UserProfilePage() {
           </div>
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
             {profileUser.displayName || "Kullanıcı Adı Yok"}
+             {profileUser.isBanned && <Badge variant="destructive" className="ml-2 align-middle">YASAKLI</Badge>}
           </CardTitle>
           {(isOwnProfile || canViewContent("onlineStatus")) && profileUser.lastSeen && (
             <div className="flex items-center text-xs text-muted-foreground mt-1">
@@ -691,7 +728,7 @@ export default function UserProfilePage() {
                     </p>
                   </CardContent>
                   <CardFooter className="pt-3">
-                    <Button asChild size="sm" className="w-full" disabled={room.participantCount != undefined && room.participantCount >= room.maxParticipants}>
+                    <Button asChild size="sm" className="w-full" disabled={(room.participantCount != undefined && room.participantCount >= room.maxParticipants) || profileUser.isBanned}>
                       <Link href={`/chat/${room.id}`}>
                         <LogIn className="mr-1.5 h-4 w-4"/> Katıl
                       </Link>
@@ -726,5 +763,3 @@ export default function UserProfilePage() {
     </div>
   );
 }
-
-    
