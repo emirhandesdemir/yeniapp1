@@ -26,7 +26,63 @@ export async function projectAssistantFlow(input: ProjectAssistantInput): Promis
 }
 
 const projectContext = `
-Sohbet Küresi Projesi Genel Bakış:
+Sohbet Küresi Uygulama Geliştirme Asistanı Bilgi Bağlamı
+
+Merhaba! Ben Sohbet Küresi uygulamasının geliştirme sürecinde sana yardımcı olmak için buradayım. Uygulamamızın genel yapısı, kullanılan teknolojiler ve temel özellikleri hakkında bilgi sahibiyim. Bana proje dosyalarının yerleri, belirli bir özelliğin nasıl implemente edildiği (genel düzeyde), hangi teknolojinin ne amaçla kullanıldığı gibi konularda sorular sorabilirsin.
+
+Genel Uygulama Amacı:
+Sohbet Küresi, kullanıcıların interaktif ve eğlenceli bir ortamda iletişim kurmasını sağlayan modern bir sosyal platformdur. Metin tabanlı sohbet odaları, direkt mesajlaşma, sesli sohbet yetenekleri, gönderi paylaşımı ve oyunlaştırma elementleri ile zengin bir kullanıcı deneyimi sunmayı hedefler. Progresif Web Uygulaması (PWA) olarak geliştirilerek, mobil cihazlarda da akıcı bir deneyim sunması amaçlanmaktadır.
+
+## Sohbet Küresi Projesi - Genel Bakış ve Teknoloji Yığını
+
+**Projenin Amacı:**
+Sohbet Küresi, kullanıcıların dinamik sohbet odaları oluşturup katılabildiği, direkt mesajlaşma (DM) yapabildiği, WebRTC tabanlı sesli sohbetler gerçekleştirebildiği, gönderi paylaşımı ve etkileşimi (beğeni, yorum) yapabildiği, kapsamlı bir sosyal etkileşim platformudur. Uygulama, kullanıcıların arkadaşlık kurmasını, topluluklar oluşturmasını ve çeşitli etkileşimler aracılığıyla sanal para (elmas) kazanıp harcamasını hedefler. PWA (Progresif Web Uygulaması) desteği ile mobil cihazlarda uygulama benzeri bir deneyim sunar.
+
+**Temel Özellikler:**
+1.  **Kullanıcı Kimlik Doğrulama:** E-posta/şifre ve Google ile güvenli giriş/kayıt.
+2.  **Sohbet Odaları:**
+    *   Kullanıcılar tarafından oluşturulabilen, isim, açıklama ve süre (uzatılabilir) tanımlanabilen odalar.
+    *   Maksimum katılımcı limiti (premium kullanıcılar için daha yüksek).
+    *   Gerçek zamanlı metin tabanlı mesajlaşma.
+    *   Çoklu katılımcılı WebRTC tabanlı sesli sohbet.
+    *   Oda içi quiz/oyun sistemi (admin tarafından yönetilen sorular, elmas ödülleri).
+    *   Oda yöneticisi tarafından oda ayarlarını (isim, açıklama, resim, oyun durumu) düzenleyebilme.
+3.  **Direkt Mesajlaşma (DM):** Kullanıcılar arasında birebir özel mesajlaşma.
+4.  **Birebir Sesli Arama:** Kullanıcılar arasında WebRTC tabanlı özel sesli arama.
+5.  **Gönderi Akışı (Feed):**
+    *   Kullanıcıların metin tabanlı gönderi paylaşabilmesi.
+    *   Gönderilere sohbet odası bağlantısı ekleyebilme.
+    *   Gönderileri beğenme ve yorum yapabilme.
+    *   Gönderileri yeniden paylaşabilme (repost).
+6.  **Arkadaşlık Sistemi:** Arkadaşlık isteği gönderme, kabul etme, reddetme ve arkadaş listesi.
+7.  **Kullanıcı Profilleri:**
+    *   Kişisel bilgiler (kullanıcı adı, bio, avatar).
+    *   Kullanıcının gönderileri ve aktif odaları (gizlilik ayarlarına bağlı).
+    *   Profil düzenleme ve gizlilik ayarları.
+8.  **Elmas Sistemi:** Uygulama içi sanal para birimi (elmas). Oda oluşturma, süre uzatma, kapasite artırma gibi işlemler için kullanılır. Oyunlardan kazanılabilir veya mağazadan satın alınabilir.
+9.  **Premium Abonelik:** Kullanıcılara ek avantajlar (ücretsiz oda oluşturma, daha yüksek oda kapasitesi vb.) sunan ücretli abonelik modeli.
+10. **Admin Paneli:** Kullanıcı, sohbet odası, oyun ayarları yönetimi ve AI tabanlı proje asistanı.
+11. **Bildirimler:** Firebase Cloud Messaging (FCM) ile anlık bildirimler (yeni mesaj, arkadaşlık isteği vb.).
+12. **PWA Desteği:** Çevrimdışı erişim, ana ekrana eklenebilme ve uygulama benzeri deneyim.
+13. **Kullanıcı Moderasyonu:** Kullanıcı şikayet etme ve engelleme sistemleri. Belirli sayıda şikayet sonrası otomatik veya admin tarafından banlama.
+
+**Kullanılan Teknolojiler ve Araçlar:**
+*   **Frontend Çatısı:** Next.js (App Router)
+*   **UI Kütüphanesi:** React
+*   **UI Bileşenleri:** ShadCN UI
+*   **Stil:** Tailwind CSS
+*   **Yapay Zeka (AI):** Genkit (Google AI Studio - Gemini 2.0 Flash modeli) - Proje asistanı ve potansiyel diğer AI özellikleri için.
+*   **Veritabanı:** Firebase Firestore (NoSQL)
+*   **Kimlik Doğrulama:** Firebase Authentication
+*   **Dosya Saklama:** Firebase Storage (kullanıcı avatarları, oda resimleri için planlanıyor)
+*   **Push Bildirimleri:** Firebase Cloud Messaging (FCM)
+*   **PWA Yapılandırması:** next-pwa (özel service worker ile)
+*   **Sesli Sohbet Teknolojisi:** WebRTC
+*   **Durum Yönetimi (State Management):** React Context API
+*   **Form Yönetimi:** React Hook Form (Zod ile şema doğrulaması)
+*   **Genel Yardımcılar:** date-fns, uuid vb.
+
+Sohbet Küresi Projesi Genel Bakış (Eski):
 Bu proje, Next.js, React, ShadCN UI bileşenleri, Tailwind CSS ve Genkit (AI için) kullanılarak geliştirilmiş bir sohbet uygulamasıdır. Firebase Firestore veritabanı olarak kullanılmaktadır.
 
 Ana Klasör Yapısı ve Amaçları:
@@ -77,13 +133,13 @@ Ana Klasör Yapısı ve Amaçları:
   - firebase.ts: Firebase SDK'nın başlatılması ve servislerin (auth, db, storage) export edilmesi.
   - utils.ts: Genel yardımcı fonksiyonlar (örn: cn, generateDmChatId).
   - firestoreUtils.ts: Firestore ile ilgili karmaşık işlemleri (örn: sohbet odası ve alt koleksiyonlarını silme) içeren fonksiyonlar.
-  - notificationUtils.ts: Push bildirimleriyle (OneSignal) ilgili fonksiyonlar (izin isteme, abone olma).
+  - notificationUtils.ts: Push bildirimleriyle (FCM) ilgili fonksiyonlar (izin isteme, abone olma).
 - src/ai: Genkit AI akışları ve yapılandırması.
   - genkit.ts: Temel Genkit AI instance'ının oluşturulması (Google AI Studio - Gemini 2.0 Flash modeli).
   - dev.ts: Geliştirme ortamında Genkit akışlarını kaydetmek için kullanılır.
   - flows: Uygulamaya özel AI akışlarının (generateEchoFlow, projectAssistantFlow) tanımlandığı dosyalar.
 - src/hooks: Özel React hook'ları (örn: useToast, useMobile).
-- src/worker: PWA (Progressive Web App) için Service Worker dosyası (OneSignal entegrasyonu içerir).
+- src/worker: PWA (Progressive Web App) için Service Worker dosyası (FCM entegrasyonu içerir).
 - public: Statik dosyalar, ikonlar, PWA manifest dosyası (manifest.json).
 - components.json: ShadCN UI yapılandırması.
 - next.config.ts: Next.js yapılandırması (PWA, resim optimizasyonu, güvenlik başlıkları, özel service worker vb. içerir).
@@ -92,16 +148,16 @@ Ana Klasör Yapısı ve Amaçları:
 - tsconfig.json: TypeScript yapılandırması.
 - src/docs/database-schema.md: Firestore veritabanı şemasının detaylı dokümantasyonu (users, chatRooms, directMessages, directCalls, friendRequests, posts, appSettings, gameQuestions koleksiyonları ve alt koleksiyonları).
 
-Temel Teknolojiler:
+Temel Teknolojiler (Eski Liste):
 - Frontend: Next.js (App Router), React, TypeScript
 - UI: ShadCN, Tailwind CSS
 - State Management: React Context API
 - AI: Genkit (Google AI Studio - Gemini 2.0 Flash)
 - Backend: Firebase (Authentication, Firestore, Storage - Storage aktif kullanılmıyor)
-- PWA & Notifications: next-pwa, OneSignal
+- PWA & Notifications: next-pwa, Firebase Cloud Messaging (FCM)
 - Sesli Sohbet: WebRTC
 
-Önemli İşlevler:
+Önemli İşlevler (Eski Liste):
 - Kullanıcı kimlik doğrulama (E-posta/şifre, Google).
 - Sohbet odaları (oluşturma, katılma, mesajlaşma, süreli odalar, admin tarafından yönetilen quiz oyunu, WebRTC ile çoklu katılımcılı sesli sohbet).
 - Direkt mesajlaşma (birebir).
