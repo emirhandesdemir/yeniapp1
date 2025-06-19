@@ -75,7 +75,7 @@ const heartVariants = {
 
 
 const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
-  const { currentUser, userData, reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
+  const { currentUser, userData: currentUserData, reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth(); // currentUserData eklendi
   const { toast } = useToast();
 
   const [optimisticHasLiked, setOptimisticHasLiked] = useState(false);
@@ -155,6 +155,9 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 
 
   const isOwnPost = currentUser?.uid === post.userId;
+  const displayAvatar = isOwnPost ? currentUserData?.photoURL : post.userAvatar;
+  const displayUsername = isOwnPost ? currentUserData?.displayName : post.username;
+  const displayAuthorIsPremium = isOwnPost ? checkUserPremium(currentUserData) : post.authorIsPremium;
 
   const handleDeletePost = useCallback(async () => {
     if (!isOwnPost) return;
@@ -170,7 +173,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   }, [isOwnPost, post.id, toast]);
 
   const handleLikePost = useCallback(async () => {
-    if (!currentUser || !userData) {
+    if (!currentUser || !currentUserData) { // currentUserData kontrolü eklendi
       toast({ title: "Giriş Gerekli", description: "Beğenmek için giriş yapmalısınız.", variant: "destructive" });
       return;
     }
@@ -203,17 +206,17 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     } finally {
       setIsLiking(false);
     }
-  }, [currentUser, userData, post.id, optimisticHasLiked, isLiking, toast]);
+  }, [currentUser, currentUserData, post.id, optimisticHasLiked, isLiking, toast]); // currentUserData bağımlılıklara eklendi
 
   const handleRepost = useCallback(async () => {
-    if (!currentUser || !userData) {
+    if (!currentUser || !currentUserData) { // currentUserData kontrolü eklendi
       toast({ title: "Giriş Gerekli", description: "Yeniden paylaşmak için giriş yapmalısınız.", variant: "destructive" });
       return;
     }
     if (isReposting) return;
 
     setIsReposting(true);
-    const currentUserIsPremium = checkUserPremium(userData);
+    const currentUserIsCurrentlyPremium = checkUserPremium(currentUserData);
 
     const postToRepost = post.isRepost ? {
       id: post.originalPostId,
@@ -236,9 +239,9 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     try {
       await addDoc(collection(db, "posts"), {
         userId: currentUser.uid,
-        username: userData.displayName,
-        userAvatar: userData.photoURL,
-        authorIsPremium: currentUserIsPremium,
+        username: currentUserData.displayName, // currentUserData kullanıldı
+        userAvatar: currentUserData.photoURL,   // currentUserData kullanıldı
+        authorIsPremium: currentUserIsCurrentlyPremium,
         createdAt: serverTimestamp(),
         isRepost: true,
         originalPostId: postToRepost.id,
@@ -261,7 +264,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     } finally {
       setIsReposting(false);
     }
-  }, [currentUser, userData, isReposting, post, toast]);
+  }, [currentUser, currentUserData, isReposting, post, toast]); // currentUserData bağımlılıklara eklendi
 
 
   const handleCommentAdded = useCallback(() => {
@@ -286,27 +289,32 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
         await unblockUser(post.userId);
         setIsPostAuthorBlocked(false);
     } else {
-        await blockUser(post.userId);
+        await blockUser(post.userId, post.username, post.userAvatar); // username ve avatar eklendi
         setIsPostAuthorBlocked(true);
     }
     setIsLiking(false);
   };
 
-  const renderOriginalPostContent = useCallback((originalPost: Partial<Post>) => (
+  const renderOriginalPostContent = useCallback((originalPost: Partial<Post>) => {
+    const originalAuthorAvatar = (originalPost.userId === currentUser?.uid) ? currentUserData?.photoURL : originalPost.userAvatar;
+    const originalAuthorName = (originalPost.userId === currentUser?.uid) ? currentUserData?.displayName : originalPost.username;
+    const originalAuthorIsPrem = (originalPost.userId === currentUser?.uid) ? checkUserPremium(currentUserData) : originalPost.authorIsPremium;
+
+    return (
     <div className="mt-2 mb-1 p-3 border border-border/30 bg-muted/20 dark:bg-muted/15 shadow-inner rounded-lg">
       <header className="flex flex-row items-start gap-2.5 pb-2">
         <Link href={`/profile/${originalPost.userId}`} className="flex-shrink-0 relative">
             <Avatar className="h-8 w-8">
-            <AvatarImage src={originalPost.userAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
-            <AvatarFallback>{getAvatarFallbackText(originalPost.username)}</AvatarFallback>
+            <AvatarImage src={originalAuthorAvatar || `https://placehold.co/32x32.png`} data-ai-hint="original user avatar repost" />
+            <AvatarFallback>{getAvatarFallbackText(originalAuthorName)}</AvatarFallback>
             </Avatar>
-            {originalPost.authorIsPremium && (
+            {originalAuthorIsPrem && (
                 <Star className="absolute -bottom-1 -right-1 h-3 w-3 text-yellow-400 fill-yellow-400 bg-muted/70 p-px rounded-full shadow" />
             )}
         </Link>
         <div className="flex-1">
             <Link href={`/profile/${originalPost.userId}`}>
-                <p className="font-semibold text-xs text-foreground/80 hover:underline">{originalPost.username || "Bilinmeyen Kullanıcı"}</p>
+                <p className="font-semibold text-xs text-foreground/80 hover:underline">{originalAuthorName || "Bilinmeyen Kullanıcı"}</p>
             </Link>
           <p className="text-[10px] text-muted-foreground/70">{formattedDate(originalPost.createdAt)}</p>
         </div>
@@ -327,7 +335,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
         )}
       </div>
     </div>
-  ), [getAvatarFallbackText, formattedDate]);
+  )}, [getAvatarFallbackText, formattedDate, currentUser?.uid, currentUserData]);
 
 
   return (
@@ -335,10 +343,10 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
       <header className="flex flex-row items-start gap-3 p-3 pb-2">
         <Link href={`/profile/${post.userId}`} className="flex-shrink-0 relative">
             <Avatar className="h-10 w-10">
-            <AvatarImage src={post.userAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
-            <AvatarFallback>{getAvatarFallbackText(post.username)}</AvatarFallback>
+            <AvatarImage src={displayAvatar || `https://placehold.co/40x40.png`} data-ai-hint="user avatar post" />
+            <AvatarFallback>{getAvatarFallbackText(displayUsername)}</AvatarFallback>
             </Avatar>
-            {post.authorIsPremium && (
+            {displayAuthorIsPremium && (
                 <Star className="absolute -bottom-1 -right-1 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />
             )}
         </Link>
@@ -346,7 +354,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
           <div className="flex items-center justify-between">
             <div>
                 <Link href={`/profile/${post.userId}`}>
-                    <p className="font-semibold text-sm text-foreground hover:underline">{post.username || "Bilinmeyen Kullanıcı"}</p>
+                    <p className="font-semibold text-sm text-foreground hover:underline">{displayUsername || "Bilinmeyen Kullanıcı"}</p>
                 </Link>
               <p className="text-xs text-muted-foreground">{formattedDate(post.createdAt)}</p>
             </div>
@@ -383,7 +391,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
           <>
             <p className="text-sm text-muted-foreground mb-1.5">
               <Link href={`/profile/${post.userId}`} className="font-medium hover:underline">
-                {post.username}
+                {displayUsername}
               </Link>
               {' '} yeniden paylaştı:
             </p>

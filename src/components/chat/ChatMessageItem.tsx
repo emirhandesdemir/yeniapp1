@@ -9,7 +9,7 @@ import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, checkUserPremium } from '@/contexts/AuthContext'; // checkUserPremium eklendi
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,9 +51,9 @@ interface ChatMessageItemProps {
   onDmAction: (targetUserId: string | undefined | null) => void;
   onViewProfileAction: (targetUserId: string | undefined | null) => void;
   getAvatarFallbackText: (name?: string | null) => string;
-  currentUserPhotoURL?: string | null;
-  currentUserDisplayName?: string | null;
-  currentUserIsPremium?: boolean;
+  currentUserPhotoURL?: string | null; // Bu prop artık AuthContext'ten alınacak
+  currentUserDisplayName?: string | null; // Bu prop artık AuthContext'ten alınacak
+  currentUserIsPremium?: boolean; // Bu prop artık AuthContext'ten alınacak
   isCurrentUserRoomCreator: boolean;
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
 }
@@ -73,13 +73,13 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   onDmAction,
   onViewProfileAction,
   getAvatarFallbackText,
-  currentUserPhotoURL,
-  currentUserDisplayName,
-  currentUserIsPremium,
+  // currentUserPhotoURL, // Kaldırıldı
+  // currentUserDisplayName, // Kaldırıldı
+  // currentUserIsPremium, // Kaldırıldı
   isCurrentUserRoomCreator,
   onKickParticipantFromTextChat,
 }) => {
-  const { reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
+  const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData } = useAuth(); // currentUserData eklendi
   const [isTargetUserBlocked, setIsTargetUserBlocked] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -106,7 +106,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         await unblockUser(popoverTargetUser.uid);
         setIsTargetUserBlocked(false);
     } else {
-        await blockUser(popoverTargetUser.uid);
+        await blockUser(popoverTargetUser.uid, popoverTargetUser.displayName, popoverTargetUser.photoURL); // displayName ve photoURL eklendi
         setIsTargetUserBlocked(true);
     }
     setActionLoading(false);
@@ -147,6 +147,9 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     );
   }
 
+  const currentUsersActualPhoto = currentUserData?.photoURL;
+  const currentUsersActualDisplayName = currentUserData?.displayName;
+  const currentUsersActualIsPremium = checkUserPremium(currentUserData);
 
   const isMentioned = msg.mentionedUserIds && msg.mentionedUserIds.includes(currentUserUid || '');
 
@@ -172,6 +175,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       {!msg.isOwn && (
         <Popover open={popoverOpenForUserId === msg.senderId} onOpenChange={(isOpen) => {
             if (!isOpen) setPopoverOpenForUserId(null);
+            else if (msg.senderId !== currentUserUid) onOpenUserInfoPopover(msg.senderId); // Popover açıldığında kullanıcı bilgisi yükle
         }}>
             <PopoverTrigger asChild>
                 <Link href={`/profile/${msg.senderId}`} className="relative self-end mb-1 cursor-pointer">
@@ -258,7 +262,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
           )}
           <div className={cn(`p-2.5 sm:p-3 shadow-md`, bubbleClasses)}>
               <p className={cn(textClasses, "allow-text-selection")}>
-                {renderMessageWithMentions(msg.text, currentUserDisplayName)}
+                {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
               </p>
           </div>
           <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
@@ -268,10 +272,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       {msg.isOwn && (
         <div className="relative self-end mb-1 cursor-default">
             <Avatar className="h-7 w-7">
-                <AvatarImage src={currentUserPhotoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-                <AvatarFallback>{getAvatarFallbackText(currentUserDisplayName)}</AvatarFallback>
+                <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
+                <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
             </Avatar>
-            {currentUserIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+            {currentUsersActualIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
         </div>
       )}
        <AlertDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
@@ -299,3 +303,4 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
+

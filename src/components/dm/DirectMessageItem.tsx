@@ -4,7 +4,8 @@ import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
-import { Star } from 'lucide-react'; // Star eklendi
+import { Star } from 'lucide-react'; 
+import { useAuth, checkUserPremium } from '@/contexts/AuthContext'; // AuthContext import edildi
 
 interface DirectMessage {
   id: string;
@@ -12,7 +13,7 @@ interface DirectMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; // Eklendi
+  senderIsPremium?: boolean; 
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -20,19 +21,25 @@ interface DirectMessage {
 
 interface DirectMessageItemProps {
   msg: DirectMessage;
-  currentUserPhotoURL?: string | null;
-  currentUserDisplayName?: string | null;
-  currentUserIsPremium?: boolean; // Eklendi
+  // currentUserPhotoURL?: string | null; // Kaldırıldı
+  // currentUserDisplayName?: string | null; // Kaldırıldı
+  // currentUserIsPremium?: boolean; // Kaldırıldı
   getAvatarFallbackText: (name?: string | null) => string;
 }
 
 const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   msg,
-  currentUserPhotoURL,
-  currentUserDisplayName,
-  currentUserIsPremium,
+  // currentUserPhotoURL, // Kaldırıldı
+  // currentUserDisplayName, // Kaldırıldı
+  // currentUserIsPremium, // Kaldırıldı
   getAvatarFallbackText,
 }) => {
+  const { userData: currentUserData } = useAuth(); // currentUserData, AuthContext'ten alındı
+
+  const currentUsersActualPhoto = currentUserData?.photoURL;
+  const currentUsersActualDisplayName = currentUserData?.displayName;
+  const currentUsersActualIsPremium = checkUserPremium(currentUserData);
+
   return (
     <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
       {!msg.isOwn && (
@@ -61,10 +68,10 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       {msg.isOwn && (
         <div className="relative self-end mb-1 cursor-default">
             <Avatar className="h-7 w-7">
-                <AvatarImage src={currentUserPhotoURL || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
-                <AvatarFallback>{getAvatarFallbackText(currentUserDisplayName)}</AvatarFallback>
+                <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
+                <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
             </Avatar>
-            {currentUserIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+            {currentUsersActualIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
         </div>
       )}
     </div>
