@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone, Star } from "lucide-react"; // Star eklendi
-import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { UserPlus, UserCheck, Search, MessageCircle, Trash2, Loader2, Users, AlertTriangle, Send, BellRing, Phone, Star, MoreVertical, Flag, Ban, UserX } from "lucide-react";
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -30,11 +30,28 @@ import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { generateDmChatId } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 
 interface Friend extends UserData {
   addedAt?: Timestamp;
-  isPremium?: boolean; // Eklendi
+  isPremium?: boolean; 
 }
 
 interface SearchResultUser extends UserData {
@@ -42,11 +59,12 @@ interface SearchResultUser extends UserData {
   isRequestSent?: boolean;
   isRequestReceived?: boolean;
   outgoingRequestId?: string | null;
-  isPremium?: boolean; // Eklendi
+  isPremium?: boolean; 
+  isBlockedByCurrentUser?: boolean;
 }
 
 export default function FriendsPage() {
-  const { currentUser, userData, isUserLoading: isAuthLoading, isCurrentUserPremium } = useAuth();
+  const { currentUser, userData, isUserLoading: isAuthLoading, isCurrentUserPremium, reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -57,6 +75,11 @@ export default function FriendsPage() {
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [performingAction, setPerformingAction] = useState<Record<string, boolean>>({});
+  
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportingUser, setReportingUser] = useState<SearchResultUser | Friend | null>(null);
+
 
   useEffect(() => {
     document.title = 'Arkadaşlarım - HiweWalk';
@@ -83,23 +106,22 @@ export default function FriendsPage() {
             return {
                 uid: friendDoc.id,
                 ...profile,
-                isPremium: checkUserPremium(profile), // isPremium eklendi
+                isPremium: checkUserPremium(profile), 
                 addedAt: friendData.addedAt
             } as Friend;
             }
         } catch (error) {
             console.error("Error fetching profile for friend:", friendDoc.id, error);
         }
-        // Fallback if full profile fetch fails
         return {
           uid: friendDoc.id,
           displayName: friendData.displayName || "Bilinmeyen Kullanıcı",
           photoURL: friendData.photoURL || null,
-          email: friendData.email || null, // Bu alan normalde friendData'da olmaz, ancak UserData tipi için ekliyoruz.
-          diamonds: friendData.diamonds || 0, // Bu da friendData'da olmayabilir.
-          role: friendData.role || 'user', // Bu da.
-          createdAt: friendData.addedAt || Timestamp.now(), // createdAt yerine addedAt kullanalım.
-          isPremium: friendData.isPremium || false, // Eklendi
+          email: friendData.email || null, 
+          diamonds: friendData.diamonds || 0, 
+          role: friendData.role || 'user', 
+          createdAt: friendData.addedAt || Timestamp.now(), 
+          isPremium: friendData.isPremium || false, 
           addedAt: friendData.addedAt
         } as Friend;
       });
@@ -146,8 +168,10 @@ export default function FriendsPage() {
       const processedResults: SearchResultUser[] = [];
 
       for (const user of rawResults) {
-        let processedUser: SearchResultUser = { ...user, isPremium: checkUserPremium(user) }; // isPremium eklendi
+        let processedUser: SearchResultUser = { ...user, isPremium: checkUserPremium(user) }; 
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
+        processedUser.isBlockedByCurrentUser = await checkIfUserBlocked(user.uid);
+
 
         if (!processedUser.isFriend) {
           const outgoingQuery = query(collection(db, "friendRequests"),
@@ -183,14 +207,14 @@ export default function FriendsPage() {
     } finally {
       setLoadingSearch(false);
     }
-  }, [searchTerm, currentUser, myFriends, toast]);
+  }, [searchTerm, currentUser, myFriends, toast, checkIfUserBlocked]);
 
   const setActionLoading = useCallback((id: string, isLoading: boolean) => {
     setPerformingAction(prev => ({ ...prev, [id]: isLoading }));
   }, []);
 
   const handleSendFriendRequest = useCallback(async (targetUser: SearchResultUser) => {
-    if (!currentUser || !userData || !targetUser.uid || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived) return;
+    if (!currentUser || !userData || !targetUser.uid || targetUser.isFriend || targetUser.isRequestSent || targetUser.isRequestReceived || targetUser.isBlockedByCurrentUser) return;
     setActionLoading(targetUser.uid, true);
     const currentUserIsCurrentlyPremium = isCurrentUserPremium();
     try {
@@ -198,7 +222,7 @@ export default function FriendsPage() {
         fromUserId: currentUser.uid,
         fromUsername: userData.displayName,
         fromAvatarUrl: userData.photoURL,
-        fromUserIsPremium: currentUserIsCurrentlyPremium, // Eklendi
+        fromUserIsPremium: currentUserIsCurrentlyPremium, 
         toUserId: targetUser.uid,
         toUsername: targetUser.displayName,
         toAvatarUrl: targetUser.photoURL,
@@ -297,11 +321,11 @@ export default function FriendsPage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
-        callerIsPremium: currentUserIsCurrentlyPremium, // Eklendi
+        callerIsPremium: currentUserIsCurrentlyPremium, 
         calleeId: targetFriend.uid,
         calleeName: targetFriend.displayName,
         calleeAvatar: targetFriend.photoURL,
-        calleeIsPremium: targetFriend.isPremium, // Eklendi
+        calleeIsPremium: targetFriend.isPremium, 
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -315,6 +339,33 @@ export default function FriendsPage() {
       setActionLoading(`call-${targetFriend.uid}`, false);
     }
   }, [currentUser, userData, router, toast, setActionLoading, isCurrentUserPremium]);
+
+  const handleReportUserAction = async () => {
+    if (!reportingUser) return;
+    setIsReportDialogOpen(false);
+    await reportUser(reportingUser.uid, reportReason.trim() || "Belirtilmedi");
+    setReportReason("");
+    setReportingUser(null);
+  };
+
+  const handleBlockOrUnblockUser = async (targetUser: SearchResultUser | Friend) => {
+    if (!currentUser || !targetUser) return;
+    setActionLoading(`block-${targetUser.uid}`, true);
+    const currentlyBlocked = 'isBlockedByCurrentUser' in targetUser ? targetUser.isBlockedByCurrentUser : await checkIfUserBlocked(targetUser.uid);
+
+    if (currentlyBlocked) {
+        await unblockUser(targetUser.uid);
+        if ('isBlockedByCurrentUser' in targetUser) {
+            setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isBlockedByCurrentUser: false} : u));
+        }
+    } else {
+        await blockUser(targetUser.uid);
+         if ('isBlockedByCurrentUser' in targetUser) {
+            setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isBlockedByCurrentUser: true, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null} : u));
+        }
+    }
+    setActionLoading(`block-${targetUser.uid}`, false);
+  };
 
   const getAvatarFallback = useCallback((name?: string | null) => {
     return name ? name.substring(0, 2).toUpperCase() : "??";
@@ -395,16 +446,25 @@ export default function FriendsPage() {
                              <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                           </Link>
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 sm:h-9 sm:w-9 hover:text-destructive"
-                          aria-label="Arkadaşlıktan Çıkar"
-                          onClick={(e) => { e.stopPropagation(); handleRemoveFriend(friend.uid, friend.displayName || 'bu arkadaşı')}}
-                          disabled={performingAction[friend.uid]}
-                        >
-                          {performingAction[friend.uid] ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Trash2 className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground hover:text-destructive" />}
-                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground">
+                                <MoreVertical className="h-4 w-4 sm:h-5 sm:w-5" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => { setReportingUser(friend); setIsReportDialogOpen(true); }}>
+                                    <Flag className="mr-2 h-4 w-4 text-orange-500" /> Şikayet Et
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleBlockOrUnblockUser(friend)}>
+                                    <Ban className="mr-2 h-4 w-4" /> Engelle
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleRemoveFriend(friend.uid, friend.displayName || 'bu arkadaşı')} className="text-destructive focus:text-destructive">
+                                    <UserX className="mr-2 h-4 w-4" /> Arkadaşlıktan Çıkar
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </li>
                   ))}
@@ -449,7 +509,11 @@ export default function FriendsPage() {
                            <p className="font-medium text-sm sm:text-base hover:underline">{user.displayName || "İsimsiz"}</p>
                         </Link>
                         <div className="flex-shrink-0">
-                            {user.isFriend ? (
+                            {user.isBlockedByCurrentUser ? (
+                                <Button variant="destructive" size="sm" className="text-xs sm:text-sm px-2 py-1" onClick={() => handleBlockOrUnblockUser(user)} disabled={performingAction[`block-${user.uid}`]}>
+                                    {performingAction[`block-${user.uid}`] ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <Ban className="mr-1.5 h-3.5 w-3.5"/>} Engeli Kaldır
+                                </Button>
+                            ) : user.isFriend ? (
                                 <Button variant="outline" size="sm" className="text-xs sm:text-sm px-2 py-1" disabled>
                                     <UserCheck className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-500" /> Arkadaş
                                 </Button>
@@ -503,6 +567,26 @@ export default function FriendsPage() {
           </Tabs>
         </CardContent>
       </Card>
+      <AlertDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Kullanıcıyı Şikayet Et</AlertDialogTitle>
+            <AlertDialogDescription>
+                {reportingUser?.displayName || "Bu kullanıcıyı"} şikayet etmek için bir neden belirtebilirsiniz (isteğe bağlı). Şikayetiniz incelenecektir.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Şikayet nedeni (isteğe bağlı)..."
+                className="w-full p-2 border rounded-md min-h-[80px] text-sm bg-background"
+            />
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setReportReason(""); setReportingUser(null); }}>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReportUserAction} className="bg-destructive hover:bg-destructive/90">Şikayet Et</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

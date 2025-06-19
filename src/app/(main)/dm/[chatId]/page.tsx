@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star } from "lucide-react"; // Star eklendi
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag } from "lucide-react"; 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -24,7 +24,7 @@ import {
   getDocs,
   setDoc
 } from "firebase/firestore";
-import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; 
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId } from "@/lib/utils";
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
@@ -35,6 +35,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 
 interface DirectMessage {
   id: string;
@@ -42,7 +53,7 @@ interface DirectMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; // Eklendi
+  senderIsPremium?: boolean; 
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -53,7 +64,7 @@ interface DmPartnerDetails {
   displayName: string | null;
   photoURL: string | null;
   email?: string | null;
-  isPremium?: boolean; // Eklendi
+  isPremium?: boolean; 
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500;
@@ -69,10 +80,13 @@ export default function DirectMessagePage() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { currentUser, userData, isUserLoading, reportUser, blockUser, isCurrentUserPremium } = useAuth();
+  const { currentUser, userData, isUserLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isPartnerBlocked, setIsPartnerBlocked] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
 
 
   const getAvatarFallbackText = useCallback((name?: string | null) => {
@@ -105,9 +119,13 @@ export default function DirectMessagePage() {
                 displayName: partnerData.displayName,
                 photoURL: partnerData.photoURL,
                 email: partnerData.email,
-                isPremium: checkUserPremium(partnerData), // isPremium eklendi
+                isPremium: checkUserPremium(partnerData), 
                 });
                 document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
+                
+                const blocked = await checkIfUserBlocked(partnerUid);
+                setIsPartnerBlocked(blocked);
+
             } else {
                 toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
                 router.push("/friends");
@@ -120,7 +138,7 @@ export default function DirectMessagePage() {
         }
     };
     fetchPartnerDetails();
-  }, [chatId, currentUser?.uid, toast, router]);
+  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked]);
 
 
   useEffect(() => {
@@ -137,7 +155,7 @@ export default function DirectMessagePage() {
           senderId: data.senderId,
           senderName: data.senderName,
           senderAvatar: data.senderAvatar,
-          senderIsPremium: data.senderIsPremium || false, // Eklendi
+          senderIsPremium: data.senderIsPremium || false, 
           timestamp: data.timestamp,
         });
       });
@@ -187,7 +205,12 @@ export default function DirectMessagePage() {
 
   const handleSendMessage = useCallback(async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) return;
+    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading || isPartnerBlocked) {
+        if(isPartnerBlocked) {
+            toast({ title: "Engellendi", description: "Bu kullanıcıyı engellediğiniz için mesaj gönderemezsiniz.", variant: "destructive"});
+        }
+        return;
+    }
 
     if (isSending) return;
 
@@ -212,19 +235,18 @@ export default function DirectMessagePage() {
             [currentUser.uid]: {
               displayName: userData.displayName,
               photoURL: userData.photoURL,
-              isPremium: userIsCurrentlyPremium, // Eklendi
+              isPremium: userIsCurrentlyPremium, 
             },
             [dmPartnerDetails.uid]: {
               displayName: dmPartnerDetails.displayName,
               photoURL: dmPartnerDetails.photoURL,
-              isPremium: dmPartnerDetails.isPremium, // Eklendi
+              isPremium: dmPartnerDetails.isPremium, 
             },
           },
           createdAt: serverTimestamp(),
           ...messageDataForParentDoc
         });
       } else {
-         // ParticipantInfo'yu da güncelleyebiliriz, özellikle premium durumu değişmişse
          const existingData = dmChatDocSnap.data();
          const updatedParticipantInfo = {
             ...(existingData?.participantInfo || {}),
@@ -247,7 +269,7 @@ export default function DirectMessagePage() {
         senderId: currentUser.uid,
         senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL,
-        senderIsPremium: userIsCurrentlyPremium, // Eklendi
+        senderIsPremium: userIsCurrentlyPremium, 
         timestamp: serverTimestamp(),
       });
       setNewMessage("");
@@ -257,7 +279,7 @@ export default function DirectMessagePage() {
     } finally {
       setIsSending(false);
     }
-  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast, isCurrentUserPremium]);
+  },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast, isCurrentUserPremium, isPartnerBlocked]);
 
   const handleVoiceCall = useCallback(async () => {
     if (!currentUser || !userData || !dmPartnerDetails) {
@@ -273,11 +295,11 @@ export default function DirectMessagePage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
-        callerIsPremium: currentUserIsCurrentlyPremium, // Eklendi
+        callerIsPremium: currentUserIsCurrentlyPremium, 
         calleeId: dmPartnerDetails.uid,
         calleeName: dmPartnerDetails.displayName,
         calleeAvatar: dmPartnerDetails.photoURL,
-        calleeIsPremium: dmPartnerDetails.isPremium, // Eklendi
+        calleeIsPremium: dmPartnerDetails.isPremium, 
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -297,17 +319,25 @@ export default function DirectMessagePage() {
     });
   }, [dmPartnerDetails, toast]);
 
-  const handleReportUserAction = useCallback(async () => {
+  const handleReportUserConfirmation = async () => {
     if (!currentUser || !dmPartnerDetails) return;
-    if (!confirm(`${dmPartnerDetails.displayName || 'Bu kullanıcıyı'} şikayet etmek istediğinizden emin misiniz?`)) return;
-    await reportUser(dmPartnerDetails.uid, `DM sohbetinden (${chatId}) şikayet`);
-  }, [currentUser, dmPartnerDetails, reportUser, chatId]);
+    setIsReportDialogOpen(false);
+    await reportUser(dmPartnerDetails.uid, reportReason.trim() || `DM sohbetinden (${chatId}) şikayet`);
+    setReportReason("");
+  };
 
-  const handleBlockUserAction = useCallback(async () => {
+  const handleBlockOrUnblockUser = async () => {
     if (!currentUser || !dmPartnerDetails) return;
-     if (!confirm(`${dmPartnerDetails.displayName || 'Bu kullanıcıyı'} engellemek istediğinizden emin misiniz? Engelleme işlemi sonrası bu kullanıcıyla etkileşimleriniz kısıtlanacaktır.`)) return;
-    await blockUser(dmPartnerDetails.uid);
-  }, [currentUser, dmPartnerDetails, blockUser]);
+    setIsUserLoading(true);
+    if (isPartnerBlocked) {
+        await unblockUser(dmPartnerDetails.uid);
+        setIsPartnerBlocked(false);
+    } else {
+        await blockUser(dmPartnerDetails.uid);
+        setIsPartnerBlocked(true);
+    }
+    setIsUserLoading(false);
+  };
 
 
   if (loadingDmPartner || !dmPartnerDetails || isUserLoading) {
@@ -359,13 +389,17 @@ export default function DirectMessagePage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleReportUserAction}>
-                <ShieldAlert className="mr-2 h-4 w-4 text-orange-500" />
+              <DropdownMenuItem onClick={() => router.push(`/profile/${dmPartnerDetails.uid}`)}>
+                 <UserCircle className="mr-2 h-4 w-4"/> Profili Görüntüle
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)}>
+                <Flag className="mr-2 h-4 w-4 text-orange-500" />
                 Kullanıcıyı Şikayet Et
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleBlockUserAction} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+              <DropdownMenuItem onClick={handleBlockOrUnblockUser} className={isPartnerBlocked ? "text-green-600 focus:text-green-700 focus:bg-green-500/10" : "text-destructive focus:text-destructive focus:bg-destructive/10"}>
                 <Ban className="mr-2 h-4 w-4" />
-                Kullanıcıyı Engelle
+                {isPartnerBlocked ? "Engeli Kaldır" : "Kullanıcıyı Engelle"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -403,30 +437,50 @@ export default function DirectMessagePage() {
 
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlocked} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
             <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
           <Input
-            placeholder="Mesajınızı yazın..."
+            placeholder={isPartnerBlocked ? "Bu kullanıcı engellendi" : "Mesajınızı yazın..."}
             value={newMessage}
             onChange={handleNewMessageInputChange}
             className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
             autoComplete="off"
-            disabled={isSending || isUserLoading}
+            disabled={isSending || isUserLoading || isPartnerBlocked}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlocked} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
               <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
-            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={isSending || !newMessage.trim() || isUserLoading}>
+            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlocked}>
               {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               <span className="sr-only">Gönder</span>
             </Button>
           </div>
         </div>
       </form>
+      <AlertDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Kullanıcıyı Şikayet Et</AlertDialogTitle>
+            <AlertDialogDescription>
+                {dmPartnerDetails?.displayName || "Bu kullanıcıyı"} şikayet etmek için bir neden belirtebilirsiniz (isteğe bağlı). Şikayetiniz incelenecektir.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Şikayet nedeni (isteğe bağlı)..."
+                className="w-full p-2 border rounded-md min-h-[80px] text-sm bg-background"
+            />
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setReportReason("")}>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReportUserConfirmation} className="bg-destructive hover:bg-destructive/90">Şikayet Et</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

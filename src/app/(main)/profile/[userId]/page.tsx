@@ -8,7 +8,7 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings, Gem, Users } from "lucide-react"; // Added Users icon
+import { Loader2, Mail, MessageSquare, UserPlus, UserCheck, Trash2, Send, LogIn, ShieldQuestion, ShieldCheck, ShieldAlert, EyeOff, Clock, Star, Edit3, Settings, Gem, Users, Ban, MoreVertical, Flag } from "lucide-react";
 import { useAuth, type UserData, type FriendRequest, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
@@ -27,11 +27,32 @@ import {
   Timestamp,
   writeBatch,
   getDocs,
+  updateDoc,
+  runTransaction,
 } from "firebase/firestore";
 import PostCard, { type Post } from "@/components/feed/PostCard";
 import { generateDmChatId } from "@/lib/utils";
-import { isPast, formatDistanceToNow } from "date-fns";
-import { tr } from "date-fns/locale";
+import { isPast, formatDistanceToNow, differenceInMinutes } from "date-fns";
+import { tr } from 'date-fns/locale';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 
 interface PublicProfileChatRoom {
   id: string;
@@ -41,12 +62,14 @@ interface PublicProfileChatRoom {
   expiresAt: Timestamp;
 }
 
+const ACTIVE_THRESHOLD_MINUTES = 5; // 5 dakika içinde aktifse "Aktif" sayılır
+
 export default function UserProfilePage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.userId as string;
 
-  const { currentUser, userData: currentUserData, isUserLoading: isAuthLoading } = useAuth();
+  const { currentUser, userData: currentUserData, isUserLoading: isAuthLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
   const { toast } = useToast();
 
   const [profileUser, setProfileUser] = useState<UserData | null>(null);
@@ -60,6 +83,11 @@ export default function UserProfilePage() {
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
+  const [isBlockedByCurrentUser, setIsBlockedByCurrentUser] = useState(false);
+
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+
 
   const isOwnProfile = currentUser?.uid === userId;
 
@@ -76,6 +104,31 @@ export default function UserProfilePage() {
                 fetchedUser.isPremium = checkUserPremium(fetchedUser);
                 setProfileUser(fetchedUser);
                 document.title = `${fetchedUser.displayName || 'Kullanıcı'} Profili - HiweWalk`;
+
+                if (currentUser && !isOwnProfile) {
+                    const blocked = await checkIfUserBlocked(userId);
+                    setIsBlockedByCurrentUser(blocked);
+                }
+
+                // Increment profile view count if not own profile and not already viewed in this session (simple session check)
+                if (!isOwnProfile) {
+                    const viewedProfiles = JSON.parse(sessionStorage.getItem('viewedProfiles') || '{}');
+                    if (!viewedProfiles[userId]) {
+                        await runTransaction(db, async (transaction) => {
+                            const userRef = doc(db, "users", userId);
+                            const sfDoc = await transaction.get(userRef);
+                            if (!sfDoc.exists()) {
+                                throw "Kullanıcı bulunamadı!";
+                            }
+                            const newViewCount = (sfDoc.data().profileViewCount || 0) + 1;
+                            transaction.update(userRef, { profileViewCount: newViewCount });
+                        });
+                        viewedProfiles[userId] = true;
+                        sessionStorage.setItem('viewedProfiles', JSON.stringify(viewedProfiles));
+                        setProfileUser(prev => prev ? { ...prev, profileViewCount: (prev.profileViewCount || 0) + 1 } : null);
+                    }
+                }
+
             } else {
                 setProfileUser(null);
                 toast({ title: "Hata", description: "Kullanıcı bulunamadı.", variant: "destructive" });
@@ -89,7 +142,7 @@ export default function UserProfilePage() {
         }
     };
     fetchProfileUser();
-  }, [userId, router, toast]);
+  }, [userId, router, toast, isOwnProfile, currentUser, checkIfUserBlocked]);
 
   useEffect(() => {
     if (!currentUser || !profileUser || isOwnProfile) {
@@ -98,7 +151,7 @@ export default function UserProfilePage() {
     }
 
     const checkStatus = async () => {
-      setPerformingAction(true); // To prevent button clicks while status is being checked
+      setPerformingAction(true); 
       try {
         const friendDocRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid);
         const friendDocSnap = await getDoc(friendDocRef);
@@ -146,14 +199,19 @@ export default function UserProfilePage() {
     checkStatus();
   }, [currentUser, profileUser, isOwnProfile]);
 
-  const canViewContent = useCallback((contentType: "posts" | "rooms") => {
+  const canViewContent = useCallback((contentType: "posts" | "rooms" | "profileViewCount" | "onlineStatus") => {
     if (!profileUser) return false; 
     if (isOwnProfile) return true; 
 
     const privacySettings = profileUser.privacySettings;
-    const key = contentType === "posts" ? "postsVisibleToFriendsOnly" : "activeRoomsVisibleToFriendsOnly";
+    let key: keyof PrivacySettings | undefined;
+
+    if (contentType === "posts") key = "postsVisibleToFriendsOnly";
+    else if (contentType === "rooms") key = "activeRoomsVisibleToFriendsOnly";
+    else if (contentType === "profileViewCount") key = "showProfileViewCount";
+    else if (contentType === "onlineStatus") key = "showOnlineStatus";
     
-    if (!privacySettings || privacySettings[key] === undefined || privacySettings[key] === false) {
+    if (!key || !privacySettings || privacySettings[key] === undefined || privacySettings[key] === false) {
       return true; 
     }
     return friendshipStatus === "friends";
@@ -326,9 +384,40 @@ export default function UserProfilePage() {
     router.push(`/dm/${dmId}`);
   };
 
+  const handleReportUserAction = async () => {
+    if (!currentUser || !profileUser) return;
+    setIsReportDialogOpen(false); // Close the reason dialog
+    await reportUser(profileUser.uid, reportReason.trim() || "Belirtilmedi");
+    setReportReason(""); // Reset reason
+  };
+
+  const handleBlockOrUnblockUser = async () => {
+    if (!currentUser || !profileUser) return;
+    setPerformingAction(true);
+    if (isBlockedByCurrentUser) {
+        await unblockUser(profileUser.uid);
+        setIsBlockedByCurrentUser(false);
+    } else {
+        await blockUser(profileUser.uid);
+        setIsBlockedByCurrentUser(true);
+    }
+    setPerformingAction(false);
+  };
+
+
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     return "PN";
+  };
+
+  const formatLastSeen = (timestamp: Timestamp | null | undefined): string => {
+    if (!timestamp) return "Bilinmiyor";
+    const lastSeenDate = timestamp.toDate();
+    const now = new Date();
+    const diffMins = differenceInMinutes(now, lastSeenDate);
+
+    if (diffMins < ACTIVE_THRESHOLD_MINUTES) return "Aktif";
+    return formatDistanceToNow(lastSeenDate, { addSuffix: true, locale: tr });
   };
 
   if (loadingProfile || isAuthLoading) {
@@ -354,6 +443,14 @@ export default function UserProfilePage() {
   const renderFriendshipActionButton = () => {
     if (isOwnProfile || !currentUser || !currentUserData) return null;
 
+    if (isBlockedByCurrentUser) {
+        return (
+            <Button variant="destructive" onClick={handleBlockOrUnblockUser} disabled={performingAction} className="w-full">
+                <Ban className="mr-2 h-4 w-4" /> Engeli Kaldır
+            </Button>
+        );
+    }
+
     switch (friendshipStatus) {
       case "friends":
         return (
@@ -361,34 +458,95 @@ export default function UserProfilePage() {
             <Button onClick={handleDmAction} disabled={performingAction} className="bg-green-500 hover:bg-green-600 text-white flex-1">
               <MessageSquare className="mr-2 h-4 w-4" /> DM Gönder
             </Button>
-            <Button variant="outline" onClick={handleRemoveFriend} disabled={performingAction} className="text-destructive border-destructive hover:bg-destructive/10 flex-1">
-              <Trash2 className="mr-2 h-4 w-4" /> Arkadaşlıktan Çıkar
-            </Button>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="flex-1" disabled={performingAction}><MoreVertical className="h-4 w-4"/></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleRemoveFriend} className="text-destructive focus:text-destructive">
+                        <UserX className="mr-2 h-4 w-4" /> Arkadaşlıktan Çıkar
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)}>
+                        <Flag className="mr-2 h-4 w-4 text-orange-500" /> Şikayet Et
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleBlockOrUnblockUser}>
+                        <Ban className="mr-2 h-4 w-4" /> Engelle
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       case "request_sent":
-        return <Button variant="outline" onClick={handleCancelOutgoingRequest} disabled={performingAction} className="w-full">İstek Gönderildi (İptal Et)</Button>;
+        return (
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+                <Button variant="outline" onClick={handleCancelOutgoingRequest} disabled={performingAction} className="flex-1">İstek Gönderildi (İptal Et)</Button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="px-3" disabled={performingAction}><MoreVertical className="h-4 w-4"/></Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                         <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)}>
+                            <Flag className="mr-2 h-4 w-4 text-orange-500" /> Şikayet Et
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleBlockOrUnblockUser}>
+                            <Ban className="mr-2 h-4 w-4" /> Engelle
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+        );
       case "request_received":
         return (
             <div className="flex flex-col sm:flex-row gap-2 w-full">
                 <Button onClick={handleAcceptFriendRequest} disabled={performingAction} className="bg-blue-500 hover:bg-blue-600 text-white flex-1">
                     <UserCheck className="mr-2 h-4 w-4" /> İsteği Kabul Et
                 </Button>
-                 <Button variant="ghost" onClick={() => { toast({title:"Yakında", description:"Reddetme özelliği eklenecek."})}} disabled={performingAction} className="flex-1">Reddet</Button>
+                 <Button variant="outline" onClick={() => { 
+                     // Implement decline request logic here if needed, for now use report/block
+                     if(relevantFriendRequest) deleteFirestoreDoc(doc(db, "friendRequests", relevantFriendRequest.id));
+                     setFriendshipStatus("none");
+                     setRelevantFriendRequest(null);
+                     toast({title:"İstek Reddedildi (Geçici)", description: "Arkadaşlık isteği şimdilik reddedildi."})
+                  }} disabled={performingAction} className="flex-1">Reddet</Button>
             </div>
         );
       case "none":
-        return <Button onClick={handleSendFriendRequest} disabled={performingAction} className="w-full"><UserPlus className="mr-2 h-4 w-4" /> Arkadaş Ekle</Button>;
+        return (
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+                <Button onClick={handleSendFriendRequest} disabled={performingAction} className="flex-1"><UserPlus className="mr-2 h-4 w-4" /> Arkadaş Ekle</Button>
+                 <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="px-3" disabled={performingAction}><MoreVertical className="h-4 w-4"/></Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                         <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)}>
+                            <Flag className="mr-2 h-4 w-4 text-orange-500" /> Şikayet Et
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleBlockOrUnblockUser}>
+                            <Ban className="mr-2 h-4 w-4" /> Engelle
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+        );
       default:
         return null;
     }
   };
 
-  const privacyIcon = (contentType: "posts" | "rooms") => {
+  const privacyIcon = (contentType: "posts" | "rooms" | "profileViewCount" | "onlineStatus") => {
     if (isOwnProfile) return <ShieldCheck className="h-4 w-4 text-green-500" title="Bu senin profilin, her şeyi görebilirsin." />;
     if (!profileUser?.privacySettings) return <ShieldCheck className="h-4 w-4 text-green-500" title="Herkese açık" />;
     
-    const key = contentType === "posts" ? "postsVisibleToFriendsOnly" : "activeRoomsVisibleToFriendsOnly";
+    let key: keyof PrivacySettings | undefined;
+    if (contentType === "posts") key = "postsVisibleToFriendsOnly";
+    else if (contentType === "rooms") key = "activeRoomsVisibleToFriendsOnly";
+    else if (contentType === "profileViewCount") key = "showProfileViewCount";
+    else if (contentType === "onlineStatus") key = "showOnlineStatus";
+    
+    if (!key || profileUser.privacySettings[key] === undefined || profileUser.privacySettings[key] === false) {
+      return <ShieldCheck className="h-4 w-4 text-green-500" title="Herkese açık" />;
+    }
     if (profileUser.privacySettings[key]) {
       return friendshipStatus === "friends" 
         ? <ShieldCheck className="h-4 w-4 text-green-500" title="Arkadaş olduğunuz için görebilirsiniz."/> 
@@ -416,15 +574,32 @@ export default function UserProfilePage() {
           <CardTitle className="mt-3 sm:mt-4 text-2xl sm:text-3xl font-headline text-foreground">
             {profileUser.displayName || "Kullanıcı Adı Yok"}
           </CardTitle>
+          {(isOwnProfile || canViewContent("onlineStatus")) && profileUser.lastSeen && (
+            <div className="flex items-center text-xs text-muted-foreground mt-1">
+              {differenceInMinutes(new Date(), profileUser.lastSeen.toDate()) < ACTIVE_THRESHOLD_MINUTES ? (
+                <> <div className="h-2 w-2 rounded-full bg-green-500 mr-1.5"></div> Aktif </>
+              ) : (
+                <>{formatLastSeen(profileUser.lastSeen)}</>
+              )}
+            </div>
+          )}
           {isOwnProfile && profileUser.email && (
             <CardDescription className="text-foreground/80">{profileUser.email}</CardDescription>
           )}
-          {isOwnProfile && (
-            <div className="mt-1 flex items-center gap-2 text-foreground/90">
-              <Gem className="h-4 w-4 text-yellow-500" />
-              <span className="font-medium">{currentUserData?.diamonds ?? 0} Elmas</span>
-            </div>
-          )}
+          <div className="mt-1 flex items-center gap-4 text-foreground/90">
+            {isOwnProfile && (
+                <div className="flex items-center gap-1">
+                    <Gem className="h-4 w-4 text-yellow-500" />
+                    <span className="font-medium text-sm">{currentUserData?.diamonds ?? 0} Elmas</span>
+                </div>
+            )}
+            {(isOwnProfile || canViewContent("profileViewCount")) && (
+                 <div className="flex items-center gap-1">
+                    <Eye className="h-4 w-4 text-blue-500" />
+                    <span className="font-medium text-sm">{profileUser.profileViewCount ?? 0} Görüntülenme</span>
+                </div>
+            )}
+          </div>
           
           {isOwnProfile && (
              <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full max-w-xs">
@@ -528,6 +703,28 @@ export default function UserProfilePage() {
           )}
         </CardContent>
       </Card>
+      <AlertDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Kullanıcıyı Şikayet Et</AlertDialogTitle>
+            <AlertDialogDescription>
+                {profileUser?.displayName || "Bu kullanıcıyı"} şikayet etmek için bir neden belirtebilirsiniz (isteğe bağlı). Şikayetiniz incelenecektir.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Şikayet nedeni (isteğe bağlı)..."
+                className="w-full p-2 border rounded-md min-h-[80px] text-sm bg-background"
+            />
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setReportReason("")}>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReportUserAction} className="bg-destructive hover:bg-destructive/90">Şikayet Et</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
+    

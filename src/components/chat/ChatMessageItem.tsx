@@ -1,14 +1,26 @@
 
 "use client";
-import React from 'react';
+import React, { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star } from "lucide-react"; // Star eklendi
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban } from "lucide-react"; 
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useAuth } from '@/contexts/AuthContext'; 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 
 interface Message {
   id: string;
@@ -16,7 +28,7 @@ interface Message {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; // Eklendi
+  senderIsPremium?: boolean; 
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -41,7 +53,7 @@ interface ChatMessageItemProps {
   getAvatarFallbackText: (name?: string | null) => string;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
-  currentUserIsPremium?: boolean; // Eklendi
+  currentUserIsPremium?: boolean; 
   isCurrentUserRoomCreator: boolean;
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
 }
@@ -67,6 +79,39 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   isCurrentUserRoomCreator,
   onKickParticipantFromTextChat,
 }) => {
+  const { reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth(); 
+  const [isTargetUserBlocked, setIsTargetUserBlocked] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (popoverOpenForUserId === msg.senderId && popoverTargetUser && currentUserUid !== msg.senderId) {
+      checkIfUserBlocked(msg.senderId).then(setIsTargetUserBlocked);
+    }
+  }, [popoverOpenForUserId, msg.senderId, popoverTargetUser, currentUserUid, checkIfUserBlocked]);
+
+
+  const handleReportUserConfirmation = async () => {
+    if (!popoverTargetUser) return;
+    setIsReportDialogOpen(false);
+    await reportUser(popoverTargetUser.uid, reportReason.trim() || `Sohbet odası mesajı şikayeti (${msg.id})`);
+    setReportReason("");
+  };
+
+  const handleBlockOrUnblockUserFromPopover = async () => {
+    if (!popoverTargetUser) return;
+    setActionLoading(true);
+    if (isTargetUserBlocked) {
+        await unblockUser(popoverTargetUser.uid);
+        setIsTargetUserBlocked(false);
+    } else {
+        await blockUser(popoverTargetUser.uid);
+        setIsTargetUserBlocked(true);
+    }
+    setActionLoading(false);
+  };
+
 
   const renderMessageWithMentions = React.useCallback((text: string, currentUsername?: string | null) => {
     const parts = text.split(/(@[\w.-]+)/g); 
@@ -120,14 +165,14 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         <Popover open={popoverOpenForUserId === msg.senderId} onOpenChange={(isOpen) => {
             if (!isOpen) setPopoverOpenForUserId(null);
         }}>
-            <PopoverTrigger asChild onClick={() => onOpenUserInfoPopover(msg.senderId)}>
-                <div className="relative self-end mb-1 cursor-pointer">
+            <PopoverTrigger asChild>
+                <Link href={`/profile/${msg.senderId}`} className="relative self-end mb-1 cursor-pointer">
                     <Avatar className="h-7 w-7">
                         <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                         <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
                     </Avatar>
                     {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
-                </div>
+                </Link>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3" side="top" align="start">
                 {popoverLoading && popoverOpenForUserId === msg.senderId && <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
@@ -166,6 +211,20 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         )}
                         <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => onDmAction(popoverTargetUser?.uid)} >
                             <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> DM Gönder
+                        </Button>
+                        <hr className="my-1"/>
+                        <Button size="sm" variant="outline" className="w-full text-xs text-orange-600 border-orange-500/50 hover:bg-orange-500/10 hover:text-orange-700" onClick={() => setIsReportDialogOpen(true)}>
+                            <Flag className="mr-1.5 h-3.5 w-3.5" /> Şikayet Et
+                        </Button>
+                        <Button 
+                            size="sm" 
+                            variant={isTargetUserBlocked ? "secondary" : "destructive"} 
+                            className="w-full text-xs" 
+                            onClick={handleBlockOrUnblockUserFromPopover}
+                            disabled={actionLoading}
+                        >
+                            {actionLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <Ban className="mr-1.5 h-3.5 w-3.5" />} 
+                            {isTargetUserBlocked ? "Engeli Kaldır" : "Engelle"}
                         </Button>
                         {isCurrentUserRoomCreator && msg.senderId !== currentUserUid && onKickParticipantFromTextChat && (
                           <Button
@@ -207,6 +266,26 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             {currentUserIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
         </div>
       )}
+       <AlertDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Kullanıcıyı Şikayet Et</AlertDialogTitle>
+            <AlertDialogDescription>
+                {popoverTargetUser?.displayName || "Bu kullanıcıyı"} şikayet etmek için bir neden belirtebilirsiniz (isteğe bağlı). Şikayetiniz incelenecektir.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Şikayet nedeni (isteğe bağlı)..."
+                className="w-full p-2 border rounded-md min-h-[80px] text-sm bg-background"
+            />
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setReportReason("")}>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReportUserConfirmation} className="bg-destructive hover:bg-destructive/90">Şikayet Et</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 });

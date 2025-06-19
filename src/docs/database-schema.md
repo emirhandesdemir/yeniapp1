@@ -20,15 +20,19 @@ Kullanıcı profil bilgilerini saklar.
     - `postsVisibleToFriendsOnly`: (Boolean) `true` ise gönderiler sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
     - `activeRoomsVisibleToFriendsOnly`: (Boolean) `true` ise kullanıcının aktif odaları sadece arkadaşlar tarafından görülebilir. (Varsayılan: `false`)
     - `feedShowsEveryone`: (Boolean) `true` ise kullanıcının ana sayfa akışında herkesin gönderileri gösterilir, `false` ise sadece arkadaşlarının gönderileri gösterilir. (Varsayılan: `true`)
+    - `showProfileViewCount`: (Boolean) `true` ise profil görüntülenme sayısı başkalarına gösterilir. (Varsayılan: `true`)
+    - `showOnlineStatus`: (Boolean) `true` ise aktiflik durumu (çevrimiçi/son görülme) başkalarına gösterilir. (Varsayılan: `true`)
   - `premiumStatus`: (String, nullable) Kullanıcının premium abonelik durumu ('none', 'weekly', 'monthly'). (Varsayılan: 'none')
   - `premiumExpiryDate`: (Timestamp, nullable) Premium aboneliğin sona erme tarihi. (Varsayılan: `null`)
   - `isPremium`: (Boolean, isteğe bağlı) Kullanıcının premium olup olmadığını gösterir. `premiumStatus` ve `premiumExpiryDate` alanlarına göre dinamik olarak hesaplanabilir veya Firestore'a senkronize edilebilir.
-  - `reportCount`: (Number, isteğe bağlı) Kullanıcının aldığı şikayet sayısı. (Varsayılan: 0)
-  - `isBanned`: (Boolean, isteğe bağlı) Kullanıcının banlanıp banlanmadığı. (Varsayılan: `false`)
+  - `reportCount`: (Number) Kullanıcının aldığı şikayet sayısı. (Varsayılan: 0)
+  - `isBanned`: (Boolean) Kullanıcının banlanıp banlanmadığı. (Varsayılan: `false`)
+  - `profileViewCount`: (Number) Profilin kaç kez görüntülendiği. (Varsayılan: 0)
+  - `lastSeen`: (Timestamp, nullable) Kullanıcının son aktif olduğu zaman.
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`
-    - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `addedAt` (Timestamp)
+    - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `isPremium` (Boolean, isteğe bağlı), `addedAt` (Timestamp)
   - `blockedUsers`: Kullanıcının engellediği diğer kullanıcıları saklar.
     - **Yol:** `/users/{userId}/blockedUsers/{blockedUserId}`
     - **Alanlar:** `blockedAt` (Timestamp) - Engelleme zamanı, `displayName` (String, isteğe bağlı), `photoURL` (String, nullable, isteğe bağlı)
@@ -274,3 +278,5 @@ Sohbet odası quiz oyunu için soruları saklar.
     - Alanlar: `createdAt` (Azalan)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+
+    

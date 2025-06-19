@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Timestamp, collection, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, increment, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2, Star } from "lucide-react";
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, ChevronDown, ChevronUp, Loader2, LogIn, LinkIcon as SharedRoomIcon, Trash2, Star, Flag, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth, checkUserPremium } from "@/contexts/AuthContext";
 import {
@@ -14,6 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
@@ -22,6 +23,17 @@ import CommentCard, { type CommentData } from "./CommentCard";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 
 export interface Post {
   id: string;
@@ -54,19 +66,16 @@ interface PostCardProps {
 }
 
 const heartVariants = {
-  liked: {
-    scale: [1, 1.3, 0.9, 1.1, 1],
-    transition: { duration: 0.4, ease: "easeInOut" }
+  unliked: { scale: 1, transition: { duration: 0.2, ease: "easeOut" } },
+  liked: { 
+    scale: [1, 1.3, 0.9, 1.1, 1], 
+    transition: { duration: 0.4, ease: "easeInOut" } 
   },
-  unliked: {
-    scale: 1,
-    transition: { duration: 0.2, ease: "easeInOut" }
-  }
 };
 
 
 const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
-  const { currentUser, userData } = useAuth();
+  const { currentUser, userData, reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
   const { toast } = useToast();
 
   const [optimisticHasLiked, setOptimisticHasLiked] = useState(false);
@@ -78,6 +87,10 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
   const [comments, setComments] = useState<CommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [localCommentCount, setLocalCommentCount] = useState(post.commentCount);
+
+  const [isPostAuthorBlocked, setIsPostAuthorBlocked] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
 
   useEffect(() => {
     setLocalCommentCount(post.commentCount);
@@ -91,6 +104,12 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     }
     setOptimisticLikeCount(post.likeCount);
   }, [post.likedBy, post.likeCount, currentUser]);
+
+  useEffect(() => {
+    if (currentUser && post.userId && currentUser.uid !== post.userId) {
+      checkIfUserBlocked(post.userId).then(setIsPostAuthorBlocked);
+    }
+  }, [currentUser, post.userId, checkIfUserBlocked]);
 
 
   useEffect(() => {
@@ -253,6 +272,26 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
     setLocalCommentCount(prev => Math.max(0, prev - 1));
   }, []);
 
+  const handleReportUserConfirmation = async () => {
+    if (!post.userId) return;
+    setIsReportDialogOpen(false);
+    await reportUser(post.userId, reportReason.trim() || `Gönderi şikayeti (${post.id})`);
+    setReportReason("");
+  };
+
+  const handleBlockOrUnblockUser = async () => {
+    if (!post.userId) return;
+    setIsLiking(true); // Use general loading state
+    if (isPostAuthorBlocked) {
+        await unblockUser(post.userId);
+        setIsPostAuthorBlocked(false);
+    } else {
+        await blockUser(post.userId);
+        setIsPostAuthorBlocked(true);
+    }
+    setIsLiking(false);
+  };
+
   const renderOriginalPostContent = useCallback((originalPost: Partial<Post>) => (
     <div className="mt-2 mb-1 p-3 border border-border/30 bg-muted/20 dark:bg-muted/15 shadow-inner rounded-lg">
       <header className="flex flex-row items-start gap-2.5 pb-2">
@@ -311,7 +350,7 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
                 </Link>
               <p className="text-xs text-muted-foreground">{formattedDate(post.createdAt)}</p>
             </div>
-            {isOwnPost && (
+            {currentUser && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
@@ -319,9 +358,20 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleDeletePost} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                    <Trash2 className="mr-2 h-4 w-4" /> Gönderiyi Sil
-                  </DropdownMenuItem>
+                  {isOwnPost ? (
+                    <DropdownMenuItem onClick={handleDeletePost} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                      <Trash2 className="mr-2 h-4 w-4" /> Gönderiyi Sil
+                    </DropdownMenuItem>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onClick={() => { setReportReason(""); setIsReportDialogOpen(true); }}>
+                        <Flag className="mr-2 h-4 w-4 text-orange-500" /> Kullanıcıyı Şikayet Et
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleBlockOrUnblockUser} className={isPostAuthorBlocked ? "text-green-600 focus:text-green-700" : "text-destructive focus:text-destructive"}>
+                        <Ban className="mr-2 h-4 w-4" /> {isPostAuthorBlocked ? "Engeli Kaldır" : "Kullanıcıyı Engelle"}
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -445,9 +495,30 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
           )}
         </div>
       )}
+       <AlertDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Kullanıcıyı Şikayet Et</AlertDialogTitle>
+            <AlertDialogDescription>
+                {post?.username || "Bu kullanıcıyı"} şikayet etmek için bir neden belirtebilirsiniz (isteğe bağlı). Şikayetiniz incelenecektir.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Şikayet nedeni (isteğe bağlı)..."
+                className="w-full p-2 border rounded-md min-h-[80px] text-sm bg-background"
+            />
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setReportReason("")}>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReportUserConfirmation} className="bg-destructive hover:bg-destructive/90">Şikayet Et</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 });
 PostCard.displayName = 'PostCard';
 export default PostCard;
 
+    
