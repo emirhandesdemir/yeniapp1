@@ -29,7 +29,7 @@ import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import EditChatRoomDialog from "@/components/chat/EditChatRoomDialog"; // Added import
+import EditChatRoomDialog from "@/components/chat/EditChatRoomDialog"; 
 
 interface ChatRoomVoiceParticipantPreview {
   uid: string;
@@ -50,8 +50,8 @@ interface ChatRoom {
   participantCount?: number;
   maxParticipants: number;
   voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[];
-  image?: string; // Added for passing to EditChatRoomDialog
-  imageAiHint?: string; // Added for passing to EditChatRoomDialog
+  image?: string; 
+  imageAiHint?: string; 
 }
 
 interface GameSettings {
@@ -266,7 +266,7 @@ export default function ChatRoomsPage() {
     setIsCreatingRoom(true);
 
 
-    const imageUrl = "https://placehold.co/600x400.png"; // Default placeholder
+    const imageUrl = "https://placehold.co/600x400.png"; 
     const imageHint = "community discussion";
 
     const currentTime = new Date();
@@ -311,15 +311,23 @@ export default function ChatRoomsPage() {
       }
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
-      // Open edit dialog for the new room
+      
       setEditingRoomDetails({
         id: newRoomRef.id,
-        ...roomDataToCreate,
-        createdAt: Timestamp.now(), // approximate, will be serverTimestamp
-        expiresAt: Timestamp.fromDate(expiresAtDate) // use calculated one
+        name: roomDataToCreate.name,
+        description: roomDataToCreate.description,
+        creatorId: roomDataToCreate.creatorId,
+        creatorName: roomDataToCreate.creatorName,
+        createdAt: Timestamp.now(), // Approximate, will be serverTimestamp
+        expiresAt: Timestamp.fromDate(expiresAtDate),
+        image: roomDataToCreate.image,
+        imageAiHint: roomDataToCreate.imageAiHint,
+        maxParticipants: roomDataToCreate.maxParticipants,
+        // Other fields might not be immediately needed by EditChatRoomDialog
+        // but include if necessary.
       } as ChatRoom);
       setIsEditRoomModalOpen(true);
-      // fetchRooms(); // Refresh list after edit dialog is closed
+      // fetchRooms(); // Refresh list is now handled by EditChatRoomDialog onClose
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -573,12 +581,12 @@ export default function ChatRoomsPage() {
           onClose={() => {
             setIsEditRoomModalOpen(false);
             setEditingRoomDetails(null);
-            fetchRooms(); // Refresh the list after closing the edit dialog
+            fetchRooms(); 
           }}
           roomId={editingRoomDetails.id}
           initialName={editingRoomDetails.name}
           initialDescription={editingRoomDetails.description}
-          initialImage={editingRoomDetails.image} // Pass current image (placeholder)
+          initialImage={editingRoomDetails.image} 
         />
       )}
 

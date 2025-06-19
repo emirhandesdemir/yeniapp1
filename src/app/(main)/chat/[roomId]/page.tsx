@@ -48,7 +48,7 @@ import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import Image from 'next/image';
 import ChatMessageItem from '@/components/chat/ChatMessageItem';
 import VoiceParticipantGrid from '@/components/chat/VoiceParticipantGrid';
-import EditChatRoomDialog from '@/components/chat/EditChatRoomDialog'; // Eklendi
+import EditChatRoomDialog from '@/components/chat/EditChatRoomDialog'; 
 
 interface Message {
   id: string;
@@ -79,8 +79,8 @@ interface ChatRoomDetails {
   gameInitialized?: boolean;
   voiceParticipantCount?: number;
   currentGameAnswerDeadline?: Timestamp | null;
-  image?: string; // Eklendi
-  imageAiHint?: string; // Eklendi
+  image?: string; 
+  imageAiHint?: string; 
 }
 
 export interface ActiveTextParticipant {
@@ -214,7 +214,7 @@ export default function ChatRoomPage() {
   const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
   const localIsSpeakingRef = useRef(localIsSpeaking);
 
-  const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false); // Eklendi
+  const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false); 
 
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);

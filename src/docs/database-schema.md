@@ -50,8 +50,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `isPremiumRoom`: (Boolean, isteğe bağlı) Odanın bir premium kullanıcı tarafından oluşturulup oluşturulmadığı veya premium özelliklere sahip olup olmadığı. (Varsayılan: `false`)
   - `createdAt`: (Timestamp) Odanın oluşturulduğu zaman
   - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman (Varsayılan: Oluşturulma + 20 dakika)
-  - `image`: (String) Oda için bir resim URL'si. Başlangıçta `placehold.co` URL'si ile ayarlanır. Daha sonra kullanıcı tarafından özel bir resimle (Firebase Storage'a yüklenmiş) güncellenebilir.
-  - `imageAiHint`: (String) Eğer `image` alanı bir placeholder ise, bu alan placeholder için bir ipucu içerir. Kullanıcı tarafından yüklenmiş bir resim varsa bu alanın önemi azalır.
+  - `image`: (String, nullable) Oda için bir resim URL'si. Başlangıçta `placehold.co` URL'si ile ayarlanır. Daha sonra kullanıcı tarafından özel bir resimle (Firebase Storage'a yüklenmiş) güncellenebilir.
+  - `imageAiHint`: (String, nullable) Eğer `image` alanı bir placeholder ise, bu alan placeholder için bir ipucu içerir. Kullanıcı tarafından yüklenmiş bir resim varsa bu alanın önemi azalır.
   - `participantCount`: (Number) Metin sohbetindeki mevcut katılımcı sayısı (Başlangıç: 0)
   - `voiceParticipantCount`: (Number) Sesli sohbetteki mevcut katılımcı sayısı (Başlangıç: 0)
   - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı. Premium kullanıcılar için bu değer daha yüksek (örn: 50) olabilirken, normal kullanıcılar için daha düşük bir varsayılan (örn: 7) ile başlar ve elmas karşılığında artırılabilir.
