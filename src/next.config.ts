@@ -66,6 +66,20 @@ const customRuntimeCaching = [
       },
     },
   },
+  {
+    urlPattern: /^https:\/\/cdn\.onesignal\.com\/.*/i,
+    handler: 'CacheFirst' as const,
+    options: {
+      cacheName: 'onesignal-sdk',
+      expiration: {
+        maxEntries: 10, // Genellikle az sayıda dosya olur
+        maxAgeSeconds: 60 * 60 * 24 * 7, // 7 gün
+      },
+      cacheableResponse: {
+        statuses: [0, 200],
+      },
+    },
+  },
 ];
 
 
