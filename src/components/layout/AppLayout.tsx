@@ -16,12 +16,13 @@ import {
   Phone,
   PhoneOff as PhoneOffIcon,
   XCircle as CloseIcon,
+  UserPlus,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from '@/lib/utils';
-import { useAuth, type UserData } from '@/contexts/AuthContext';
+import { useAuth, type UserData, checkUserPremium } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -37,6 +38,7 @@ import {
   getDoc,
   orderBy,
   updateDoc,
+  setDoc, // DM oluşturmak için eklendi
 } from "firebase/firestore";
 import { UserCheck, UserX } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
@@ -45,18 +47,20 @@ import { useInAppNotification, type InAppNotificationData } from '@/contexts/InA
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeUserToPush } from '@/lib/notificationUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { generateDmChatId } from '@/lib/utils'; // DM ID üretmek için eklendi
 
 interface FriendRequestForPopover {
   id: string;
   fromUserId: string;
   fromUsername: string;
   fromAvatarUrl: string | null;
+  fromUserIsPremium?: boolean; // Eklendi
   createdAt: Timestamp;
   userProfile?: UserData;
 }
 
 interface BottomNavItemType {
-  href: (uid?: string) => string; // href can now be a function
+  href: (uid?: string) => string;
   label: string;
   icon: React.ElementType;
   activeIcon?: React.ElementType;
@@ -88,6 +92,7 @@ function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItem
 
 const ONBOARDING_STORAGE_KEY = 'onboardingCompleted_v1_hiwewalk';
 const LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY = 'lastShownDmTimestamps_v1_hiwewalk';
+const NOTIFIED_REQUEST_IDS_STORAGE_KEY = 'notifiedFriendRequestIds_v1_hiwewalk';
 
 
 const pageVariants = {
@@ -135,6 +140,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setIsClient(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const storedNotifiedIds = localStorage.getItem(NOTIFIED_REQUEST_IDS_STORAGE_KEY);
+        if (storedNotifiedIds) {
+          setNotifiedRequestIds(new Set(JSON.parse(storedNotifiedIds)));
+        }
+      } catch (e) {
+        console.warn("Error reading notified request IDs from localStorage", e);
+      }
+    }
   }, []);
 
   const handleCloseOnboarding = useCallback(() => {
@@ -184,7 +199,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     );
 
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
-      const processedInThisSnapshot = new Set<string>();
+      const newNotifiedThisSession = new Set<string>();
 
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
@@ -200,16 +215,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             console.error(`Error fetching profile for sender ${data.fromUserId} for notification:`, profileError);
         }
 
-        if (data.status === "pending" && userProfileData && !notifiedRequestIds.has(requestId)) {
+        if (data.status === "pending" && userProfileData && !notifiedRequestIds.has(requestId) && isClient) {
           showInAppNotification({
             title: "Yeni Arkadaşlık İsteği",
             message: `${userProfileData.displayName || 'Bir kullanıcı'} sana arkadaşlık isteği gönderdi.`,
             type: 'friend_request',
             avatarUrl: userProfileData.photoURL,
             senderName: userProfileData.displayName,
-            link: '/friends',
+            link: '/friends', // `/friends` sayfasına yönlendirme
           });
-          processedInThisSnapshot.add(requestId);
+          newNotifiedThisSession.add(requestId);
         }
 
         return {
@@ -217,6 +232,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           fromUserId: data.fromUserId,
           fromUsername: userProfileData?.displayName || data.fromUsername,
           fromAvatarUrl: userProfileData?.photoURL || data.fromAvatarUrl,
+          fromUserIsPremium: userProfileData ? checkUserPremium(userProfileData) : data.fromUserIsPremium || false,
           createdAt: data.createdAt as Timestamp,
           userProfile: userProfileData,
         } as FriendRequestForPopover;
@@ -226,11 +242,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
 
-        if (processedInThisSnapshot.size > 0) {
+        if (newNotifiedThisSession.size > 0 && isClient) {
            setNotifiedRequestIds(prevIds => {
-            const newSet = new Set(prevIds);
-            processedInThisSnapshot.forEach(id => newSet.add(id));
-            return newSet;
+            const updatedSet = new Set(prevIds);
+            newNotifiedThisSession.forEach(id => updatedSet.add(id));
+            try {
+              localStorage.setItem(NOTIFIED_REQUEST_IDS_STORAGE_KEY, JSON.stringify(Array.from(updatedSet)));
+            } catch(e) {
+              console.warn("Error saving notified request IDs to localStorage", e);
+            }
+            return updatedSet;
           });
         }
       } catch (error) {
@@ -255,7 +276,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       }
     });
     return () => unsubscribeIncoming();
-  }, [currentUser?.uid, incomingInitialized, toast, showInAppNotification, notifiedRequestIds]);
+  }, [currentUser?.uid, incomingInitialized, toast, showInAppNotification, notifiedRequestIds, isClient]);
 
 
   useEffect(() => {
@@ -295,6 +316,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                                 }
                             } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
                         }
+                        // DM bildirimi için logic
+                        // showInAppNotification(...);
 
                         const newTimestamps = { ...lastShownDmTimestamps, [dmId]: lastMessageTimeMillis };
                         setLastShownDmTimestamps(newTimestamps);
@@ -312,7 +335,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribeDms();
-  }, [currentUser?.uid, pathname, lastShownDmTimestamps, isClient]);
+  }, [currentUser?.uid, pathname, lastShownDmTimestamps, isClient, showInAppNotification]);
 
 
   useEffect(() => {
@@ -466,19 +489,63 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       const batch = writeBatch(db);
       const requestRef = doc(db, "friendRequests", request.id);
       batch.update(requestRef, { status: "accepted" });
+      
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, request.fromUserId);
       batch.set(myFriendRef, {
         displayName: request.userProfile.displayName,
         photoURL: request.userProfile.photoURL,
+        isPremium: request.userProfile.isPremium || false, // UserProfile'dan premium bilgisini al
         addedAt: serverTimestamp()
       });
+      
       const theirFriendRef = doc(db, `users/${request.fromUserId}/confirmedFriends`, currentUser.uid);
       batch.set(theirFriendRef, {
         displayName: userData.displayName,
         photoURL: userData.photoURL,
+        isPremium: checkUserPremium(userData), // Mevcut kullanıcının premium durumunu kontrol et
         addedAt: serverTimestamp()
       });
       await batch.commit();
+
+      // DM sohbetini oluştur/kontrol et
+      const dmChatId = generateDmChatId(currentUser.uid, request.fromUserId);
+      const dmChatDocRef = doc(db, "directMessages", dmChatId);
+      const dmChatDocSnap = await getDoc(dmChatDocRef);
+
+      if (!dmChatDocSnap.exists()) {
+        await setDoc(dmChatDocRef, {
+          participantUids: [currentUser.uid, request.fromUserId].sort(),
+          participantInfo: {
+            [currentUser.uid]: {
+              displayName: userData.displayName,
+              photoURL: userData.photoURL,
+              isPremium: checkUserPremium(userData),
+            },
+            [request.fromUserId]: {
+              displayName: request.userProfile.displayName,
+              photoURL: request.userProfile.photoURL,
+              isPremium: request.userProfile.isPremium || false,
+            },
+          },
+          createdAt: serverTimestamp(),
+          lastMessageTimestamp: null, // İlk oluşturulduğunda mesaj yok
+        });
+      } else {
+        // Eğer DM zaten varsa, participantInfo'yu güncelle (isim/avatar değişmiş olabilir)
+        await updateDoc(dmChatDocRef, {
+            [`participantInfo.${currentUser.uid}`]: {
+                displayName: userData.displayName,
+                photoURL: userData.photoURL,
+                isPremium: checkUserPremium(userData),
+            },
+            [`participantInfo.${request.fromUserId}`]: {
+                displayName: request.userProfile.displayName,
+                photoURL: request.userProfile.photoURL,
+                isPremium: request.userProfile.isPremium || false,
+            }
+        });
+      }
+
       toast({ title: "Başarılı", description: `${request.userProfile.displayName} ile arkadaş oldunuz.` });
     } catch (error) {
       console.error("Error accepting friend request from popover:", error);
@@ -563,10 +630,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     {incomingRequests.map(req => (
                       <div key={req.id} className="flex items-center justify-between p-3 hover:bg-secondary/50 dark:hover:bg-secondary/20 border-b last:border-b-0">
                         <div className="flex items-center gap-2.5">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
-                            <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
-                          </Avatar>
+                           <div className="relative">
+                                <Avatar className="h-8 w-8">
+                                <AvatarImage src={req.userProfile?.photoURL || req.fromAvatarUrl || "https://placehold.co/40x40.png"} data-ai-hint="person avatar request" />
+                                <AvatarFallback>{getAvatarFallback(req.userProfile?.displayName || req.fromUsername)}</AvatarFallback>
+                                </Avatar>
+                                {req.fromUserIsPremium && <UserPlus className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                           </div>
                           <span className="text-xs font-medium truncate">{req.userProfile?.displayName || req.fromUsername || "Bilinmeyen Kullanıcı"}</span>
                         </div>
                         <div className="flex gap-1.5">

@@ -58,7 +58,8 @@ interface SearchResultUser extends UserData {
   isFriend?: boolean;
   isRequestSent?: boolean;
   isRequestReceived?: boolean;
-  outgoingRequestId?: string | null;
+  outgoingRequestId?: string | null; // outgoingRequestId eklendi
+  incomingRequestId?: string | null; // incomingRequestId eklendi
   isPremium?: boolean; 
   isBlockedByCurrentUser?: boolean;
 }
@@ -148,6 +149,11 @@ export default function FriendsPage() {
     setSearchResults([]);
     try {
       const usersRef = collection(db, "users");
+      // Büyük/küçük harf duyarsız arama için displayName'i küçük harfe çevirip arama yapabiliriz,
+      // ancak Firestore'da bu tür sorgular doğrudan desteklenmez.
+      // Genellikle Algolia gibi harici bir arama servisi kullanılır veya
+      // displayName'in küçük harf versiyonu da ayrı bir alanda saklanır.
+      // Şimdilik basit bir >= ve <= sorgusu kullanacağız.
       const nameQuery = query(usersRef, where("displayName", ">=", searchTerm), where("displayName", "<=", searchTerm + '\uf8ff'), limit(10));
       const emailQuery = query(usersRef, where("email", "==", searchTerm.toLowerCase()), limit(10));
 
@@ -173,7 +179,7 @@ export default function FriendsPage() {
         processedUser.isBlockedByCurrentUser = await checkIfUserBlocked(user.uid);
 
 
-        if (!processedUser.isFriend) {
+        if (!processedUser.isFriend && !processedUser.isBlockedByCurrentUser) {
           const outgoingQuery = query(collection(db, "friendRequests"),
             where("fromUserId", "==", currentUser.uid),
             where("toUserId", "==", user.uid),
@@ -194,6 +200,7 @@ export default function FriendsPage() {
             const incomingSnap = await getDocs(incomingQuery);
             if(!incomingSnap.empty) {
               processedUser.isRequestReceived = true;
+              processedUser.incomingRequestId = incomingSnap.docs[0].id; // Gelen istek ID'sini sakla
             }
           }
         }
@@ -247,20 +254,115 @@ export default function FriendsPage() {
         return;
     }
     const requestId = targetUser.outgoingRequestId;
-    setActionLoading(requestId, true);
+    setActionLoading(requestId, true); // actionKey olarak requestId kullanıldı.
     try {
       await deleteDoc(doc(db, "friendRequests", requestId));
       toast({ title: "Başarılı", description: "Arkadaşlık isteği iptal edildi." });
        setSearchResults(prev => prev.map(u =>
-        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u
+        u.uid === targetUser.uid ? {...u, isRequestSent: false, outgoingRequestId: null, isRequestReceived: false } : u // isRequestReceived da false yapılabilir
       ));
     } catch (error) {
       console.error("Error cancelling friend request:", error);
       toast({ title: "Hata", description: "Arkadaşlık isteği iptal edilemedi.", variant: "destructive" });
     } finally {
-      setActionLoading(requestId, false);
+      setActionLoading(requestId, false); // actionKey olarak requestId kullanıldı.
     }
   }, [currentUser, toast, setActionLoading]);
+
+  const handleAcceptIncomingRequest = useCallback(async (targetUser: SearchResultUser) => {
+    if (!currentUser || !userData || !targetUser.incomingRequestId || !targetUser.uid) {
+      toast({ title: "Hata", description: "İstek kabul edilemedi.", variant: "destructive" });
+      return;
+    }
+    const requestId = targetUser.incomingRequestId;
+    setActionLoading(requestId, true);
+    try {
+        const batch = writeBatch(db);
+        const requestRef = doc(db, "friendRequests", requestId);
+        batch.update(requestRef, { status: "accepted" });
+
+        const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, targetUser.uid);
+        batch.set(myFriendRef, { 
+            displayName: targetUser.displayName, 
+            photoURL: targetUser.photoURL,
+            isPremium: targetUser.isPremium,
+            addedAt: serverTimestamp() 
+        });
+        
+        const theirFriendRef = doc(db, `users/${targetUser.uid}/confirmedFriends`, currentUser.uid);
+        batch.set(theirFriendRef, { 
+            displayName: userData.displayName, 
+            photoURL: userData.photoURL,
+            isPremium: isCurrentUserPremium(),
+            addedAt: serverTimestamp() 
+        });
+        await batch.commit();
+
+        // DM sohbetini oluştur/kontrol et
+        const dmChatId = generateDmChatId(currentUser.uid, targetUser.uid);
+        const dmChatDocRef = doc(db, "directMessages", dmChatId);
+        const dmChatDocSnap = await getDoc(dmChatDocRef);
+
+        if (!dmChatDocSnap.exists()) {
+            await setDoc(dmChatDocRef, {
+            participantUids: [currentUser.uid, targetUser.uid].sort(),
+            participantInfo: {
+                [currentUser.uid]: {
+                displayName: userData.displayName,
+                photoURL: userData.photoURL,
+                isPremium: isCurrentUserPremium(),
+                },
+                [targetUser.uid]: {
+                displayName: targetUser.displayName,
+                photoURL: targetUser.photoURL,
+                isPremium: targetUser.isPremium,
+                },
+            },
+            createdAt: serverTimestamp(),
+            lastMessageTimestamp: null,
+            });
+        } else {
+             await updateDoc(dmChatDocRef, {
+                [`participantInfo.${currentUser.uid}`]: {
+                    displayName: userData.displayName,
+                    photoURL: userData.photoURL,
+                    isPremium: isCurrentUserPremium(),
+                },
+                [`participantInfo.${targetUser.uid}`]: {
+                    displayName: targetUser.displayName,
+                    photoURL: targetUser.photoURL,
+                    isPremium: targetUser.isPremium,
+                }
+            });
+        }
+
+        toast({ title: "Başarılı", description: `${targetUser.displayName} ile arkadaş oldunuz.` });
+        setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isFriend: true, isRequestReceived: false, incomingRequestId: null } : u));
+        fetchFriends(); // Arkadaş listesini yenile
+    } catch (error) {
+        console.error("Error accepting friend request:", error);
+        toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
+    } finally {
+        setActionLoading(requestId, false);
+    }
+  }, [currentUser, userData, toast, setActionLoading, fetchFriends, isCurrentUserPremium]);
+
+  const handleDeclineIncomingRequest = useCallback(async (targetUser: SearchResultUser) => {
+    if (!currentUser || !targetUser.incomingRequestId) return;
+    const requestId = targetUser.incomingRequestId;
+    setActionLoading(requestId, true);
+    try {
+        await deleteDoc(doc(db, "friendRequests", requestId));
+        toast({ title: "Başarılı", description: "Arkadaşlık isteği reddedildi."});
+        setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isRequestReceived: false, incomingRequestId: null} : u));
+    } catch (error) {
+        console.error("Error declining friend request:", error);
+        toast({ title: "Hata", description: "Arkadaşlık isteği reddedilemedi.", variant: "destructive" });
+    } finally {
+        setActionLoading(requestId, false);
+    }
+  }, [currentUser, toast, setActionLoading]);
+
 
   const handleRemoveFriend = useCallback(async (friendId: string, friendName: string) => {
     if (!currentUser || !confirm(`${friendName} adlı kullanıcıyı arkadaşlıktan çıkarmak istediğinizden emin misiniz?`)) return;
@@ -295,7 +397,7 @@ export default function FriendsPage() {
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
       fetchFriends(); 
       setSearchResults(prevResults => prevResults.map(sr =>
-        sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null } : sr
+        sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null, incomingRequestId: null } : sr
       ));
     } catch (error) {
       console.error("Error removing friend:", error);
@@ -361,7 +463,7 @@ export default function FriendsPage() {
     } else {
         await blockUser(targetUser.uid);
          if ('isBlockedByCurrentUser' in targetUser) {
-            setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isBlockedByCurrentUser: true, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null} : u));
+            setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isBlockedByCurrentUser: true, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null, incomingRequestId: null } : u));
         }
     }
     setActionLoading(`block-${targetUser.uid}`, false);
@@ -535,15 +637,26 @@ export default function FriendsPage() {
                                     }
                                 </div>
                             ) : user.isRequestReceived ? (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-primary border-primary hover:bg-primary/10 dark:hover:bg-primary/20 text-xs sm:text-sm px-2 py-1"
-                                disabled 
-                                onClick={() => toast({ title: "İstek Mevcut", description: "Bu kullanıcıdan gelen bir arkadaşlık isteği var. Bildirimlerden yönetebilirsiniz."})}
-                                >
-                                <BellRing className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> İstek Geldi
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="text-green-600 border-green-500 hover:bg-green-500/10 dark:hover:bg-green-500/20 text-xs sm:text-sm px-2 py-1"
+                                        onClick={() => handleAcceptIncomingRequest(user)}
+                                        disabled={performingAction[user.incomingRequestId!] || !user.incomingRequestId}
+                                    >
+                                        {performingAction[user.incomingRequestId!] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <UserCheck className="mr-1 h-3 w-3"/>} Kabul Et
+                                    </Button>
+                                     <Button
+                                        variant="ghost"
+                                        size="xs"
+                                        className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90 px-2 py-1 text-xs"
+                                        onClick={() => handleDeclineIncomingRequest(user)}
+                                        disabled={performingAction[user.incomingRequestId!] || !user.incomingRequestId}
+                                    >
+                                         {performingAction[user.incomingRequestId!] ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <UserX className="mr-1 h-3 w-3"/>} Reddet
+                                    </Button>
+                                </div>
                             ) : (
                                 <Button
                                     variant="outline"
@@ -590,5 +703,3 @@ export default function FriendsPage() {
     </div>
   );
 }
-
-    

@@ -29,9 +29,10 @@ import {
   getDocs,
   updateDoc,
   runTransaction,
+  setDoc, // DM oluşturmak için eklendi
 } from "firebase/firestore";
 import PostCard, { type Post } from "@/components/feed/PostCard";
-import { generateDmChatId } from "@/lib/utils";
+import { generateDmChatId } from "@/lib/utils"; // DM ID üretmek için eklendi
 import { isPast, formatDistanceToNow, differenceInMinutes } from "date-fns";
 import { tr } from 'date-fns/locale';
 import {
@@ -68,7 +69,7 @@ export default function UserProfilePage() {
   const router = useRouter();
   const userId = params.userId as string;
 
-  const { currentUser, userData: currentUserData, isUserLoading: isAuthLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy } = useAuth();
+  const { currentUser, userData: currentUserData, isUserLoading: isAuthLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
 
   const [profileUser, setProfileUser] = useState<UserData | null>(null);
@@ -83,8 +84,8 @@ export default function UserProfilePage() {
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
   
-  const [isBlockedByCurrentUser, setIsBlockedByCurrentUser] = useState(false); // Mevcut kullanıcı bu profili engelledi mi?
-  const [isCurrentUserBlockedByProfileOwner, setIsCurrentUserBlockedByProfileOwner] = useState(false); // Mevcut kullanıcı bu profilin sahibi tarafından engellendi mi?
+  const [isBlockedByCurrentUser, setIsBlockedByCurrentUser] = useState(false);
+  const [isCurrentUserBlockedByProfileOwner, setIsCurrentUserBlockedByProfileOwner] = useState(false);
 
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -113,7 +114,7 @@ export default function UserProfilePage() {
                     setIsCurrentUserBlockedByProfileOwner(blockedMe);
                 }
 
-                if (!isOwnProfile && !isCurrentUserBlockedByProfileOwner) { // Sadece engellenmemişse görüntülenme sayısını artır
+                if (!isOwnProfile && !isCurrentUserBlockedByProfileOwner) { 
                     const viewedProfiles = JSON.parse(sessionStorage.getItem('viewedProfiles') || '{}');
                     if (!viewedProfiles[userId]) {
                         await runTransaction(db, async (transaction) => {
@@ -204,7 +205,7 @@ export default function UserProfilePage() {
   const canViewContent = useCallback((contentType: "posts" | "rooms" | "profileViewCount" | "onlineStatus") => {
     if (!profileUser) return false; 
     if (isOwnProfile) return true; 
-    if (isCurrentUserBlockedByProfileOwner) return false; // Eğer bu profili görüntüleyen kişi, profil sahibi tarafından engellenmişse hiçbir şey göremez.
+    if (isCurrentUserBlockedByProfileOwner) return false;
 
     const privacySettings = profileUser.privacySettings;
     let key: keyof PrivacySettings | undefined;
@@ -294,13 +295,13 @@ export default function UserProfilePage() {
   const handleSendFriendRequest = async () => {
     if (!currentUser || !currentUserData || !profileUser || friendshipStatus !== "none") return;
     setPerformingAction(true);
-    const currentUserIsPremium = checkUserPremium(currentUserData);
+    const currentUserIsCurrentlyPremium = checkUserPremium(currentUserData);
     try {
       await addDoc(collection(db, "friendRequests"), {
         fromUserId: currentUser.uid,
         fromUsername: currentUserData.displayName,
         fromAvatarUrl: currentUserData.photoURL,
-        fromUserIsPremium: currentUserIsPremium,
+        fromUserIsPremium: currentUserIsCurrentlyPremium,
         toUserId: profileUser.uid,
         toUsername: profileUser.displayName,
         toAvatarUrl: profileUser.photoURL,
@@ -325,12 +326,60 @@ export default function UserProfilePage() {
       batch.update(requestRef, { status: "accepted" });
 
       const myFriendRef = doc(db, `users/${currentUser.uid}/confirmedFriends`, profileUser.uid);
-      batch.set(myFriendRef, { displayName: profileUser.displayName, photoURL: profileUser.photoURL, isPremium: profileUser.isPremium, addedAt: serverTimestamp() });
+      batch.set(myFriendRef, { 
+        displayName: profileUser.displayName, 
+        photoURL: profileUser.photoURL, 
+        isPremium: profileUser.isPremium, 
+        addedAt: serverTimestamp() 
+      });
       
       const theirFriendRef = doc(db, `users/${profileUser.uid}/confirmedFriends`, currentUser.uid);
-      batch.set(theirFriendRef, { displayName: currentUserData.displayName, photoURL: currentUserData.photoURL, isPremium: checkUserPremium(currentUserData), addedAt: serverTimestamp() });
-      
+      batch.set(theirFriendRef, { 
+        displayName: currentUserData.displayName, 
+        photoURL: currentUserData.photoURL, 
+        isPremium: checkUserPremium(currentUserData), 
+        addedAt: serverTimestamp() 
+      });
       await batch.commit();
+
+      // DM sohbetini oluştur/kontrol et
+      const dmChatId = generateDmChatId(currentUser.uid, profileUser.uid);
+      const dmChatDocRef = doc(db, "directMessages", dmChatId);
+      const dmChatDocSnap = await getDoc(dmChatDocRef);
+
+      if (!dmChatDocSnap.exists()) {
+        await setDoc(dmChatDocRef, {
+          participantUids: [currentUser.uid, profileUser.uid].sort(),
+          participantInfo: {
+            [currentUser.uid]: {
+              displayName: currentUserData.displayName,
+              photoURL: currentUserData.photoURL,
+              isPremium: checkUserPremium(currentUserData),
+            },
+            [profileUser.uid]: {
+              displayName: profileUser.displayName,
+              photoURL: profileUser.photoURL,
+              isPremium: profileUser.isPremium,
+            },
+          },
+          createdAt: serverTimestamp(),
+          lastMessageTimestamp: null,
+        });
+      } else {
+         await updateDoc(dmChatDocRef, {
+            [`participantInfo.${currentUser.uid}`]: {
+                displayName: currentUserData.displayName,
+                photoURL: currentUserData.photoURL,
+                isPremium: checkUserPremium(currentUserData),
+            },
+            [`participantInfo.${profileUser.uid}`]: {
+                displayName: profileUser.displayName,
+                photoURL: profileUser.photoURL,
+                isPremium: profileUser.isPremium,
+            }
+        });
+      }
+
       toast({ title: "Başarılı", description: `${profileUser.displayName} ile arkadaş oldunuz.` });
       setFriendshipStatus("friends");
       setRelevantFriendRequest(null);
@@ -415,7 +464,6 @@ export default function UserProfilePage() {
     } else {
         await blockUser(profileUser.uid, profileUser.displayName, profileUser.photoURL);
         setIsBlockedByCurrentUser(true);
-        // Engelledikten sonra arkadaşlık durumu değişebilir (örn: arkadaşlıktan çıkarma)
         if (friendshipStatus === "friends") setFriendshipStatus("none");
         if (friendshipStatus === "request_received" && relevantFriendRequest) {
             await deleteFirestoreDoc(doc(db, "friendRequests", relevantFriendRequest.id));
