@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star } from "lucide-react"; // Star eklendi
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -30,7 +30,7 @@ import {
   Unsubscribe,
   deleteField,
 } from "firebase/firestore";
-import { useAuth, type UserData, type FriendRequest, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { useAuth, type UserData, type FriendRequest, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { addMinutes, formatDistanceToNow, isPast, addSeconds, format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -251,10 +251,13 @@ export default function ChatRoomPage() {
     }
     setActiveRemoteStreams(prev => {
       const newStreams = { ...prev };
-      delete newStreams[targetUid];
+      if (newStreams[targetUid]) {
+        console.log(`[WebRTC] Removing stream for ${targetUid} from activeRemoteStreams during cleanup.`);
+        delete newStreams[targetUid];
+      }
       return newStreams;
     });
-    delete negotiatingRef.current[targetUid]; // Ensure negotiating flag is cleared
+    delete negotiatingRef.current[targetUid]; 
   }, []);
 
   const createPeerConnection = useCallback((targetUid: string): RTCPeerConnection => {
@@ -278,15 +281,44 @@ export default function ChatRoomPage() {
     };
 
     pc.ontrack = (event) => {
-      console.log(`[WebRTC] Track received from ${targetUid}. Stream ID: ${event.streams[0]?.id}, Tracks in stream: ${event.streams[0]?.getTracks().length}`);
+      console.log(`[WebRTC ontrack] Track received from ${targetUid}. Stream ID: ${event.streams[0]?.id}, Tracks in stream: ${event.streams[0]?.getTracks().length}`);
       if (event.streams && event.streams[0]) {
-        remoteStreamsRef.current[targetUid] = event.streams[0];
-        setActiveRemoteStreams(prev => ({ ...prev, [targetUid]: event.streams[0] }));
-        event.streams[0].getTracks().forEach(track => {
-          console.log(`[WebRTC] Remote track from ${targetUid}: kind=${track.kind}, id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}`);
-        });
+        const remoteStream = event.streams[0];
+        const audioTracks = remoteStream.getAudioTracks();
+        console.log(`[WebRTC ontrack] Remote stream from ${targetUid} is active: ${remoteStream.active}, has ${audioTracks.length} audio tracks.`);
+
+        if (remoteStream.active && audioTracks.length > 0) {
+          audioTracks.forEach(track => {
+            console.log(`[WebRTC ontrack] Remote audio track from ${targetUid}: id=${track.id}, kind=${track.kind}, label='${track.label}', enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+            track.onunmute = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} unmuted.`);
+            track.onmute = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} muted.`);
+            track.onended = () => console.log(`[WebRTC ontrack] Audio track ${track.id} from ${targetUid} ended.`);
+          });
+        
+          setActiveRemoteStreams(prev => {
+            if (prev[targetUid] === remoteStream && prev[targetUid]?.active === remoteStream.active) {
+                console.log(`[WebRTC ontrack] Stream for ${targetUid} is already the same object and active status. No update to activeRemoteStreams.`);
+                return prev;
+            }
+            console.log(`[WebRTC ontrack] Updating activeRemoteStreams for ${targetUid} with new stream object (ID: ${remoteStream.id}).`);
+            return { ...prev, [targetUid]: remoteStream };
+          });
+          remoteStreamsRef.current[targetUid] = remoteStream;
+
+        } else {
+          console.warn(`[WebRTC ontrack] Remote stream from ${targetUid} is INACTIVE or has NO audio tracks. Not adding/removing from activeRemoteStreams.`);
+          setActiveRemoteStreams(prev => {
+            if (prev[targetUid]) {
+              const newStreams = { ...prev };
+              delete newStreams[targetUid];
+              console.warn(`[WebRTC ontrack] Removed previously active stream for ${targetUid} as it's no longer valid.`);
+              return newStreams;
+            }
+            return prev;
+          });
+        }
       } else {
-        console.warn(`[WebRTC] Received track from ${targetUid} but no stream associated.`);
+        console.warn(`[WebRTC ontrack] Received track event from ${targetUid} but no stream (event.streams[0] is null/undefined).`);
       }
     };
 
@@ -524,7 +556,7 @@ export default function ChatRoomPage() {
         const participantData = docSnap.data() as ActiveVoiceParticipantData;
         if (participantData.id !== currentUser.uid) {
           console.log(`[WebRTC] Joining: Initiating connection to existing participant: ${participantData.displayName || participantData.id}`);
-          createPeerConnection(participantData.id); // PC created here, local tracks will be added inside createPeerConnection
+          createPeerConnection(participantData.id); 
         }
       });
 
@@ -566,7 +598,6 @@ export default function ChatRoomPage() {
       cleanupPeerConnection(peerUid);
     });
     peerConnectionsRef.current = {};
-    // negotiatingRef.current = {}; // This is now cleared inside cleanupPeerConnection
     setActiveRemoteStreams({});
     lastProcessedSignalTimestampRef.current = null;
 
@@ -645,7 +676,7 @@ export default function ChatRoomPage() {
               newVoiceParticipantsData.forEach(p => {
                   if (p.id !== currentUser.uid && !peerConnectionsRef.current[p.id]) {
                       console.log(`[WebRTC Voice Listener] New participant ${p.displayName || p.id} detected. Creating connection.`);
-                      createPeerConnection(p.id); // Create PC, tracks will be added inside if local stream is ready
+                      createPeerConnection(p.id); 
                   }
               });
               Object.keys(peerConnectionsRef.current).forEach(existingPeerId => {
@@ -1265,9 +1296,32 @@ export default function ChatRoomPage() {
 
   return (
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
-      {Object.entries(activeRemoteStreams).map(([uid, stream]) => (
-        <audio key={uid} autoPlay playsInline ref={audioEl => { if (audioEl) audioEl.srcObject = stream; }} />
-      ))}
+      {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
+        console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
+        return (
+          <audio
+            key={uid}
+            autoPlay
+            playsInline
+            controls={process.env.NODE_ENV === 'development'} 
+            ref={audioEl => {
+              if (audioEl) {
+                if (audioEl.srcObject !== stream) { 
+                    console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
+                    audioEl.srcObject = stream;
+                }
+                if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) { 
+                     audioEl.play().catch(error => {
+                        if (error.name !== 'AbortError') { 
+                             console.warn(`[WebRTC RENDER REF] Error explicitly playing audio for ${uid}:`, error);
+                        }
+                     });
+                }
+              }
+            }}
+          />
+        )
+      })}
 
       {showGameQuestionCard && activeGameQuestion && gameSettings?.isGameEnabled && ( <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} countdown={questionAnswerCountdown} /> )}
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-20">
@@ -1346,7 +1400,7 @@ export default function ChatRoomPage() {
       <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={handleAdminKickFromVoice} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
       <div className="flex flex-1 overflow-hidden">
         <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} currentUserIsPremium={userIsCurrentlyPremium} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
+          {messages.map((msg) => (<ChatMessageItem key={msg.id} msg={msg} currentUserUid={currentUser?.uid} popoverOpenForUserId={popoverOpenForUserId} onOpenUserInfoPopover={handleOpenUserInfoPopover} setPopoverOpenForUserId={setPopoverOpenForUserId} popoverLoading={popoverLoading} popoverTargetUser={popoverTargetUser} friendshipStatus={friendshipStatus} relevantFriendRequest={relevantFriendRequest} onAcceptFriendRequestPopover={onAcceptFriendRequestPopover} onSendFriendRequestPopover={handleSendFriendRequestPopover} onDmAction={handleDmAction} onViewProfileAction={handleViewProfileAction} getAvatarFallbackText={getAvatarFallbackText} currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined} currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined} currentUserIsPremium={userIsCurrentlyPremium} isCurrentUserRoomCreator={isCurrentUserRoomCreator} onKickParticipantFromTextChat={handleKickParticipantFromTextChat} />))}
         </ScrollArea>
       </div>
       <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
@@ -1358,5 +1412,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
     
