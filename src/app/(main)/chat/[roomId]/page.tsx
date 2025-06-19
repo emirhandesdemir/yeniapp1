@@ -1474,6 +1474,12 @@ export default function ChatRoomPage() {
     }
   }, [isCurrentUserRoomCreator, currentUser, roomId, cleanupPeerConnection, toast]);
 
+  const handleVoiceParticipantSlotClick = useCallback((participantId: string | null) => {
+    if (participantId && participantId !== currentUser?.uid) {
+      handleOpenUserInfoPopover(participantId);
+    }
+  }, [currentUser?.uid, handleOpenUserInfoPopover]);
+
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current) || loadingGameAssets) {
     return (<div className="flex flex-1 items-center justify-center h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-2 text-lg">Oda yükleniyor...</p></div>);
