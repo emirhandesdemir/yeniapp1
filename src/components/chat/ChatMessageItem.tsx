@@ -4,12 +4,12 @@ import React, { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban } from "lucide-react"; 
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useAuth } from '@/contexts/AuthContext'; 
+import { useAuth } from '@/contexts/AuthContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +28,7 @@ interface Message {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; 
+  senderIsPremium?: boolean;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -53,7 +53,7 @@ interface ChatMessageItemProps {
   getAvatarFallbackText: (name?: string | null) => string;
   currentUserPhotoURL?: string | null;
   currentUserDisplayName?: string | null;
-  currentUserIsPremium?: boolean; 
+  currentUserIsPremium?: boolean;
   isCurrentUserRoomCreator: boolean;
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
 }
@@ -79,7 +79,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   isCurrentUserRoomCreator,
   onKickParticipantFromTextChat,
 }) => {
-  const { reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth(); 
+  const { reportUser, blockUser, unblockUser, checkIfUserBlocked } = useAuth();
   const [isTargetUserBlocked, setIsTargetUserBlocked] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -114,7 +114,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
 
   const renderMessageWithMentions = React.useCallback((text: string, currentUsername?: string | null) => {
-    const parts = text.split(/(@[\w.-]+)/g); 
+    const parts = text.split(/(@[\w.-]+)/g);
     return parts.map((part, index) => {
       if (part.startsWith('@')) {
         const username = part.substring(1);
@@ -128,17 +128,25 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   }, []);
 
 
-  if (msg.isGameMessage) {
+  if (msg.isGameMessage && msg.senderId === "system") {
     let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
+    if (msg.text.toLowerCase().includes("tebrikler")) {
+        icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
+    } else if (msg.text.toLowerCase().includes("ipucu")) {
+        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
+    }
+
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
            {icon}
+           <span className="font-medium text-foreground/80">{msg.senderName}: </span>
            {msg.text}
         </div>
       </div>
     );
   }
+
 
   const isMentioned = msg.mentionedUserIds && msg.mentionedUserIds.includes(currentUserUid || '');
 
@@ -154,7 +162,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       textClasses = "text-sm font-medium whitespace-pre-wrap break-words";
     } else {
       bubbleClasses = "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950 rounded-t-2xl rounded-r-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out";
-      textClasses = "text-sm font-semibold whitespace-pre-wrap break-words"; 
+      textClasses = "text-sm font-semibold whitespace-pre-wrap break-words";
     }
   }
 
@@ -216,14 +224,14 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         <Button size="sm" variant="outline" className="w-full text-xs text-orange-600 border-orange-500/50 hover:bg-orange-500/10 hover:text-orange-700" onClick={() => setIsReportDialogOpen(true)}>
                             <Flag className="mr-1.5 h-3.5 w-3.5" /> Şikayet Et
                         </Button>
-                        <Button 
-                            size="sm" 
-                            variant={isTargetUserBlocked ? "secondary" : "destructive"} 
-                            className="w-full text-xs" 
+                        <Button
+                            size="sm"
+                            variant={isTargetUserBlocked ? "secondary" : "destructive"}
+                            className="w-full text-xs"
                             onClick={handleBlockOrUnblockUserFromPopover}
                             disabled={actionLoading}
                         >
-                            {actionLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <Ban className="mr-1.5 h-3.5 w-3.5" />} 
+                            {actionLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> : <Ban className="mr-1.5 h-3.5 w-3.5" />}
                             {isTargetUserBlocked ? "Engeli Kaldır" : "Engelle"}
                         </Button>
                         {isCurrentUserRoomCreator && msg.senderId !== currentUserUid && onKickParticipantFromTextChat && (
@@ -291,5 +299,3 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
-
-    

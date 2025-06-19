@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon } from "lucide-react";
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2 } from "lucide-react"; // Gamepad2 eklendi
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
@@ -29,7 +29,7 @@ import { deleteChatRoomAndSubcollections } from "@/lib/firestoreUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import EditChatRoomDialog from "@/components/chat/EditChatRoomDialog"; 
+import EditChatRoomDialog from "@/components/chat/EditChatRoomDialog";
 
 interface ChatRoomVoiceParticipantPreview {
   uid: string;
@@ -50,8 +50,9 @@ interface ChatRoom {
   participantCount?: number;
   maxParticipants: number;
   voiceParticipantPreviews?: ChatRoomVoiceParticipantPreview[];
-  image?: string; 
-  imageAiHint?: string; 
+  image?: string;
+  imageAiHint?: string;
+  isGameEnabledInRoom?: boolean; // Eklendi
 }
 
 interface GameSettings {
@@ -198,6 +199,7 @@ export default function ChatRoomsPage() {
               voiceParticipantPreviews: voicePreviews,
               creatorIsPremium: roomData.creatorIsPremium || false,
               isPremiumRoom: roomData.isPremiumRoom || false,
+              isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (gameSettings?.isGameEnabled ?? false), // Eklendi
           } as ChatRoom;
         }
         return null;
@@ -220,7 +222,7 @@ export default function ChatRoomsPage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, gameSettings]);
 
   useEffect(() => {
     document.title = 'Sohbet Odaları - HiweWalk';
@@ -266,13 +268,14 @@ export default function ChatRoomsPage() {
     setIsCreatingRoom(true);
 
 
-    const imageUrl = "https://placehold.co/600x400.png"; 
+    const imageUrl = "https://placehold.co/600x400.png";
     const imageHint = "community discussion";
 
     const currentTime = new Date();
     const expiresAtDate = addMinutes(currentTime, ROOM_DEFAULT_DURATION_MINUTES);
 
     const roomMaxParticipants = userIsCreatorPremium ? PREMIUM_USER_ROOM_CAPACITY : MAX_PARTICIPANTS_PER_ROOM;
+    const isGameInitiallyEnabled = gameSettings?.isGameEnabled ?? false;
 
 
     const roomDataToCreate: any = {
@@ -289,13 +292,14 @@ export default function ChatRoomsPage() {
       participantCount: 0,
       voiceParticipantCount: 0,
       maxParticipants: roomMaxParticipants,
+      isGameEnabledInRoom: isGameInitiallyEnabled, // Eklendi
       gameInitialized: false,
       currentGameQuestionId: null,
       nextGameQuestionTimestamp: null,
       currentGameAnswerDeadline: null,
     };
 
-    if (gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && gameSettings.questionIntervalSeconds >= 30) {
+    if (isGameInitiallyEnabled && gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && gameSettings.questionIntervalSeconds >= 30) {
       roomDataToCreate.gameInitialized = true;
       roomDataToCreate.nextGameQuestionTimestamp = Timestamp.fromDate(addSeconds(new Date(), gameSettings.questionIntervalSeconds));
     }
@@ -311,23 +315,21 @@ export default function ChatRoomsPage() {
       }
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
-      
+
       setEditingRoomDetails({
         id: newRoomRef.id,
         name: roomDataToCreate.name,
         description: roomDataToCreate.description,
         creatorId: roomDataToCreate.creatorId,
         creatorName: roomDataToCreate.creatorName,
-        createdAt: Timestamp.now(), // Approximate, will be serverTimestamp
+        createdAt: Timestamp.now(),
         expiresAt: Timestamp.fromDate(expiresAtDate),
         image: roomDataToCreate.image,
         imageAiHint: roomDataToCreate.imageAiHint,
         maxParticipants: roomDataToCreate.maxParticipants,
-        // Other fields might not be immediately needed by EditChatRoomDialog
-        // but include if necessary.
+        isGameEnabledInRoom: roomDataToCreate.isGameEnabledInRoom,
       } as ChatRoom);
       setIsEditRoomModalOpen(true);
-      // fetchRooms(); // Refresh list is now handled by EditChatRoomDialog onClose
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -581,12 +583,13 @@ export default function ChatRoomsPage() {
           onClose={() => {
             setIsEditRoomModalOpen(false);
             setEditingRoomDetails(null);
-            fetchRooms(); 
+            fetchRooms();
           }}
           roomId={editingRoomDetails.id}
           initialName={editingRoomDetails.name}
           initialDescription={editingRoomDetails.description}
-          initialImage={editingRoomDetails.image} 
+          initialImage={editingRoomDetails.image}
+          initialIsGameEnabledInRoom={editingRoomDetails.isGameEnabledInRoom} // Eklendi
         />
       )}
 
@@ -618,6 +621,9 @@ export default function ChatRoomsPage() {
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {chatRooms.map((room) => {
             const isFull = (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants);
+            const gameStatusText = room.isGameEnabledInRoom ? "Oyun Aktif" : "Oyun Kapalı";
+            const gameStatusColor = room.isGameEnabledInRoom ? "bg-green-500/15 text-green-700 dark:bg-green-500/20 dark:text-green-300 border-green-500/30" : "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-400 border-red-500/20";
+
             return (
             <Card
               key={room.id}
@@ -669,6 +675,12 @@ export default function ChatRoomsPage() {
                     <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
                   </Badge>
                 </div>
+                <div className="flex items-center justify-start text-xs text-muted-foreground mb-1">
+                  <Badge className={cn("flex items-center gap-1.5 shadow-sm px-2 py-0.5 border", gameStatusColor)}>
+                    <Gamepad2 className="h-3.5 w-3.5" />
+                    <span className="font-medium">{gameStatusText}</span>
+                  </Badge>
+                </div>
                 {room.voiceParticipantPreviews && room.voiceParticipantPreviews.length > 0 && (
                   <div className="mt-2.5 pt-2.5 border-t border-border/20">
                     <div className="flex items-center gap-1.5 mb-1.5">
@@ -715,4 +727,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-    

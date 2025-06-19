@@ -35,7 +35,7 @@ Kullanıcı profil bilgilerini saklar.
     - **Alanlar:** `displayName` (String), `photoURL` (String, nullable), `isPremium` (Boolean, isteğe bağlı), `addedAt` (Timestamp)
   - `blockedUsers`: Kullanıcının engellediği diğer kullanıcıları saklar.
     - **Yol:** `/users/{userId}/blockedUsers/{blockedUserId}`
-    - **Alanlar:** 
+    - **Alanlar:**
         - `blockedAt` (Timestamp) - Engelleme zamanı
         - `displayName` (String, nullable) - Engellenen kullanıcının görünen adı (listeleme için kolaylık)
         - `photoURL` (String, nullable) - Engellenen kullanıcının fotoğraf URL'si (listeleme için kolaylık)
@@ -62,7 +62,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `participantCount`: (Number) Metin sohbetindeki mevcut katılımcı sayısı (Başlangıç: 0)
   - `voiceParticipantCount`: (Number) Sesli sohbetteki mevcut katılımcı sayısı (Başlangıç: 0)
   - `maxParticipants`: (Number) İzin verilen maksimum katılımcı sayısı. Premium kullanıcılar için bu değer daha yüksek (örn: 50) olabilirken, normal kullanıcılar için daha düşük bir varsayılan (örn: 7) ile başlar ve elmas karşılığında artırılabilir.
-  - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir.
+  - `isGameEnabledInRoom`: (Boolean, isteğe bağlı) Oda sahibi tarafından bu oda için oyun sisteminin etkinleştirilip etkinleştirilmediğini belirtir. (Varsayılan: `true` veya global ayara göre)
+  - `gameInitialized`: (Boolean, isteğe bağlı) Oyun sisteminin bu oda için başlatılıp başlatılmadığını belirtir (genellikle `isGameEnabledInRoom` `true` ise bu da `true` olur).
   - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
   - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
   - `currentGameAnswerDeadline`: (Timestamp, nullable) Mevcut oyun sorusu için son cevap verme zamanı.

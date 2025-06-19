@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star } from "lucide-react";
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star, Gamepad2 } from "lucide-react"; // Gamepad2 eklendi
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { motion, AnimatePresence } from "framer-motion";
 import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
-import RoomInFeedCard, { type ChatRoomFeedDisplayData } from "@/components/feed/RoomInFeedCard";
+import RoomInFeedCard, { type ChatRoomFeedDisplayData as RoomInFeedCardData } from "@/components/feed/RoomInFeedCard"; // İsim değişikliği
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, Timestamp, where, limit, getDocs, onSnapshot } from "firebase/firestore";
 import { isPast } from 'date-fns';
@@ -26,7 +26,7 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     height: 'auto',
-    marginBottom: '1.5rem', 
+    marginBottom: '1.5rem',
     transition: {
       type: "spring",
       stiffness: 100,
@@ -43,7 +43,7 @@ const cardVariants = {
   }
 };
 
-const itemVariants = { 
+const itemVariants = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
 };
@@ -69,7 +69,7 @@ const feedItemEntryVariants = {
     opacity: 1,
     y: 0,
     transition: {
-      delay: i * 0.07, 
+      delay: i * 0.07,
       duration: 0.4,
       ease: "easeOut",
     },
@@ -79,11 +79,12 @@ const feedItemEntryVariants = {
 
 const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
-const POSTS_FETCH_LIMIT = 10; 
+const POSTS_FETCH_LIMIT = 10;
 const ROOMS_FETCH_LIMIT = 3;
-const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000; 
+const REFRESH_BUTTON_TIMER_MS = 2 * 60 * 1000;
 
-export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (ChatRoomFeedDisplayData & { feedItemType: 'room' });
+// RoomInFeedCardData tipini güncelledik
+export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (RoomInFeedCardData & { feedItemType: 'room' });
 
 
 export default function HomePage() {
@@ -94,13 +95,13 @@ export default function HomePage() {
   const [isCreatePostDialogOpen, setIsCreatePostDialogOpen] = useState(false);
 
   const [allPosts, setAllPosts] = useState<Post[]>([]);
-  const [activeRooms, setActiveRooms] = useState<ChatRoomFeedDisplayData[]>([]);
+  const [activeRooms, setActiveRooms] = useState<RoomInFeedCardData[]>([]); // Tip güncellendi
   const [combinedFeedItems, setCombinedFeedItems] = useState<FeedDisplayItem[]>([]);
 
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [isLoadingRooms, setIsLoadingRooms] = useState(true);
   const [isRefreshingFeed, setIsRefreshingFeed] = useState(false);
-  
+
   const [friends, setFriends] = useState<string[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
@@ -143,7 +144,7 @@ export default function HomePage() {
       clearTimeout(refreshButtonTimerRef.current);
     }
     refreshButtonTimerRef.current = setTimeout(() => {
-      if (!isLoadingPosts && !isLoadingRooms && !isRefreshingFeed) { 
+      if (!isLoadingPosts && !isLoadingRooms && !isRefreshingFeed) {
         setShowRefreshButton(true);
       }
     }, REFRESH_BUTTON_TIMER_MS);
@@ -162,9 +163,9 @@ export default function HomePage() {
     } else {
       setIsLoadingRooms(true);
     }
-    
-    if (isManualRefresh) { 
-        setShowRefreshButton(false); 
+
+    if (isManualRefresh) {
+        setShowRefreshButton(false);
         if (refreshButtonTimerRef.current) {
         clearTimeout(refreshButtonTimerRef.current);
         }
@@ -180,7 +181,7 @@ export default function HomePage() {
         limit(ROOMS_FETCH_LIMIT)
       );
       const roomsSnapshot = await getDocs(roomsQuery);
-      const fetchedRoomsData: ChatRoomFeedDisplayData[] = [];
+      const fetchedRoomsData: RoomInFeedCardData[] = []; // Tip güncellendi
       roomsSnapshot.forEach((doc) => {
         const roomData = doc.data();
         if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
@@ -193,7 +194,8 @@ export default function HomePage() {
             createdAt: roomData.createdAt as Timestamp,
             isPremiumRoom: roomData.isPremiumRoom || false,
             creatorIsPremium: roomData.creatorIsPremium || false,
-          } as ChatRoomFeedDisplayData);
+            isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (roomData.gameInitialized ?? false), // isGameEnabledInRoom eklendi
+          } as RoomInFeedCardData); // Tip güncellendi
         }
       });
       setActiveRooms(fetchedRoomsData);
@@ -204,7 +206,7 @@ export default function HomePage() {
       setIsLoadingRooms(false);
       if (isManualRefresh) {
         setIsRefreshingFeed(false);
-        startRefreshButtonTimer(); 
+        startRefreshButtonTimer();
       }
     }
   }, [currentUser, startRefreshButtonTimer]);
@@ -217,7 +219,7 @@ export default function HomePage() {
     }
     setIsLoadingPosts(true);
     const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(POSTS_FETCH_LIMIT));
-    
+
     const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
       const fetchedPostsData: Post[] = [];
       snapshot.forEach((doc) => {
@@ -233,23 +235,21 @@ export default function HomePage() {
       setIsLoadingPosts(false);
     });
 
-    return () => unsubscribePosts(); 
+    return () => unsubscribePosts();
   }, [currentUser, isRefreshingFeed, startRefreshButtonTimer]);
 
 
   useEffect(() => {
     if (currentUser) {
-      fetchActiveRooms(); 
+      fetchActiveRooms();
     } else {
       setIsLoadingRooms(false);
       setActiveRooms([]);
     }
   }, [currentUser, fetchActiveRooms]);
 
-  // Fetch friends and blocked users
   useEffect(() => {
     if (currentUser) {
-      // Fetch friends if needed for filtering
       if (userData?.privacySettings?.feedShowsEveryone === false) {
         setLoadingFriends(true);
         const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
@@ -263,11 +263,10 @@ export default function HomePage() {
         });
         return () => unsubscribeFriends();
       } else {
-        setFriends([]); 
+        setFriends([]);
         setLoadingFriends(false);
       }
 
-      // Fetch blocked users
       setLoadingBlockedUsers(true);
       const blockedUsersRef = collection(db, `users/${currentUser.uid}/blockedUsers`);
       const unsubscribeBlocked = onSnapshot(blockedUsersRef, (snapshot) => {
@@ -278,10 +277,9 @@ export default function HomePage() {
           console.error("Error fetching blocked users:", error);
           setLoadingBlockedUsers(false);
       });
-      return () => { // Cleanup both if friends were also fetched
+      return () => {
         if (userData?.privacySettings?.feedShowsEveryone === false) {
-            // No explicit unsubscribe needed if it was from getDocs, but if it were onSnapshot:
-            // if (typeof unsubscribeFriends === 'function') unsubscribeFriends();
+
         }
         unsubscribeBlocked();
       };
@@ -296,38 +294,36 @@ export default function HomePage() {
 
 
   useEffect(() => {
-    const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true; 
+    const feedShowsEveryone = userData?.privacySettings?.feedShowsEveryone ?? true;
 
     if (isLoadingPosts || isLoadingRooms || loadingBlockedUsers || (!feedShowsEveryone && loadingFriends)) {
-      return; 
+      return;
     }
 
     let filteredPosts = allPosts;
-    // Filter out posts from users blocked by the current user
     if (blockedUserIds.length > 0) {
         filteredPosts = filteredPosts.filter(post => !blockedUserIds.includes(post.userId));
     }
 
-    // If feed only shows friends, further filter by friends
     if (!feedShowsEveryone && currentUser) {
-      filteredPosts = filteredPosts.filter(post => 
+      filteredPosts = filteredPosts.filter(post =>
         post.userId === currentUser.uid || friends.includes(post.userId)
       );
     }
-    
+
     const postItems: FeedDisplayItem[] = filteredPosts.map(p => ({ ...p, feedItemType: 'post' }));
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
     const combined = [...postItems, ...roomItems].sort((a, b) => {
-        const aIsPremiumContent = (a.feedItemType === 'room' && (a as ChatRoomFeedDisplayData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium);
-        const bIsPremiumContent = (b.feedItemType === 'room' && (b as ChatRoomFeedDisplayData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium);
+        const aIsPremiumContent = (a.feedItemType === 'room' && (a as RoomInFeedCardData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium); // Tip güncellendi
+        const bIsPremiumContent = (b.feedItemType === 'room' && (b as RoomInFeedCardData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium); // Tip güncellendi
 
         if (aIsPremiumContent && !bIsPremiumContent) return -1;
         if (!aIsPremiumContent && bIsPremiumContent) return 1;
-        
+
         const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
         const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
-        return timeB - timeA; 
+        return timeB - timeA;
     });
     setCombinedFeedItems(combined);
 
@@ -343,11 +339,11 @@ export default function HomePage() {
 
   const handleRefreshClick = useCallback(() => {
     if (isRefreshingFeed) return;
-    fetchActiveRooms(true); 
-    setIsRefreshingFeed(true); 
+    fetchActiveRooms(true);
+    setIsRefreshingFeed(true);
   }, [isRefreshingFeed, fetchActiveRooms]);
 
-  if (authLoading || (currentUser && isUserDataLoading && !userData)) { 
+  if (authLoading || (currentUser && isUserDataLoading && !userData)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-6">
@@ -366,7 +362,7 @@ export default function HomePage() {
   if (currentUser && userData) {
     const greetingName = userData?.displayName || currentUser?.displayName || "Kullanıcı";
     const userIsCurrentlyPremium = checkUserPremium(userData);
-    
+
     return (
       <AppLayout>
         <div className="mx-auto max-w-2xl w-full space-y-5">
@@ -435,8 +431,8 @@ export default function HomePage() {
           <Dialog open={isCreatePostDialogOpen} onOpenChange={setIsCreatePostDialogOpen}>
             <DialogTrigger asChild>
                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: isWelcomeCardVisible ? 0.3 : 0.1, duration: 0.5 }}>
-                <Button 
-                    variant="outline" 
+                <Button
+                    variant="outline"
                     className="w-full py-6 text-lg bg-card hover:bg-muted/80 border-2 border-dashed border-primary/40 hover:border-primary/70 text-primary/80 hover:text-primary shadow-sm"
                 >
                     <Edit className="mr-2 h-5 w-5"/> Bir şeyler paylaş...
@@ -457,7 +453,7 @@ export default function HomePage() {
               </div>
             </DialogContent>
           </Dialog>
-          
+
           {showRefreshButton && !isLoadingPosts && !isLoadingRooms && !isRefreshingFeed && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="my-3 sticky top-[calc(3.5rem+0.75rem)] sm:top-[calc(3.5rem+1rem)] z-20">
               <Button
@@ -473,9 +469,9 @@ export default function HomePage() {
           )}
 
 
-          {(isLoadingPosts || isLoadingRooms || loadingBlockedUsers || (! (userData?.privacySettings?.feedShowsEveryone ?? true) && loadingFriends) ) && combinedFeedItems.length === 0 && !isRefreshingFeed && ( 
-            <motion.div 
-              initial={{ opacity: 0 }} 
+          {(isLoadingPosts || isLoadingRooms || loadingBlockedUsers || (! (userData?.privacySettings?.feedShowsEveryone ?? true) && loadingFriends) ) && combinedFeedItems.length === 0 && !isRefreshingFeed && (
+            <motion.div
+              initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
               className="flex flex-col items-center justify-center py-16 text-center"
@@ -487,8 +483,8 @@ export default function HomePage() {
           )}
 
           {isRefreshingFeed && (
-             <motion.div 
-              initial={{ opacity: 0 }} 
+             <motion.div
+              initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.2 }}
               className="flex items-center justify-center py-4 text-sm text-muted-foreground"
@@ -504,8 +500,8 @@ export default function HomePage() {
                     <CardHeader className="pb-2">
                         <Users className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
                         <CardTitle className="text-xl sm:text-2xl font-semibold text-foreground">
-                        {(userData?.privacySettings?.feedShowsEveryone === false) 
-                            ? "Arkadaş Akışın Henüz Boş!" 
+                        {(userData?.privacySettings?.feedShowsEveryone === false)
+                            ? "Arkadaş Akışın Henüz Boş!"
                             : "Akışta Henüz Bir Şey Yok!"}
                         </CardTitle>
                     </CardHeader>
@@ -520,13 +516,13 @@ export default function HomePage() {
              </motion.div>
           )}
 
-          {(!isLoadingPosts || !isLoadingRooms || combinedFeedItems.length > 0) && !isRefreshingFeed && ( 
+          {(!isLoadingPosts || !isLoadingRooms || combinedFeedItems.length > 0) && !isRefreshingFeed && (
             <div className="space-y-4">
               {combinedFeedItems.map((item, index) => {
                 if (item.feedItemType === 'post') {
                   return (
-                    <motion.div 
-                        key={`post-${item.id}-${(item.createdAt as Timestamp)?.seconds || index}`} 
+                    <motion.div
+                        key={`post-${item.id}-${(item.createdAt as Timestamp)?.seconds || index}`}
                         custom={index}
                         variants={feedItemEntryVariants}
                         initial="hidden"
@@ -537,14 +533,14 @@ export default function HomePage() {
                   );
                 } else if (item.feedItemType === 'room') {
                   return (
-                    <motion.div 
+                    <motion.div
                         key={`room-${item.id}-${(item.createdAt as Timestamp)?.seconds || index}`}
                         custom={index}
                         variants={feedItemEntryVariants}
                         initial="hidden"
                         animate="visible"
                     >
-                      <RoomInFeedCard room={item as ChatRoomFeedDisplayData} />
+                      <RoomInFeedCard room={item as RoomInFeedCardData} />
                     </motion.div>
                   );
                 }

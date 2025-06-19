@@ -4,12 +4,13 @@
 import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, MessageSquare, LogIn, AlertCircle, Compass, Star } from "lucide-react"; // Star eklendi
+import { Users, MessageSquare, LogIn, AlertCircle, Compass, Star, Gamepad2 } from "lucide-react"; // Gamepad2 eklendi
 import Link from "next/link";
 import { Timestamp } from "firebase/firestore";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { cn } from "@/lib/utils"; // cn eklendi
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge"; // Badge eklendi
 
 export interface ChatRoomFeedDisplayData {
   id: string;
@@ -18,8 +19,9 @@ export interface ChatRoomFeedDisplayData {
   participantCount?: number;
   maxParticipants: number;
   createdAt: Timestamp;
-  isPremiumRoom?: boolean; // Eklendi
-  creatorIsPremium?: boolean; // Eklendi (Oluşturanın premium olup olmadığı)
+  isPremiumRoom?: boolean;
+  creatorIsPremium?: boolean;
+  isGameEnabledInRoom?: boolean; // Eklendi
 }
 
 interface RoomInFeedCardProps {
@@ -32,11 +34,15 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
     ? formatDistanceToNow(room.createdAt.toDate(), { addSuffix: true, locale: tr })
     : "Yakın zamanda";
 
+  const gameStatusText = room.isGameEnabledInRoom ? "Oyun Aktif" : "Oyun Kapalı";
+  const gameStatusColor = room.isGameEnabledInRoom ? "text-green-600 bg-green-500/10 border-green-500/30" : "text-red-600 bg-red-500/10 border-red-500/20";
+
+
   return (
     <Card className={cn(
         "shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl border group",
-        room.isPremiumRoom 
-            ? "border-yellow-500/70 dark:border-yellow-400/70 ring-1 ring-yellow-500/30 dark:ring-yellow-400/30 bg-gradient-to-br from-yellow-500/10 via-card to-yellow-500/5 dark:from-yellow-400/15 dark:via-card dark:to-yellow-400/10" 
+        room.isPremiumRoom
+            ? "border-yellow-500/70 dark:border-yellow-400/70 ring-1 ring-yellow-500/30 dark:ring-yellow-400/30 bg-gradient-to-br from-yellow-500/10 via-card to-yellow-500/5 dark:from-yellow-400/15 dark:via-card dark:to-yellow-400/10"
             : "border-border/30 dark:border-border/40 bg-card hover:border-primary/40 dark:hover:border-primary/50"
     )}>
       <CardHeader className="p-4 pb-2">
@@ -68,9 +74,10 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
             <Users className="h-4 w-4" />
             <span>{room.participantCount ?? 0} / {room.maxParticipants} Katılımcı</span>
           </div>
-          <p className="text-xs font-medium text-primary/90">
-            {room.isPremiumRoom ? "Özel Oda Keşfet!" : "Yeni bir maceraya atıl!"}
-          </p>
+           <Badge variant="outline" className={cn("text-xs px-1.5 py-0.5 border", gameStatusColor)}>
+              <Gamepad2 className="mr-1 h-3 w-3" />
+              {gameStatusText}
+          </Badge>
         </div>
       </CardContent>
       <CardFooter className="p-4 pt-2 border-t border-border/20 dark:border-border/25">
@@ -78,8 +85,8 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
           asChild
           className={cn(
             "w-full transition-transform group-hover:scale-[1.02]",
-            isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' : 
-            room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' : 
+            isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' :
+            room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' :
             'bg-primary hover:bg-primary/90 text-primary-foreground'
           )}
           disabled={isFull}
@@ -96,5 +103,3 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room }) => {
 });
 RoomInFeedCard.displayName = 'RoomInFeedCard';
 export default RoomInFeedCard;
-
-    
