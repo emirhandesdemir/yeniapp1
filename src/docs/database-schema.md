@@ -253,7 +253,7 @@ Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapıland�
 **Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.
 
 **GÜVENLİK KURALLARI ÖRNEĞİ (Firestore Console -> Rules):**
-```javascript
+\`\`\`javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -263,24 +263,79 @@ service cloud.firestore {
     }
 
     function isMessageOwner(messageId, pathPrefix) {
-      return request.auth.uid == get(/databases/$(database)/documents/$(pathPrefix)/$(messageId)).data.senderId;
+      let messageDoc = get(/databases/$(database)/documents/$(pathPrefix)/$(messageId));
+      if (!messageDoc.exists()) { return false; }
+      return request.auth.uid == messageDoc.data.senderId;
     }
 
     function canUpdateMessage(messageId, pathPrefix) {
-      let message = get(/databases/$(database)/documents/$(pathPrefix)/$(messageId)).data;
-      let requestData = request.resource.data;
-      let affectedKeys = requestData.diff(message).affectedKeys();
+      let messageDoc = get(/databases/$(database)/documents/$(pathPrefix)/$(messageId));
+      if (!messageDoc.exists()) { return false; }
+      let messageData = messageDoc.data;
+      let requestData = request.resource.data; // Gelen yeni veri
 
-      // Sender can edit text and editedAt
-      if (request.auth.uid == message.senderId &&
-          (affectedKeys.hasOnly(['text', 'editedAt']) || affectedKeys.hasOnly(['text', 'editedAt', 'reactions'])) && // Allow changing reactions alongside text/editedAt
-          requestData.text != message.text) { // text must actually change for edit
+      // Kural 1: Mesaj sahibi metin ve/veya tepkileri düzenleyebilir
+      if (request.auth.uid == messageData.senderId) {
+        let allowedKeysForOwner = ['text', 'editedAt', 'reactions'];
+        let incomingKeys = requestData.keys();
+
+        // Sadece izin verilen alanların güncellenip güncellenmediğini kontrol et
+        let onlyAllowedKeysUpdated = true;
+        for (let i=0; i < incomingKeys.size(); i=i+1) {
+          if (!(incomingKeys[i] in allowedKeysForOwner)) {
+            onlyAllowedKeysUpdated = false;
+            break;
+          }
+        }
+        if (!onlyAllowedKeysUpdated) {
+          return false; // Sahibi olsa bile, izin verilmeyen bir alanı değiştirmeye çalışıyor
+        }
+
+        // 'text' güncelleniyorsa, 'editedAt' de güncellenmeli ve bir timestamp olmalı
+        if (incomingKeys.has('text') && 
+            (!(requestData.editedAt is timestamp) || (messageData.editedAt != null && requestData.editedAt <= messageData.editedAt))
+           ) {
+          return false; 
+        }
+        // 'editedAt' güncelleniyorsa, bir timestamp olmalı ve eskisinden büyük olmalı (eğer eski varsa)
+        if (incomingKeys.has('editedAt') && 
+            (!(requestData.editedAt is timestamp) || (messageData.editedAt != null && requestData.editedAt <= messageData.editedAt))
+           ) {
+           return false;
+        }
+
+        // 'reactions' güncelleniyorsa, bir map olmalı
+        if (incomingKeys.has('reactions') && !(requestData.reactions is map)) {
+          return false;
+        }
+        
+        // En az bir değişiklik olmalı (metin, tepki veya ilk kez editedAt ayarlanması)
+        let textChanged = incomingKeys.has('text') && requestData.text != messageData.text;
+        let reactionsChanged = incomingKeys.has('reactions') && requestData.reactions != messageData.reactions;
+        // editedAt'in ilk kez ayarlanması veya ilerlemesi
+        let editedAtIsNewerOrFirstTime = incomingKeys.has('editedAt') && (messageData.get('editedAt', null) == null || requestData.editedAt > messageData.get('editedAt', timestamp.min()));
+
+
+        if (textChanged || reactionsChanged || editedAtIsNewerOrFirstTime) {
+            // Eğer sadece editedAt güncelleniyorsa ve metin aynıysa, bu da geçerli bir düzenleme
+            if (incomingKeys.hasOnly(['editedAt']) && editedAtIsNewerOrFirstTime) return true;
+            if (incomingKeys.hasOnly(['text','editedAt']) && (textChanged || editedAtIsNewerOrFirstTime)) return true;
+            if (incomingKeys.hasOnly(['reactions'])) return true; // Bu durum aşağıdaki genel reaction kuralına da girebilir
+            if (incomingKeys.hasAll(['text','editedAt','reactions']) && (textChanged || reactionsChanged || editedAtIsNewerOrFirstTime)) return true;
+            if (incomingKeys.hasAll(['text','editedAt']) && (textChanged || editedAtIsNewerOrFirstTime)) return true;
+            if (incomingKeys.hasAll(['editedAt','reactions']) && (reactionsChanged || editedAtIsNewerOrFirstTime)) return true;
+        }
+        // Eğer sadece text değişmeden editedAt güncelleniyorsa (client engellemeli ama kural izin vermeli)
+        if (incomingKeys.hasOnly(['editedAt']) && editedAtIsNewerOrFirstTime) return true;
+      }
+
+      // Kural 2: Giriş yapmış herhangi bir kullanıcı SADECE tepkileri güncelleyebilir
+      if (request.auth.uid != null &&
+          requestData.keys().hasOnly(['reactions']) &&
+          requestData.reactions != messageData.reactions) { // Tepkilerin gerçekten değiştiğinden emin ol
         return true;
       }
-      // Anyone can update reactions if ONLY reactions are changed
-      if (affectedKeys.hasOnly(['reactions']) && requestData.reactions != message.reactions) {
-        return true;
-      }
+
       return false;
     }
 
@@ -319,7 +374,7 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if request.auth.uid != null;
         allow create: if request.auth.uid != null && request.resource.data.senderId == request.auth.uid;
-        allow update: if request.auth.uid != null && canUpdateMessage(messageId, "chatRooms/" + roomId + "/messages");
+        allow update(messageDoc): if request.auth.uid != null && canUpdateMessage(messageId, "chatRooms/" + roomId + "/messages");
         allow delete: if request.auth.uid != null && isMessageOwner(messageId, "chatRooms/" + roomId + "/messages");
       }
       match /participants/{participantId} {
@@ -354,7 +409,7 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
         allow create: if request.auth.uid == request.resource.data.senderId && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
-        allow update: if request.auth.uid != null && canUpdateMessage(messageId, "directMessages/" + dmChatId + "/messages");
+        allow update(messageDoc): if request.auth.uid != null && canUpdateMessage(messageId, "directMessages/" + dmChatId + "/messages");
         allow delete: if request.auth.uid != null && isMessageOwner(messageId, "directMessages/" + dmChatId + "/messages");
       }
     }
@@ -398,6 +453,5 @@ service cloud.firestore {
     }
   }
 }
-```
+\`\`\`
 
-    
