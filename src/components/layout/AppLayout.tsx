@@ -6,10 +6,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  MessageSquare,
   Bell,
   Loader2,
-  SendHorizontal,
   Home,
   UserRound,
   Phone,
@@ -19,6 +17,7 @@ import {
   MessageCircle,
   Compass,
   Users, 
+  Shuffle, // Shuffle ikonu eklendi
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -80,6 +79,7 @@ const bottomNavItems: BottomNavItemType[] = [
   { href: () => '/', label: 'Akış', icon: Home, activeIcon: Home },
   { href: () => '/chat', label: 'Odalar', icon: Compass, activeIcon: Compass },
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
+  { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle }, // Yeni Eşleşme sekmesi
   { href: () => '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: UserPlus },
   { href: (uid) => uid ? `/profile/${uid}` : '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
