@@ -50,6 +50,7 @@ export default function MatchPage() {
   const [searchState, _setSearchState] = useState<SearchState>("idle");
   const searchStateRef = useRef(searchState);
   const setSearchState = (data: SearchState) => {
+    console.log(`[MatchPage setSearchState] Changing from ${searchStateRef.current} to ${data}`);
     searchStateRef.current = data;
     _setSearchState(data);
   };
@@ -64,6 +65,7 @@ export default function MatchPage() {
   const [queueDocId, _setQueueDocId] = useState<string | null>(null);
   const queueDocIdRef = useRef(queueDocId);
   const setQueueDocId = (data: string | null) => {
+    console.log(`[MatchPage setQueueDocId] Setting queueDocId to: ${data}`);
     queueDocIdRef.current = data;
     _setQueueDocId(data);
   };
@@ -101,21 +103,21 @@ export default function MatchPage() {
       console.log(`[MatchPage Cleanup] Attempting to delete queue doc ${currentQueueId} for ${currentUser?.uid}. Reason: ${reason || 'N/A'}`);
       const docRef = doc(db, "matchmakingQueue", currentQueueId);
       try {
-        // Check if document still exists before attempting to delete
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           await deleteDoc(docRef);
           console.log(`[MatchPage Cleanup] Successfully deleted queue doc ${currentQueueId}`);
         } else {
-          console.log(`[MatchPage Cleanup] Queue doc ${currentQueueId} already deleted or never existed.`);
+          console.log(`[MatchPage Cleanup] Queue doc ${currentQueueId} already deleted or never existed (Reason: ${reason}).`);
         }
       } catch (e) {
-        console.warn(`[MatchPage Cleanup] Error deleting queue doc ${currentQueueId} on cleanup:`, e);
+        console.warn(`[MatchPage Cleanup] Error deleting queue doc ${currentQueueId} on cleanup (Reason: ${reason}):`, e);
       }
     }
   }, [currentUser?.uid]);
   
   const resetSearch = useCallback((message?: string) => {
+    console.log(`[MatchPage resetSearch] Resetting search. Message: ${message}. Current queueDocId: ${queueDocIdRef.current}`);
     cleanupListenerAndDoc(queueDocIdRef.current, `resetSearch: ${message || 'general reset'}`);
     setQueueDocId(null); 
     setSearchState("idle");
@@ -125,8 +127,6 @@ export default function MatchPage() {
 
 
   useEffect(() => {
-    // This ref will hold the current queueDocId for the cleanup function.
-    // This is important because the queueDocId in the cleanup might be stale.
     const currentQueueDocIdForCleanup = queueDocIdRef.current;
     const currentSearchStateForCleanup = searchStateRef.current;
 
@@ -138,13 +138,12 @@ export default function MatchPage() {
         unsubscribeQueueListenerRef.current = null;
       }
       if (currentQueueDocIdForCleanup && (currentSearchStateForCleanup === 'searching' || currentSearchStateForCleanup === 'idle')) {
-        console.log(`[MatchPage Unmount] Cleaning up queue document ${currentQueueDocIdForCleanup} for user ${currentUser?.uid} as state was ${currentSearchStateForCleanup}`);
+        console.log(`[MatchPage Unmount] Cleaning up queue document ${currentQueueDocIdForCleanup} for user ${currentUser?.uid} as state was ${currentSearchStateForCleanup}. This is a best-effort delete.`);
         const docRef = doc(db, "matchmakingQueue", currentQueueDocIdForCleanup);
-        // This delete is a "best effort" as the component is unmounting.
         deleteDoc(docRef).catch(e => console.warn("[MatchPage Unmount] Error cleaning up queue on unmount (best effort):", e));
       }
     };
-  }, [currentUser?.uid]); // Dependency array is minimal to avoid re-running excessively
+  }, [currentUser?.uid]);
 
 
   const handleStartSearch = useCallback(async () => {
@@ -152,10 +151,13 @@ export default function MatchPage() {
       toast({ title: "Hata", description: "Eşleşme başlatılamadı. Lütfen giriş yapın.", variant: "destructive" });
       return;
     }
-    if (searchStateRef.current === 'searching') return;
+    if (searchStateRef.current === 'searching') {
+      console.log("[MatchPage handleStartSearch] Already searching, aborting new search start.");
+      return;
+    }
 
-    // Ensure any previous listener/doc is cleaned up before starting a new search
-    await cleanupListenerAndDoc(queueDocIdRef.current, "new search initiated");
+    console.log("[MatchPage handleStartSearch] Initiating new search. Cleaning up previous if any.");
+    await cleanupListenerAndDoc(queueDocIdRef.current, "new search initiated by user");
     setQueueDocId(null); 
 
     setSearchState("searching");
@@ -165,6 +167,7 @@ export default function MatchPage() {
     let currentAttemptQueueId: string | null = null;
 
     try {
+      console.log(`[MatchPage handleStartSearch] User ${currentUser.uid} creating queue entry.`);
       const queueEntry: Omit<MatchmakingQueueEntry, 'joinedAt'> & { joinedAt: any } = {
         userId: currentUser.uid,
         displayName: userData.displayName,
@@ -175,12 +178,13 @@ export default function MatchPage() {
       };
       const newQueueDocRef = await addDoc(collection(db, "matchmakingQueue"), queueEntry);
       currentAttemptQueueId = newQueueDocRef.id;
-      setQueueDocId(currentAttemptQueueId); // Set the ID for the current user's new queue entry
+      setQueueDocId(currentAttemptQueueId);
+      console.log(`[MatchPage handleStartSearch] User ${currentUser.uid} queue entry created: ${currentAttemptQueueId}. Now looking for a match.`);
 
       const q = query(
         collection(db, "matchmakingQueue"),
         where("status", "==", "waiting"),
-        where("userId", "!=", currentUser.uid), // Ensure not matching self
+        where("userId", "!=", currentUser.uid), 
         orderBy("joinedAt", "asc"),
         limit(10) 
       );
@@ -191,42 +195,48 @@ export default function MatchPage() {
 
       for (const otherUserDoc of querySnapshot.docs) {
         const otherUserData = { ...otherUserDoc.data(), id: otherUserDoc.id } as MatchmakingQueueEntry;
-        if (otherUserData.userId !== currentUser.uid) { // Double check, query should handle
+        // Double check, query should handle not matching self, but good to be defensive
+        if (otherUserData.userId !== currentUser.uid) { 
             matchedPartner = otherUserData;
             matchedPartnerDocRef = otherUserDoc.ref;
+            console.log(`[MatchPage handleStartSearch] Potential match found by ${currentUser.uid} with ${matchedPartner.userId} (${matchedPartner.id})`);
             break; 
         }
       }
 
       if (matchedPartner && matchedPartnerDocRef && currentAttemptQueueId) {
-        console.log(`[MatchPage] Immediate match found by ${currentUser.uid} with ${matchedPartner.userId}`);
+        console.log(`[MatchPage handleStartSearch - Initiator ${currentUser.uid}] Immediate match found with ${matchedPartner.userId} (Queue ID: ${matchedPartner.id}). Attempting transaction.`);
         const temporaryDmChatId = generateDmChatId(currentUser.uid, matchedPartner.userId);
-        const sessionExpiresAt = Timestamp.fromDate(addMinutes(new Date(), 4));
+        const sessionExpiresAt = Timestamp.fromDate(addMinutes(new Date(), 4)); // 4 minutes session
 
         await runTransaction(db, async (transaction) => {
-          const myQueueDocInTransaction = await transaction.get(newQueueDocRef); // User A's doc
-          const otherUserQueueDocInTransaction = await transaction.get(matchedPartnerDocRef); // User B's doc
+          console.log(`[MatchPage handleStartSearch - Initiator ${currentUser.uid}] Starting transaction for match with ${matchedPartner!.userId}`);
+          const myQueueDocInTransaction = await transaction.get(newQueueDocRef); 
+          const otherUserQueueDocInTransaction = await transaction.get(matchedPartnerDocRef);
 
           if (!myQueueDocInTransaction.exists() || !otherUserQueueDocInTransaction.exists() ||
               myQueueDocInTransaction.data()?.status !== 'waiting' ||
               otherUserQueueDocInTransaction.data()?.status !== 'waiting') {
-            console.warn(`[MatchPage Transaction] Match candidate no longer valid. My status: ${myQueueDocInTransaction.data()?.status}, Other status: ${otherUserQueueDocInTransaction.data()?.status}`);
+            console.warn(`[MatchPage Transaction - Initiator ${currentUser.uid}] Match candidate no longer valid. My status: ${myQueueDocInTransaction.data()?.status}, Other status: ${otherUserQueueDocInTransaction.data()?.status}. Aborting match.`);
             throw new Error("Eşleşme adayı artık uygun değil veya zaten eşleşmiş.");
           }
-
-          transaction.update(newQueueDocRef, { // User A's doc
+          console.log(`[MatchPage Transaction - Initiator ${currentUser.uid}] Both users are 'waiting'. Proceeding to update both to 'matched'.`);
+          
+          transaction.update(newQueueDocRef, { 
             status: 'matched',
             matchedWithUserId: matchedPartner!.userId,
             temporaryDmChatId: temporaryDmChatId,
             matchSessionExpiresAt: sessionExpiresAt,
           });
-          transaction.update(matchedPartnerDocRef, { // User B's doc
+          transaction.update(matchedPartnerDocRef, { 
             status: 'matched',
             matchedWithUserId: currentUser.uid,
             temporaryDmChatId: temporaryDmChatId,
             matchSessionExpiresAt: sessionExpiresAt,
           });
+          console.log(`[MatchPage Transaction - Initiator ${currentUser.uid}] Transaction updates queued for both users.`);
         });
+        console.log(`[MatchPage handleStartSearch - Initiator ${currentUser.uid}] Transaction successful. Creating DM doc ${temporaryDmChatId}.`);
         
         const dmDocRef = doc(db, "directMessages", temporaryDmChatId);
         const otherUserProfile = await getDoc(doc(db, "users", matchedPartner.userId));
@@ -249,55 +259,84 @@ export default function MatchPage() {
             matchSessionUser2Id: matchedPartner.userId, matchSessionUser1Decision: 'pending',
             matchSessionUser2Decision: 'pending', matchSessionEnded: false,
         });
+        console.log(`[MatchPage handleStartSearch - Initiator ${currentUser.uid}] DM doc ${temporaryDmChatId} created.`);
         
         setStatusMessage(`Partner bulundu: ${matchedPartner.displayName || 'Kullanıcı'}. Geçici sohbete yönlendiriliyorsunuz...`);
         setSearchState("matched");
         
-        // This user (the one who found the match) navigates.
-        // The other user (matchedPartner) relies on THEIR listener to navigate.
+        console.log(`[MatchPage handleStartSearch - Initiator ${currentUser.uid}] Navigating to /dm/${temporaryDmChatId}`);
         router.push(`/dm/${temporaryDmChatId}`);
         
-        // Delete this user's queue document as they are matched and redirected
+        console.log(`[MatchPage handleStartSearch - Initiator ${currentUser.uid}] Deleting own queue document: ${newQueueDocRef.id}`);
         await deleteDoc(newQueueDocRef); 
-        setQueueDocId(null); // Crucial: clear doc ID for this user
+        setQueueDocId(null); 
 
       } else if (currentAttemptQueueId) {
-        // No immediate match found, set up listener on own queue document
-        console.log(`[MatchPage] No immediate match for ${currentUser.uid}. Setting up listener for ${currentAttemptQueueId}`);
+        console.log(`[MatchPage handleStartSearch - User ${currentUser.uid}] No immediate match found. Setting up listener for own queue document: ${currentAttemptQueueId}`);
         const selfQueueDocRef = doc(db, "matchmakingQueue", currentAttemptQueueId);
+        
+        if (unsubscribeQueueListenerRef.current) {
+          console.warn(`[MatchPage handleStartSearch - User ${currentUser.uid}] Previous listener was not cleaned up. Cleaning now.`);
+          unsubscribeQueueListenerRef.current();
+        }
+
         unsubscribeQueueListenerRef.current = onSnapshot(selfQueueDocRef, async (docSnap) => {
-          console.log(`[Match Listener - ${currentUser.uid}] Snapshot received for ${docSnap.id}. Exists: ${docSnap.exists()}`);
+          console.log(`[Match Listener - ${currentUser.uid}] Snapshot received for ${docSnap.id}. Exists: ${docSnap.exists()}, Current searchState: ${searchStateRef.current}`);
           if (!docSnap.exists()) {
-            console.log(`[Match Listener - ${currentUser.uid}] Queue document ${docSnap.id} deleted.`);
-            if (searchStateRef.current !== 'matched') { 
-              resetSearch("Eşleşme kaydınız bulunamadı veya silindi.");
+            console.log(`[Match Listener - ${currentUser.uid}] Queue document ${docSnap.id} was deleted or does not exist.`);
+            if (searchStateRef.current !== 'matched' && searchStateRef.current !== 'cancelled') { 
+              console.log(`[Match Listener - ${currentUser.uid}] Document deleted and not matched/cancelled. Resetting search. Current searchState: ${searchStateRef.current}`);
+              resetSearch("Eşleşme kaydınız bulunamadı veya beklenmedik şekilde silindi.");
+            } else {
+              console.log(`[Match Listener - ${currentUser.uid}] Document deleted but state is ${searchStateRef.current}. No reset action taken by listener.`);
             }
             return;
           }
 
           const data = docSnap.data() as MatchmakingQueueEntry;
-          console.log(`[Match Listener - ${currentUser.uid}] Data:`, data);
+          console.log(`[Match Listener - ${currentUser.uid}] Data from snapshot:`, data);
 
           if (data?.status === 'matched' && data.temporaryDmChatId && data.matchedWithUserId) {
-            console.log(`[Match Listener - ${currentUser.uid}] Matched! With ${data.matchedWithUserId}. DM: ${data.temporaryDmChatId}`);
-            if (unsubscribeQueueListenerRef.current) unsubscribeQueueListenerRef.current();
-            unsubscribeQueueListenerRef.current = null;
+            console.log(`[Match Listener - ${currentUser.uid}] Matched! With ${data.matchedWithUserId}. DM: ${data.temporaryDmChatId}. Proceeding to handle match.`);
+
+            if (unsubscribeQueueListenerRef.current) {
+              console.log(`[Match Listener - ${currentUser.uid}] Unsubscribing self listener for matched event.`);
+              unsubscribeQueueListenerRef.current();
+              unsubscribeQueueListenerRef.current = null;
+            }
             
-            setSearchState("matched");
+            setSearchState("matched"); 
+            
             const otherUserSnap = await getDoc(doc(db, "users", data.matchedWithUserId));
             const otherUserName = otherUserSnap.exists() ? otherUserSnap.data().displayName : "Kullanıcı";
             setStatusMessage(`Partner bulundu: ${otherUserName || 'Kullanıcı'}. Geçici sohbete yönlendiriliyorsunuz...`);
             
-            router.push(`/dm/${data.temporaryDmChatId}`);
-            
-            await deleteDoc(docSnap.ref);
-            setQueueDocId(null); // Crucial: clear doc ID for this user
+            try {
+              console.log(`[Match Listener - ${currentUser.uid}] Deleting own queue document: ${docSnap.id}`);
+              await deleteDoc(docSnap.ref); 
+              setQueueDocId(null); 
+              console.log(`[Match Listener - ${currentUser.uid}] Successfully deleted queue document. Navigating to /dm/${data.temporaryDmChatId}`);
+              router.push(`/dm/${data.temporaryDmChatId}`);
+            } catch (delError) {
+                console.error(`[Match Listener - ${currentUser.uid}] Error deleting own queue doc or navigating:`, delError);
+                toast({
+                    title: "Eşleşme Hatası",
+                    description: "Eşleşme işlenirken bir sorun oluştu (kod: L-DEL-NAV). Lütfen tekrar deneyin.",
+                    variant: "destructive",
+                });
+                resetSearch("Eşleşme sırasında bir hata oluştu, lütfen tekrar deneyin.");
+            }
+            return; 
           } else if (data?.status === 'cancelled') {
-            console.log(`[Match Listener - ${currentUser.uid}] Search cancelled by server/other means.`);
-            resetSearch("Eşleşme arama iptal edildi (başka bir yerden).");
+            console.log(`[Match Listener - ${currentUser.uid}] Search was cancelled (status: 'cancelled' in DB). Resetting search.`);
+            resetSearch("Eşleşme arama iptal edildi (veritabanından).");
+          } else if (data?.status === 'waiting') {
+             console.log(`[Match Listener - ${currentUser.uid}] Still waiting for a match. Document ID: ${docSnap.id}`);
+          } else {
+             console.log(`[Match Listener - ${currentUser.uid}] Received unhandled status or incomplete data:`, data);
           }
         }, (error) => {
-          console.error(`[Match Listener - ${currentUser.uid}] Error listening to queue document:`, error);
+          console.error(`[Match Listener - ${currentUser.uid}] Error listening to queue document ${selfQueueDocRef.id}:`, error);
           setErrorMessage("Eşleşme durumu dinlenirken bir hata oluştu.");
           resetSearch("Bir hata nedeniyle arama durduruldu.");
           setSearchState("error");
@@ -305,42 +344,46 @@ export default function MatchPage() {
       }
 
     } catch (error: any) {
-      console.error("[MatchPage] Error starting search or matching:", error);
-      setErrorMessage(`Eşleşme sırasında bir hata oluştu: ${error.message}`);
+      console.error("[MatchPage handleStartSearch] Error starting search or matching:", error);
+      setErrorMessage(`Eşleşme sırasında bir hata oluştu: ${error.message || 'Bilinmeyen hata'}`);
       setSearchState("error");
       if (currentAttemptQueueId) { 
-        await deleteDoc(doc(db, "matchmakingQueue", currentAttemptQueueId));
+        console.log(`[MatchPage handleStartSearch - Error Caught] Deleting potentially orphaned queue doc: ${currentAttemptQueueId}`);
+        await deleteDoc(doc(db, "matchmakingQueue", currentAttemptQueueId)).catch(delErr => console.warn("Error cleaning up queue doc after main error:", delErr));
       }
-      setQueueDocId(null); // Clear queueDocId on error
+      setQueueDocId(null); 
     }
   }, [currentUser, userData, toast, router, cleanupListenerAndDoc, resetSearch, setSearchState, setStatusMessage, setErrorMessage, setQueueDocId]);
 
 
   const handleCancelSearch = useCallback(async () => {
-    console.log(`[MatchPage] User ${currentUser?.uid} cancelling search. Current queueDocId: ${queueDocIdRef.current}`);
-    const idToCancel = queueDocIdRef.current; // Capture current ref value
+    const idToCancel = queueDocIdRef.current; 
+    console.log(`[MatchPage handleCancelSearch] User ${currentUser?.uid} cancelling search. Current queueDocId: ${idToCancel}`);
     
-    // First, update local state to prevent further actions and show UI change
     setSearchState("cancelled");
     setStatusMessage("Eşleşme arama iptal edildi. Tekrar denemek için butona tıkla.");
     setErrorMessage(null);
 
     if (unsubscribeQueueListenerRef.current) {
+      console.log(`[MatchPage handleCancelSearch] Unsubscribing listener for ${idToCancel}.`);
       unsubscribeQueueListenerRef.current();
       unsubscribeQueueListenerRef.current = null;
     }
     
     if (idToCancel) {
       try {
+        console.log(`[MatchPage handleCancelSearch] Deleting queue doc ${idToCancel}.`);
         const docRef = doc(db, "matchmakingQueue", idToCancel);
-        await deleteDoc(docRef); // Delete the user's own queue document
-        console.log(`[MatchPage] Successfully deleted queue doc ${idToCancel} on cancel.`);
+        await deleteDoc(docRef); 
+        console.log(`[MatchPage handleCancelSearch] Successfully deleted queue doc ${idToCancel} on cancel.`);
       } catch (error) {
-        console.error("Error cancelling search (deleting queue doc):", error);
+        console.error("[MatchPage handleCancelSearch] Error cancelling search (deleting queue doc):", error);
         toast({ title: "Hata", description: "Arama iptal edilirken bir sorun oluştu.", variant: "destructive" });
       }
+    } else {
+        console.log("[MatchPage handleCancelSearch] No queueDocId to delete, cancellation might be for a search that didn't fully start.");
     }
-    setQueueDocId(null); // Clear queueDocId after attempting deletion
+    setQueueDocId(null); 
   }, [currentUser?.uid, toast, setSearchState, setStatusMessage, setErrorMessage, setQueueDocId]);
 
 
@@ -447,3 +490,4 @@ export default function MatchPage() {
     </div>
   );
 }
+
