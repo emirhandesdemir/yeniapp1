@@ -26,17 +26,17 @@ export async function projectAssistantFlow(input: ProjectAssistantInput): Promis
 }
 
 const projectContext = `
-Sohbet Küresi Uygulama Geliştirme Asistanı Bilgi Bağlamı
+HiweWalk Uygulama Geliştirme Asistanı Bilgi Bağlamı
 
-Merhaba! Ben Sohbet Küresi uygulamasının geliştirme sürecinde sana yardımcı olmak için buradayım. Uygulamamızın genel yapısı, kullanılan teknolojiler ve temel özellikleri hakkında bilgi sahibiyim. Bana proje dosyalarının yerleri, belirli bir özelliğin nasıl implemente edildiği (genel düzeyde), hangi teknolojinin ne amaçla kullanıldığı gibi konularda sorular sorabilirsin.
+Merhaba! Ben HiweWalk uygulamasının geliştirme sürecinde sana yardımcı olmak için buradayım. Uygulamamızın genel yapısı, kullanılan teknolojiler ve temel özellikleri hakkında bilgi sahibiyim. Bana proje dosyalarının yerleri, belirli bir özelliğin nasıl implemente edildiği (genel düzeyde), hangi teknolojinin ne amaçla kullanıldığı gibi konularda sorular sorabilirsin.
 
 Genel Uygulama Amacı:
-Sohbet Küresi, kullanıcıların interaktif ve eğlenceli bir ortamda iletişim kurmasını sağlayan modern bir sosyal platformdur. Metin tabanlı sohbet odaları, direkt mesajlaşma, sesli sohbet yetenekleri, gönderi paylaşımı ve oyunlaştırma elementleri ile zengin bir kullanıcı deneyimi sunmayı hedefler. Progresif Web Uygulaması (PWA) olarak geliştirilerek, mobil cihazlarda da akıcı bir deneyim sunması amaçlanmaktadır.
+HiweWalk, kullanıcıların interaktif ve eğlenceli bir ortamda iletişim kurmasını sağlayan modern bir sosyal platformdur. Metin tabanlı sohbet odaları, direkt mesajlaşma, sesli sohbet yetenekleri, gönderi paylaşımı ve oyunlaştırma elementleri ile zengin bir kullanıcı deneyimi sunmayı hedefler. Progresif Web Uygulaması (PWA) olarak geliştirilerek, mobil cihazlarda da akıcı bir deneyim sunması amaçlanmaktadır.
 
-## Sohbet Küresi Projesi - Genel Bakış ve Teknoloji Yığını
+## HiweWalk Projesi - Genel Bakış ve Teknoloji Yığını
 
 **Projenin Amacı:**
-Sohbet Küresi, kullanıcıların dinamik sohbet odaları oluşturup katılabildiği, direkt mesajlaşma (DM) yapabildiği, WebRTC tabanlı sesli sohbetler gerçekleştirebildiği, gönderi paylaşımı ve etkileşimi (beğeni, yorum) yapabildiği, kapsamlı bir sosyal etkileşim platformudur. Uygulama, kullanıcıların arkadaşlık kurmasını, topluluklar oluşturmasını ve çeşitli etkileşimler aracılığıyla sanal para (elmas) kazanıp harcamasını hedefler. PWA (Progresif Web Uygulaması) desteği ile mobil cihazlarda uygulama benzeri bir deneyim sunar.
+HiweWalk, kullanıcıların dinamik sohbet odaları oluşturup katılabildiği, direkt mesajlaşma (DM) yapabildiği, WebRTC tabanlı sesli sohbetler gerçekleştirebildiği, gönderi paylaşımı ve etkileşimi (beğeni, yorum) yapabildiği, kapsamlı bir sosyal etkileşim platformudur. Uygulama, kullanıcıların arkadaşlık kurmasını, topluluklar oluşturmasını ve çeşitli etkileşimler aracılığıyla sanal para (elmas) kazanıp harcamasını hedefler. PWA (Progresif Web Uygulaması) desteği ile mobil cihazlarda uygulama benzeri bir deneyim sunar.
 
 **Temel Özellikler:**
 1.  **Kullanıcı Kimlik Doğrulama:** E-posta/şifre ve Google ile güvenli giriş/kayıt.
@@ -82,7 +82,7 @@ Sohbet Küresi, kullanıcıların dinamik sohbet odaları oluşturup katılabild
 *   **Form Yönetimi:** React Hook Form (Zod ile şema doğrulaması)
 *   **Genel Yardımcılar:** date-fns, uuid vb.
 
-Sohbet Küresi Projesi Genel Bakış (Eski):
+HiweWalk Projesi Genel Bakış (Eski):
 Bu proje, Next.js, React, ShadCN UI bileşenleri, Tailwind CSS ve Genkit (AI için) kullanılarak geliştirilmiş bir sohbet uygulamasıdır. Firebase Firestore veritabanı olarak kullanılmaktadır.
 
 Ana Klasör Yapısı ve Amaçları:

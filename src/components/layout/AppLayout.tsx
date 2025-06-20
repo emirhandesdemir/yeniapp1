@@ -18,7 +18,7 @@ import {
   Settings,
   MessageCircle,
   Compass,
-  Users, // Eksik olan Users ikonu buraya eklendi
+  Users, 
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -383,14 +383,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex flex-col min-h-screen bg-background">
       {!isChatPage && (
         <header className="flex h-14 items-center justify-between border-b border-border bg-card px-3 sm:px-4 sticky top-0 z-30 shadow-sm">
-          <Link href="/" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">Sohbet Küresi</Link>
+          <Link href="/" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">HiweWalk</Link>
           <div className="flex items-center gap-0.5 sm:gap-1">
              <Button asChild variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:h-9" aria-label="Ayarlar">
                 <Link href="/profile"><Settings className="h-4 w-4 sm:h-5 sm:w-5" /></Link>
             </Button>
             <Popover>
               <PopoverTrigger asChild>
-                <div role="button" tabIndex={0} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full relative text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:h-9 cursor-pointer flex items-center justify-center")} aria-label="Arkadaşlık İstekleri">
+                <div role="button" tabIndex={0} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full relative text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:w-9 cursor-pointer flex items-center justify-center")} aria-label="Arkadaşlık İstekleri">
                   <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
                   {incomingRequests.length > 0 && (<span className="absolute top-1 right-1 flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span></span>)}
                 </div>
