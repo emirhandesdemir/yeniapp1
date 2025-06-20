@@ -3,12 +3,6 @@
 import React from 'react';
 import AuthLayout from "@/components/layout/AuthLayout";
 import LoginForm from "@/components/auth/LoginForm";
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Giriş Yap - HiweWalk',
-  description: 'HiweWalk hesabınıza giriş yapın.',
-};
 
 export default function LoginPage() {
   return (
