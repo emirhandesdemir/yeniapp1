@@ -26,6 +26,7 @@ import {
   setDoc,
   updateDoc,
   runTransaction,
+  getDoc, // getDoc import edildi
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId } from "@/lib/utils";
@@ -377,3 +378,4 @@ export default function MatchPage() {
     </div>
   );
 }
+
