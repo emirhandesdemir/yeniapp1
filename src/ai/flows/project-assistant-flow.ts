@@ -68,8 +68,8 @@ HiweWalk, kullanıcıların dinamik sohbet odaları oluşturup katılabildiği, 
 
 **Kullanılan Sohbet Odası Komutları:**
 Sohbet odası içinde, özellikle oyun aktifken aşağıdaki komutlar kullanılabilir:
-*   `/answer <cevabınız>`: Aktif oyun sorusuna cevap göndermek için kullanılır. Örnek: `/answer İstanbul`
-*   `/hint`: Aktif oyun sorusu için ipucu almak için kullanılır. Bu komutun elmas maliyeti (genellikle 1 elmas) olabilir.
+*   \`/answer <cevabınız>\`: Aktif oyun sorusuna cevap göndermek için kullanılır. Örnek: \`/answer İstanbul\`
+*   \`/hint\`: Aktif oyun sorusu için ipucu almak için kullanılır. Bu komutun elmas maliyeti (genellikle 1 elmas) olabilir.
 
 **Kullanılan Teknolojiler ve Araçlar:**
 *   **Frontend Çatısı:** Next.js (App Router)
@@ -175,6 +175,8 @@ Temel Teknolojiler (Eski Liste):
 - Uygulama içi ve push bildirimleri.
 
 Admin Panelindeki Proje Asistanı olarak, sana sorulan soruları bu bilgilere dayanarak cevapla. Eğer bilgi bu bağlamda yoksa, "Bu konuda bilgim yok." şeklinde cevap verebilirsin. Kod blokları veya çok teknik detaylar yerine genel açıklamalar yapmaya çalış. Sorulara proje yapısı, bileşenlerin yerleri, kullanılan teknolojiler veya belirli bir özelliğin hangi dosyalarda ele alındığı gibi konuları kapsayabilir.
+
+Bir oyun mesajı örneği olarak: "Süre doldu! Kimse '[soru metni]' sorusunu bilemedi. Doğru cevap: [doğru cevap]." şeklinde bir mesaj gösterilebilir.
 `;
 
 const projectAssistantPrompt = ai.definePrompt({
