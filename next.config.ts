@@ -9,7 +9,7 @@ const customRuntimeCaching = [
     options: {
       cacheName: 'firestore-data',
       expiration: {
-        maxEntries: 50,
+        maxEntries: 100, // Artırıldı
         maxAgeSeconds: 60 * 60 * 24 * 1, // 1 gün
       },
       cacheableResponse: {
@@ -23,7 +23,7 @@ const customRuntimeCaching = [
     options: {
       cacheName: 'firebase-images',
       expiration: {
-        maxEntries: 60,
+        maxEntries: 120, // Artırıldı
         maxAgeSeconds: 60 * 60 * 24 * 30, // 30 gün
       },
       cacheableResponse: {
