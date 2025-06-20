@@ -19,9 +19,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   try {
     const permission = await Notification.requestPermission();
     console.log('Notification permission status:', permission);
-    if (permission === 'granted' && VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
-        console.warn("Bildirim izni verildi ancak VAPID anahtarı girilmemiş. Lütfen notificationUtils.ts dosyasındaki VAPID_KEY değerini güncelleyin.");
-    }
+    // VAPID anahtarı kontrolü kaldırıldı
     return permission;
   } catch (error) {
     console.error('Error requesting notification permission:', error);
@@ -32,17 +30,11 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 export async function subscribeUserToPush(): Promise<string | null> {
   if (typeof window === 'undefined' || !messaging) {
     console.warn('Firebase Messaging not initialized. Cannot subscribe.');
-    if (VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
-        console.error("PUSH ABONELİĞİ HATASI: VAPID anahtarı girilmemiş. Lütfen src/lib/notificationUtils.ts dosyasındaki VAPID_KEY değerini Firebase projenizdeki anahtarla güncelleyin.");
-    }
+    // VAPID anahtarı kontrolü kaldırıldı
     return null;
   }
 
-  if (VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
-    console.error("PUSH ABONELİĞİ BAŞARISIZ: VAPID anahtarı girilmemiş. Lütfen src/lib/notificationUtils.ts dosyasındaki VAPID_KEY değerini Firebase projenizdeki anahtarla güncelleyin.");
-    alert("UYARI: Bildirimler için VAPID anahtarı yapılandırılmamış. Lütfen geliştiriciye bildirin.");
-    return null;
-  }
+  // VAPID anahtarı kontrolü ve alert kaldırıldı
 
   try {
     const permission = await requestNotificationPermission();
@@ -103,3 +95,4 @@ export function getNotificationPermissionStatus(): NotificationPermission {
   if (typeof window === 'undefined' || !('Notification'in window)) return 'default';
   return Notification.permission;
 }
+
