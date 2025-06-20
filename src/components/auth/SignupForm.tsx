@@ -42,7 +42,7 @@ export default function SignupForm() {
   const { signUp, signInWithGoogle, isUserLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
-  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+  // recaptchaSiteKey değişkeni kaldırıldı
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -55,58 +55,13 @@ export default function SignupForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    if (!recaptchaSiteKey) {
-      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA site anahtarı yapılandırılmamış.", variant: "destructive"});
-      await signUp(values.email, values.password, values.username, values.gender);
-      return;
-    }
-
-    if (typeof grecaptcha === 'undefined' || typeof grecaptcha.enterprise === 'undefined') {
-      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA yüklenemedi. Lütfen sayfayı yenileyin.", variant: "destructive" });
-      await signUp(values.email, values.password, values.username, values.gender);
-      return;
-    }
-
-    grecaptcha.enterprise.ready(async () => {
-      try {
-        const token = await grecaptcha.enterprise.execute(recaptchaSiteKey, { action: 'SIGNUP' });
-        console.log("reCAPTCHA token (Signup):", token);
-        // TODO: Bu 'token'ı ve 'values' bilgilerini
-        // kendi backend'inize gönderip reCAPTCHA token'ını doğrulatın.
-        // Sadece doğrulama başarılı olursa Firebase signUp çağrılmalıdır.
-        // Bu prototipte backend doğrulama adımı atlanmıştır.
-        await signUp(values.email, values.password, values.username, values.gender);
-      } catch (error) {
-        console.error("reCAPTCHA execute error (Signup):", error);
-        toast({ title: "reCAPTCHA Doğrulama Hatası", description: "Güvenlik doğrulaması başarısız oldu.", variant: "destructive" });
-        // İsteğe bağlı: reCAPTCHA başarısız olursa signup işlemini durdur
-        // return;
-      }
-    });
+    // reCAPTCHA mantığı kaldırıldı
+    await signUp(values.email, values.password, values.username, values.gender);
   }
 
   const handleGoogleSignUp = async () => {
-    if (!recaptchaSiteKey) {
-      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA site anahtarı yapılandırılmamış.", variant: "destructive"});
-      await signInWithGoogle();
-      return;
-    }
-    if (typeof grecaptcha === 'undefined' || typeof grecaptcha.enterprise === 'undefined') {
-      toast({ title: "reCAPTCHA Hatası", description: "reCAPTCHA yüklenemedi. Lütfen sayfayı yenileyin.", variant: "destructive" });
-      await signInWithGoogle();
-      return;
-    }
-    grecaptcha.enterprise.ready(async () => {
-      try {
-        const token = await grecaptcha.enterprise.execute(recaptchaSiteKey, { action: 'SIGNUP_GOOGLE' });
-        console.log("reCAPTCHA token (Google Sign Up):", token);
-        // TODO: Bu token'ı backend'e gönderip doğrulatın.
-        await signInWithGoogle();
-      } catch (error) {
-        console.error("reCAPTCHA execute error (Google Sign Up):", error);
-        toast({ title: "reCAPTCHA Doğrulama Hatası", description: "Güvenlik doğrulaması başarısız oldu.", variant: "destructive" });
-      }
-    });
+    // reCAPTCHA mantığı kaldırıldı
+    await signInWithGoogle();
   };
 
   return (
