@@ -224,8 +224,8 @@ Kullanıcıların 1v1 rastgele eşleşme için beklediği kuyruk.
   - `temporaryDmChatId`: (String, nullable) Eğer eşleştiyse, oluşturulan geçici DM sohbet odasının ID'si.
   - `matchSessionExpiresAt`: (Timestamp, nullable) Eğer eşleştiyse, geçici DM seansının sona erme zamanı.
 - **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
-  - `matchmakingQueue` koleksiyonu için: `status` (Artan), `userId` (Artan, eşitlik dışı sorgular için), `joinedAt` (Artan)
-    - *Sorgu:* `src/app/(main)/match/page.tsx` (Eş arama sorgusu için)
+  - `matchmakingQueue` koleksiyonu için: `status` (Artan), `joinedAt` (Artan), `userId` (Artan)
+    - *Sorgu:* `src/app/(main)/match/page.tsx` (Eş arama sorgusu: `status` eşitliği, `userId` eşitsizliği, `joinedAt` sıralaması için)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
 **Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.
