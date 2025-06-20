@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star, Gamepad2 } from "lucide-react";
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star, Gamepad2, MessageSquarePlus } from "lucide-react";
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -15,10 +15,12 @@ import CreatePostForm from "@/components/feed/CreatePostForm";
 import PostCard, { type Post } from "@/components/feed/PostCard";
 import RoomInFeedCard, { type ChatRoomFeedDisplayData as RoomInFeedCardData } from "@/components/feed/RoomInFeedCard";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, Timestamp, where, limit, getDocs } from "firebase/firestore"; // onSnapshot kaldırıldı
+import { collection, query, orderBy, Timestamp, where, limit, getDocs } from "firebase/firestore";
 import { isPast } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
 
 const cardVariants = {
   hidden: { opacity: 0, y: -20, height: 0, marginBottom: 0 },
@@ -79,9 +81,9 @@ const feedItemEntryVariants = {
 
 const SCROLL_HIDE_THRESHOLD = 100;
 const WELCOME_CARD_SESSION_KEY = 'welcomeCardHiddenPermanently_v1_hiwewalk';
-const POSTS_FETCH_LIMIT = 15; // Artırıldı
-const ROOMS_FETCH_LIMIT = 5;  // Artırıldı
-const REFRESH_BUTTON_TIMER_MS = 1 * 60 * 1000; // 1 dakikaya düşürüldü
+const POSTS_FETCH_LIMIT = 15;
+const ROOMS_FETCH_LIMIT = 5;
+const REFRESH_BUTTON_TIMER_MS = 1 * 60 * 1000;
 
 export type FeedDisplayItem = (Post & { feedItemType: 'post' }) | (RoomInFeedCardData & { feedItemType: 'room' });
 
@@ -103,7 +105,7 @@ export default function HomePage() {
 
   const [friends, setFriends] = useState<string[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(true);
-  const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>();
   const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(true);
 
 
@@ -214,12 +216,12 @@ export default function HomePage() {
     if (!currentUser) {
       setAllPosts([]);
       setIsLoadingPosts(false);
-      if (isManualRefresh && isRefreshingFeed) setIsRefreshingFeed(false); // Sadece manual refresh için flag'i resetle
+      if (isManualRefresh && isRefreshingFeed) setIsRefreshingFeed(false);
       return;
     }
 
     if (isManualRefresh) {
-      setIsRefreshingFeed(true); // Manual refresh ise flag'i set et
+      setIsRefreshingFeed(true);
       setShowRefreshButton(false);
       if (refreshButtonTimerRef.current) {
         clearTimeout(refreshButtonTimerRef.current);
@@ -241,7 +243,7 @@ export default function HomePage() {
     } finally {
       setIsLoadingPosts(false);
       if (isManualRefresh) {
-        setIsRefreshingFeed(false); // Manual refresh ise flag'i resetle
+        setIsRefreshingFeed(false);
         startRefreshButtonTimer();
       }
     }
@@ -251,7 +253,7 @@ export default function HomePage() {
   useEffect(() => {
     if (currentUser) {
       fetchActiveRooms();
-      fetchPosts(); // Initial fetch for posts
+      fetchPosts();
       startRefreshButtonTimer();
     } else {
       setIsLoadingRooms(false);
@@ -267,7 +269,6 @@ export default function HomePage() {
       if (userData?.privacySettings?.feedShowsEveryone === false) {
         setLoadingFriends(true);
         const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-        // Use getDocs for friends list as well, assuming it doesn't need to be strictly real-time for feed filtering
         getDocs(friendsRef).then(snapshot => {
           const friendIds = snapshot.docs.map(doc => doc.id);
           setFriends(friendIds);
@@ -283,7 +284,6 @@ export default function HomePage() {
 
       setLoadingBlockedUsers(true);
       const blockedUsersRef = collection(db, `users/${currentUser.uid}/blockedUsers`);
-      // Use getDocs for blocked users
       getDocs(blockedUsersRef).then(snapshot => {
           const ids = snapshot.docs.map(doc => doc.id);
           setBlockedUserIds(ids);
@@ -310,7 +310,7 @@ export default function HomePage() {
     }
 
     let filteredPosts = allPosts;
-    if (blockedUserIds.length > 0) {
+    if (blockedUserIds?.length > 0) {
         filteredPosts = filteredPosts.filter(post => !blockedUserIds.includes(post.userId));
     }
 
@@ -349,8 +349,14 @@ export default function HomePage() {
   const handleRefreshClick = useCallback(() => {
     if (isRefreshingFeed) return;
     fetchActiveRooms(true);
-    fetchPosts(true); // Refresh posts as well
+    fetchPosts(true);
   }, [isRefreshingFeed, fetchActiveRooms, fetchPosts]);
+
+  const getAvatarFallbackText = (name?: string | null) => {
+    if (name) return name.substring(0, 2).toUpperCase();
+    if (currentUser?.email) return currentUser.email.substring(0, 2).toUpperCase();
+    return "HW";
+  };
 
   if (authLoading || (currentUser && isUserDataLoading && !userData)) {
     return (
@@ -439,13 +445,17 @@ export default function HomePage() {
 
           <Dialog open={isCreatePostDialogOpen} onOpenChange={setIsCreatePostDialogOpen}>
             <DialogTrigger asChild>
-               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: isWelcomeCardVisible ? 0.3 : 0.1, duration: 0.5 }}>
-                <Button
-                    variant="outline"
-                    className="w-full py-6 text-lg bg-card hover:bg-muted/80 border-2 border-dashed border-primary/40 hover:border-primary/70 text-primary/80 hover:text-primary shadow-sm"
-                >
-                    <Edit className="mr-2 h-5 w-5"/> Bir şeyler paylaş...
-                </Button>
+               <motion.div 
+                 initial={{ opacity: 0, y: 20 }} 
+                 animate={{ opacity: 1, y: 0 }} 
+                 transition={{ delay: isWelcomeCardVisible ? 0.3 : 0.1, duration: 0.5 }}
+                 className="bg-card p-3 sm:p-4 rounded-lg shadow-sm border border-border/30 hover:border-primary/40 transition-colors cursor-pointer flex items-center gap-3"
+               >
+                  <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+                    <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
+                    <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-muted-foreground text-sm sm:text-base">Bir şeyler paylaş, {userData?.displayName || 'Kullanıcı'}...</span>
                </motion.div>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg p-0">
@@ -458,18 +468,22 @@ export default function HomePage() {
               <div className="p-6 pt-4">
                 <CreatePostForm onPostCreated={() => {
                     setIsCreatePostDialogOpen(false);
-                    fetchPosts(true); // Re-fetch posts after creation
+                    fetchPosts(true);
                 }} />
               </div>
             </DialogContent>
           </Dialog>
 
           {showRefreshButton && !isLoadingPosts && !isLoadingRooms && !isRefreshingFeed && (
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="my-3 sticky top-[calc(3.5rem+0.75rem)] sm:top-[calc(3.5rem+1rem)] z-20">
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="my-3 sticky top-[calc(3.5rem+0.75rem)] sm:top-[calc(3.5rem+1rem)] z-20 flex justify-center"
+            >
               <Button
                 onClick={handleRefreshClick}
                 variant="outline"
-                className="w-full py-2.5 text-sm bg-card/80 dark:bg-background/80 backdrop-blur-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-md rounded-full"
+                className="py-2.5 text-sm bg-card/80 dark:bg-background/80 backdrop-blur-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-md rounded-full w-auto px-6"
                 disabled={isRefreshingFeed || isLoadingPosts || isLoadingRooms}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
@@ -508,7 +522,7 @@ export default function HomePage() {
              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                 <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
                     <CardHeader className="pb-2">
-                        <Users className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
+                        <Sparkles className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
                         <CardTitle className="text-xl sm:text-2xl font-semibold text-foreground">
                         {(userData?.privacySettings?.feedShowsEveryone === false)
                             ? "Arkadaş Akışın Henüz Boş!"
