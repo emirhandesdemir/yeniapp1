@@ -203,5 +203,23 @@ Sohbet odası quiz oyunu için soruları saklar.
   - `gameQuestions` koleksiyonu için: `createdAt` (Azalan)
     - *Sorgu:* `src/components/admin/sections/AdminGameSettingsContent.tsx`
 
+## `matchmakingQueue` (Yeni Eklendi)
+Kullanıcıların 1v1 rastgele eşleşme için beklediği kuyruk.
+- **Yol:** `/matchmakingQueue/{queueEntryId}`
+- **Alanlar:**
+  - `userId`: (String) Kuyruktaki kullanıcının UID'si.
+  - `displayName`: (String, nullable) Kullanıcının görünen adı.
+  - `photoURL`: (String, nullable) Kullanıcının avatar URL'si.
+  - `gender`: (String, nullable) Kullanıcının cinsiyeti ('kadın', 'erkek', 'belirtilmemiş').
+  - `joinedAt`: (Timestamp) Kullanıcının kuyruğa katıldığı zaman.
+  - `status`: (String) Kullanıcının kuyruktaki durumu: 'waiting', 'matched', 'cancelled'.
+  - `matchedWithUserId`: (String, nullable) Eğer eşleştiyse, eşleştiği kullanıcının UID'si.
+  - `dmChatId`: (String, nullable) Eğer eşleştiyse, oluşturulan DM sohbet odasının ID'si.
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
+  - `matchmakingQueue` koleksiyonu için: `status` (Artan), `userId` (Artan, eşitlik dışı sorgular için), `joinedAt` (Artan)
+    - *Sorgu:* `src/app/(main)/match/page.tsx` (Eş arama sorgusu için)
+
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
 **Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.
+
+```
