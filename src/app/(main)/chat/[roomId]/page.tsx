@@ -925,11 +925,67 @@ export default function ChatRoomPage() {
 
 
   const handleGameAnswerTimeout = useCallback(async () => {
-    if (!roomId || !roomDetails?.currentGameQuestionId || !activeGameQuestion) return;
-    console.log("[GameSystem] Answer timeout for question:", activeGameQuestion.text);
+    if (!roomId || !roomDetails?.currentGameQuestionId || !activeGameQuestion) {
+        // Attempt to reset game state even if activeGameQuestion is null/invalid, if a question ID was expected
+        if (roomId && roomDetails?.currentGameQuestionId) {
+            console.warn("[GameSystem] Answer timeout: Active game question was null or invalid when timeout triggered for expected question ID:", roomDetails.currentGameQuestionId);
+            const roomDocRefOnError = doc(db, "chatRooms", roomId);
+            try {
+                await updateDoc(roomDocRefOnError, {
+                    currentGameQuestionId: null,
+                    currentGameAnswerDeadline: null,
+                    nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), globalGameSettings?.questionIntervalSeconds ?? 180))
+                });
+                await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+                  text: `Süre doldu! Ancak aktif soruyla ilgili bir sorun oluştu, bu yüzden cevap gösterilemiyor.`,
+                  senderId: "system",
+                  senderName: "Oyun Ustası",
+                  timestamp: serverTimestamp(),
+                  isGameMessage: true
+                });
+                toast({ title: "Oyun Hatası", description: "Soru süresi doldu ancak cevap bilgisi alınamadı.", variant: "destructive" });
+            } catch (errorResetting) {
+                console.error("[GameSystem] Error resetting game state after invalid question in timeout:", errorResetting);
+            }
+        }
+        return;
+    }
+
+    // Guard for properties of activeGameQuestion
+    if (typeof activeGameQuestion.text !== 'string' || typeof activeGameQuestion.answer !== 'string') {
+        console.error("[GameSystem] Answer timeout: Active game question is invalid (missing text/answer).", activeGameQuestion);
+        const roomDocRefOnError = doc(db, "chatRooms", roomId);
+        try {
+            const batchError = writeBatch(db);
+            batchError.update(roomDocRefOnError, {
+                currentGameQuestionId: null,
+                currentGameAnswerDeadline: null,
+                nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), globalGameSettings?.questionIntervalSeconds ?? 180))
+            });
+            batchError.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
+                text: `Süre doldu! Soruyla ilgili bir sorun oluştuğu için cevap gösterilemiyor.`,
+                senderId: "system",
+                senderName: "Oyun Ustası",
+                timestamp: serverTimestamp(),
+                isGameMessage: true
+            });
+            await batchError.commit();
+            toast({ title: "Süre Doldu!", description: "Soruyla ilgili bir sorun oluştu, cevap gösterilemiyor.", variant: "destructive" });
+        } catch (errorResetting) {
+            console.error("[GameSystem] Error resetting game state after invalid question in timeout:", errorResetting);
+        }
+        return;
+    }
+
+    const questionText = activeGameQuestion.text;
+    const correctAnswer = activeGameQuestion.answer;
+
+    console.log("[GameSystem] Answer timeout for question:", questionText);
     const roomDocRef = doc(db, "chatRooms", roomId);
+    
     const currentRoomSnap = await getDoc(roomDocRef);
     if (!currentRoomSnap.exists() || currentRoomSnap.data()?.currentGameQuestionId !== roomDetails.currentGameQuestionId) {
+      console.log("[GameSystem] Timeout: Question already changed or room deleted. Aborting timeout action.");
       return;
     }
 
@@ -941,16 +997,16 @@ export default function ChatRoomPage() {
         nextGameQuestionTimestamp: Timestamp.fromDate(addSeconds(new Date(), globalGameSettings?.questionIntervalSeconds ?? 180))
       });
       batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
-        text: `Süre doldu! Kimse "${activeGameQuestion.text}" sorusunu bilemedi. Doğru cevap: ${activeGameQuestion.answer}.`, // Sistem mesajı güncellendi
+        text: `Süre doldu! Kimse "${questionText}" sorusunu bilemedi. Doğru cevap: ${correctAnswer}.`,
         senderId: "system",
-        senderName: "Oyun Ustası", // Gönderen adı güncellendi
+        senderName: "Oyun Ustası",
         timestamp: serverTimestamp(),
         isGameMessage: true
       });
       await batch.commit();
-      toast({ title: "Süre Doldu!", description: `Kimse soruyu bilemedi. Cevap: ${activeGameQuestion.answer}`, duration: 7000});
+      toast({ title: "Süre Doldu!", description: `Kimse soruyu bilemedi. Cevap: ${correctAnswer}`, duration: 7000});
     } catch (error) {
-      console.error("[GameSystem] Error handling game answer timeout:", error);
+      console.error("[GameSystem] Error handling game answer timeout final commit:", error);
     }
   }, [roomId, roomDetails?.currentGameQuestionId, activeGameQuestion, globalGameSettings?.questionIntervalSeconds, toast]);
 
@@ -1643,3 +1699,4 @@ export default function ChatRoomPage() {
     </>
   );
 }
+

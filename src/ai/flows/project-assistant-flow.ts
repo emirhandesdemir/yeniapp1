@@ -66,6 +66,11 @@ HiweWalk, kullanıcıların dinamik sohbet odaları oluşturup katılabildiği, 
 12. **PWA Desteği:** Çevrimdışı erişim, ana ekrana eklenebilme ve uygulama benzeri deneyim.
 13. **Kullanıcı Moderasyonu:** Kullanıcı şikayet etme ve engelleme sistemleri. Belirli sayıda şikayet sonrası otomatik veya admin tarafından banlama.
 
+**Kullanılan Sohbet Odası Komutları:**
+Sohbet odası içinde, özellikle oyun aktifken aşağıdaki komutlar kullanılabilir:
+*   `/answer <cevabınız>`: Aktif oyun sorusuna cevap göndermek için kullanılır. Örnek: `/answer İstanbul`
+*   `/hint`: Aktif oyun sorusu için ipucu almak için kullanılır. Bu komutun elmas maliyeti (genellikle 1 elmas) olabilir.
+
 **Kullanılan Teknolojiler ve Araçlar:**
 *   **Frontend Çatısı:** Next.js (App Router)
 *   **UI Kütüphanesi:** React
@@ -197,3 +202,4 @@ const projectAssistant = ai.defineFlow(
     return { answer: "Proje asistanından bir cevap alınamadı." };
   }
 );
+
