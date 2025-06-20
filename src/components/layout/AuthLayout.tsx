@@ -1,6 +1,10 @@
+
+"use client"; // Add "use client" here
+
 import type { ReactNode } from 'react';
+import React from 'react'; // Ensure React is imported
 import Link from 'next/link';
-import { Flame } from 'lucide-react'; // Globe yerine Flame import edildi
+import { Flame } from 'lucide-react';
 
 interface AuthLayoutProps {
   children: ReactNode;
