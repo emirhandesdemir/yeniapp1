@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, FormEvent, useRef, useEffect } from "react";
+import React, { useState, FormEvent, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
