@@ -37,8 +37,9 @@ interface DirectMessage {
 interface DirectMessageItemProps {
   msg: DirectMessage;
   getAvatarFallbackText: (name?: string | null) => string;
-  chatId: string; // DM silme işlemi için chatId gerekli
-  onMessageDeleted: (messageId: string) => void; // Mesaj silindiğinde çağrılacak fonksiyon
+  chatId: string; 
+  onMessageDeleted: (messageId: string) => void;
+  isMatchSession?: boolean; // Added prop
 }
 
 const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
@@ -46,6 +47,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   getAvatarFallbackText,
   chatId,
   onMessageDeleted,
+  isMatchSession, // Consumed prop
 }) => {
   const { userData: currentUserData } = useAuth();
   const { toast } = useToast();
@@ -79,7 +81,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
-      onMessageDeleted(msg.id); // Parent component'i bilgilendir
+      onMessageDeleted(msg.id); 
     } catch (error) {
       console.error("Error deleting direct message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
@@ -88,17 +90,25 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     }
   };
 
+  const AvatarContainer: React.FC<{children: React.ReactNode, isLink: boolean, userId: string}> = ({ children, isLink, userId }) => {
+    if (isLink) {
+      return <Link href={`/profile/${userId}`} className="self-end mb-1 relative flex-shrink-0 transition-transform hover:scale-110">{children}</Link>;
+    }
+    return <div className="self-end mb-1 relative flex-shrink-0">{children}</div>;
+  };
+
+
   return (
     <>
     <div key={msg.id} className={cn("flex items-end gap-2 my-1.5 group", msg.isOwn ? "justify-end" : "justify-start")}>
       {!msg.isOwn && (
-          <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 relative flex-shrink-0 transition-transform hover:scale-110">
+          <AvatarContainer isLink={!isMatchSession} userId={msg.senderId}>
             <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
                 <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                 <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
             </Avatar>
             {msg.senderIsPremium && <Star className="absolute -bottom-1 -right-1 h-3 w-3 sm:h-3.5 sm:w-3.5 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
-          </Link>
+          </AvatarContainer>
       )}
       <div className={cn(
           "flex flex-col max-w-[75%] sm:max-w-[70%]",
@@ -169,3 +179,4 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
 });
 DirectMessageItem.displayName = 'DirectMessageItem';
 export default DirectMessageItem;
+

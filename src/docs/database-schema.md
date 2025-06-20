@@ -131,6 +131,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `matchSessionUser1Decision`: (String, nullable) `isMatchSession` `true` ise, User1'in kararı ('pending', 'yes', 'no').
   - `matchSessionUser2Decision`: (String, nullable) `isMatchSession` `true` ise, User2'nin kararı ('pending', 'yes', 'no').
   - `matchSessionEnded`: (Boolean, isteğe bağlı) `isMatchSession` `true` ise ve seans kararlar sonucu veya süre aşımıyla bittiyse `true`. (Varsayılan: `false`)
+  - `matchSessionEndedReason`: (String, nullable) Eşleşme seansının bitiş nedeni (örneğin, 'partner_left_USERID', 'timer_expired', 'both_yes', 'one_no', 'both_no').
+  - `matchSessionEndedBy`: (String, nullable) Eşleşme seansını sonlandıran (örneğin ayrılan veya 'Hayır' diyen) kullanıcının UID'si.
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
@@ -212,7 +214,7 @@ Sohbet odası quiz oyunu için soruları saklar.
   - `gameQuestions` koleksiyonu için: `createdAt` (Azalan)
     - *Sorgu:* `src/components/admin/sections/AdminGameSettingsContent.tsx`
 
-## `matchmakingQueue` (Yeni Eklendi)
+## `matchmakingQueue`
 Kullanıcıların 1v1 rastgele eşleşme için beklediği kuyruk.
 - **Yol:** `/matchmakingQueue/{queueEntryId}`
 - **Alanlar:**
@@ -227,7 +229,7 @@ Kullanıcıların 1v1 rastgele eşleşme için beklediği kuyruk.
   - `matchSessionExpiresAt`: (Timestamp, nullable) Eğer eşleştiyse, geçici DM seansının sona erme zamanı.
 - **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `matchmakingQueue` koleksiyonu için: `status` (Artan), `joinedAt` (Artan), `userId` (Artan)
-    - *Sorgu:* `src/app/(main)/match/page.tsx` (Eş arama sorgusu: `status` eşitliği, `userId` eşitsizliği, `joinedAt` sıralaması için)
+    - *Sorgu:* `src/app/(main)/match/page.tsx`
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
 **Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.
@@ -278,12 +280,12 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if request.auth.uid != null;
         allow create: if request.auth.uid != null && request.resource.data.senderId == request.auth.uid;
-        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; // Sadece gönderen silebilir
+        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; 
       }
       match /participants/{participantId} {
         allow read: if request.auth.uid != null;
-        allow create: if request.auth.uid == participantId; // Sadece kendi katılabilir
-        allow delete: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId; // Kendi veya oda sahibi silebilir
+        allow create: if request.auth.uid == participantId; 
+        allow delete: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId; 
       }
        match /voiceParticipants/{participantId} {
         allow read: if request.auth.uid != null;
@@ -298,13 +300,13 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if request.auth.uid != null;
       allow create: if request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth.uid == resource.data.userId;
+      allow update: if request.auth.uid == resource.data.userId; 
       allow delete: if request.auth.uid == resource.data.userId;
 
       match /comments/{commentId} {
         allow read: if request.auth.uid != null;
         allow create: if request.auth.uid == request.resource.data.userId;
-        allow delete: if request.auth.uid == resource.data.userId; // Yorumu yapan silebilir
+        allow delete: if request.auth.uid == resource.data.userId; 
       }
     }
 
@@ -313,7 +315,7 @@ service cloud.firestore {
       allow read, write: if request.auth.uid in resource.data.participantUids;
       match /messages/{messageId} {
         allow read, write: if request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
-        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; // Sadece gönderen silebilir
+        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; 
       }
     }
     
@@ -331,13 +333,13 @@ service cloud.firestore {
     // Arkadaşlık İstekleri: İlgili kullanıcılar yönetebilir.
     match /friendRequests/{requestId} {
       allow read: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
-      allow create: if request.auth.uid == request.resource.data.fromUserId;
-      allow update, delete: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
+      allow create: if request.auth.uid == request.resource.data.fromUserId; 
+      allow update, delete: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId; 
     }
 
     // Uygulama Ayarları (gameConfig): Sadece admin okuyabilir/yazabilir.
     match /appSettings/gameConfig {
-      allow read: if request.auth.uid != null;
+      allow read: if request.auth.uid != null; 
       allow write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
@@ -353,16 +355,10 @@ service cloud.firestore {
       allow create: if request.auth.uid == request.resource.data.reporterId;
     }
     
-    // Eşleşme Kuyruğu: Giriş yapmış kullanıcılar kendi belgelerini okuyabilir/yazabilir/silebilir.
-    // Eşleşme işlemi için daha karmaşık kurallar gerekebilir (örn: bir transaction içinde iki belgeyi güncellemek).
     match /matchmakingQueue/{queueEntryId} {
       allow read, write: if request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId;
-      // Transaction'lar için daha spesifik kurallar:
-      // allow update: if request.auth.uid != null && ( (request.resource.data.status == 'matched' && resource.data.status == 'waiting') || (request.auth.uid == resource.data.userId) );
-      // allow delete: if request.auth.uid == resource.data.userId;
     }
   }
 }
 ```
 
-    
