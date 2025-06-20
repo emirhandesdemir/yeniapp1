@@ -51,14 +51,15 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     React.useEffect(() => {
       const updateSize = () => {
         if (typeof window !== 'undefined') {
+           // 640px (Tailwind's sm breakpoint) altındaysa smSize kullan, yoksa normal size
            setEffectiveSize(window.innerWidth < 640 && smSize ? smSize : size);
         } else {
-           setEffectiveSize(size); // Fallback for SSR or non-browser env
+           setEffectiveSize(size); // SSR veya tarayıcı dışı ortamlar için fallback
         }
       };
-      updateSize();
-      window.addEventListener('resize', updateSize);
-      return () => window.removeEventListener('resize', updateSize);
+      updateSize(); // İlk renderda boyutu ayarla
+      window.addEventListener('resize', updateSize); // Ekran boyutu değiştikçe güncelle
+      return () => window.removeEventListener('resize', updateSize); // Cleanup
     }, [size, smSize]);
 
     return (
