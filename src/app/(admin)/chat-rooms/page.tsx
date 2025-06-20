@@ -1,7 +1,8 @@
-
 "use client";
 
 import AdminChatRoomsContent from "@/components/admin/sections/AdminChatRoomsContent";
+
+export const dynamic = 'force-dynamic'; // Sayfanın dinamik olarak render edilmesini zorla
 
 export default function AdminChatRoomsPage() {
   // Bu sayfa, AdminOverlayPanel içinde AdminChatRoomsContent komponentini kullanır.
