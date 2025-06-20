@@ -14,8 +14,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import ImageCropperDialog from "@/components/profile/ImageCropperDialog"; // Import the cropper
-import { v4 as uuidv4 } from 'uuid'; // For generating unique blob names
+import ImageCropperDialog from "@/components/profile/ImageCropperDialog"; 
+import { v4 as uuidv4 } from 'uuid'; 
 
 interface UserProfileForm {
   username: string;
@@ -29,7 +29,7 @@ export default function EditProfilePage() {
 
   const [tempProfile, setTempProfile] = useState<UserProfileForm>({ username: "", bio: "" });
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  // const [selectedFile, setSelectedFile] = useState<File | null>(null); No longer directly use selectedFile for upload
+  
   const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [isCropperOpen, setIsCropperOpen] = useState(false);
@@ -81,10 +81,10 @@ export default function EditProfilePage() {
       reader.onloadend = () => {
         setImageToCrop(reader.result as string);
         setIsCropperOpen(true);
-        setCroppedBlob(null); // Reset previous crop if any
+        setCroppedBlob(null); 
       };
       reader.readAsDataURL(file);
-      if (fileInputRef.current) { // Reset file input so same file can be chosen again
+      if (fileInputRef.current) { 
         fileInputRef.current.value = "";
       }
     }
@@ -92,7 +92,7 @@ export default function EditProfilePage() {
   
   const handleCropComplete = (croppedImageBlob: Blob) => {
     setCroppedBlob(croppedImageBlob);
-    setPreviewImage(URL.createObjectURL(croppedImageBlob)); // Update preview with cropped image
+    setPreviewImage(URL.createObjectURL(croppedImageBlob)); 
     setIsCropperOpen(false);
     setImageToCrop(null);
   };
@@ -132,7 +132,7 @@ export default function EditProfilePage() {
         updates.newPhotoBlob = croppedBlob;
         profileChanged = true;
     } else if (previewImage === null && (userData?.photoURL || currentUser?.photoURL)) {
-        // Only mark for removal if there's no new cropped image and preview is null
+        
         updates.removePhoto = true;
         profileChanged = true;
     }
@@ -146,7 +146,7 @@ export default function EditProfilePage() {
 
     const success = await updateUserProfile(updates);
     if (success) {
-      setCroppedBlob(null); // Reset cropped blob after successful save
+      setCroppedBlob(null); 
       toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
       if (currentUser) router.push(`/profile/${currentUser.uid}`);
     }
@@ -169,9 +169,10 @@ export default function EditProfilePage() {
 
   if (isUserLoading || initialLoad) {
     return (
-      <div className="flex flex-1 items-center justify-center min-h-screen">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="text-muted-foreground ml-2">Profil düzenleme yükleniyor...</p>
+      <div className="flex flex-1 flex-col items-center justify-center min-h-screen text-center p-8">
+        <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+        <h2 className="text-2xl font-semibold text-foreground">Profil Düzenleme Yükleniyor</h2>
+        <p className="text-muted-foreground mt-2">Lütfen bekleyin...</p>
       </div>
     );
   }
@@ -188,31 +189,32 @@ export default function EditProfilePage() {
     <>
       <div className="flex flex-col min-h-screen items-center justify-center bg-gradient-to-br from-background to-primary/5 p-4">
           <div className="w-full max-w-lg">
-              <Card className="shadow-xl">
+              <Card className="shadow-xl rounded-xl border-border/40">
               <CardHeader>
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={handleCancel} className="mr-2">
+                          <Button variant="ghost" size="icon" onClick={handleCancel} className="mr-2 text-muted-foreground hover:text-foreground">
                               <ArrowLeft className="h-5 w-5"/>
                           </Button>
                           <Edit3 className="h-6 w-6 text-primary" />
-                          <CardTitle className="text-2xl">Profili Düzenle</CardTitle>
+                          <CardTitle className="text-2xl font-headline">Profili Düzenle</CardTitle>
                       </div>
                   </div>
-                  <CardDescription>Kullanıcı adı, biyografi ve profil fotoğrafınızı güncelleyin.</CardDescription>
+                  <CardDescription className="text-sm">Kullanıcı adı, biyografi ve profil fotoğrafınızı güncelleyin.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                   <div className="flex flex-col items-center space-y-3">
                       <div className="relative group">
-                          <Avatar className="h-32 w-32 border-4 border-muted shadow-lg">
+                          <Avatar className="h-32 w-32 border-4 border-muted shadow-lg rounded-full">
                           {previewImage ? (
                               <AvatarImage
                                   src={previewImage}
                                   alt={tempProfile.username || "Kullanıcı"}
+                                  className="object-cover"
                                   data-ai-hint="user portrait preview"
                               />
                           ) : null }
-                          <AvatarFallback className="text-4xl">{getAvatarFallbackText()}</AvatarFallback>
+                          <AvatarFallback className="text-4xl rounded-full">{getAvatarFallbackText()}</AvatarFallback>
                           </Avatar>
                           <input
                               type="file"
@@ -226,12 +228,12 @@ export default function EditProfilePage() {
                               type="button"
                               variant="outline"
                               size="icon"
-                              className="absolute bottom-1 right-1 rounded-full h-10 w-10 bg-card hover:bg-muted shadow-md"
+                              className="absolute bottom-1 right-1 rounded-full h-10 w-10 bg-card hover:bg-muted shadow-md border-border/50"
                               onClick={() => fileInputRef.current?.click()}
                               aria-label="Profil fotoğrafı yükle"
                               disabled={isUserLoading}
                           >
-                          <ImagePlus className="h-5 w-5" />
+                          <ImagePlus className="h-5 w-5 text-primary" />
                           </Button>
                           {previewImage && (
                               <Button
@@ -251,31 +253,31 @@ export default function EditProfilePage() {
 
                   <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
                       <div>
-                          <Label htmlFor="username-edit" className="flex items-center gap-1.5 mb-1"><User className="h-4 w-4 text-muted-foreground"/>Kullanıcı Adı</Label>
-                          <Input id="username-edit" name="username" value={tempProfile.username} onChange={handleInputChange} className="mt-1" disabled={isUserLoading}/>
+                          <Label htmlFor="username-edit" className="flex items-center gap-1.5 mb-1 text-sm"><User className="h-4 w-4 text-muted-foreground"/>Kullanıcı Adı</Label>
+                          <Input id="username-edit" name="username" value={tempProfile.username} onChange={handleInputChange} className="mt-1 rounded-md h-10" disabled={isUserLoading}/>
                       </div>
                       <div>
-                          <Label htmlFor="email-edit" className="flex items-center gap-1.5 mb-1"><Mail className="h-4 w-4 text-muted-foreground"/>E-posta (Değiştirilemez)</Label>
-                          <Input id="email-edit" name="email" value={currentUser?.email || ""} readOnly disabled className="mt-1 bg-muted/50 dark:bg-muted/30"/>
+                          <Label htmlFor="email-edit" className="flex items-center gap-1.5 mb-1 text-sm"><Mail className="h-4 w-4 text-muted-foreground"/>E-posta (Değiştirilemez)</Label>
+                          <Input id="email-edit" name="email" value={currentUser?.email || ""} readOnly disabled className="mt-1 bg-muted/50 dark:bg-muted/30 rounded-md h-10"/>
                       </div>
                       <div>
-                          <Label htmlFor="bio-edit" className="flex items-center gap-1.5 mb-1"><User className="h-4 w-4 text-muted-foreground"/>Hakkımda</Label>
+                          <Label htmlFor="bio-edit" className="flex items-center gap-1.5 mb-1 text-sm"><User className="h-4 w-4 text-muted-foreground"/>Hakkımda</Label>
                           <Textarea
                           id="bio-edit"
                           name="bio"
                           value={tempProfile.bio}
                           onChange={handleInputChange}
                           rows={3}
-                          className="mt-1"
+                          className="mt-1 rounded-md"
                           placeholder="Kendinizden bahsedin..."
                           disabled={isUserLoading}
                           />
                       </div>
                       <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
-                          <Button type="button" variant="outline" onClick={handleCancel} disabled={isUserLoading} className="w-full sm:w-auto">
+                          <Button type="button" variant="outline" onClick={handleCancel} disabled={isUserLoading} className="w-full sm:w-auto rounded-md h-10">
                           <XCircle className="mr-2 h-4 w-4" /> Vazgeç
                           </Button>
-                          <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground w-full sm:w-auto" disabled={isUserLoading}>
+                          <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground w-full sm:w-auto rounded-md h-10" disabled={isUserLoading}>
                           {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                           Kaydet
                           </Button>
@@ -290,7 +292,7 @@ export default function EditProfilePage() {
           isOpen={isCropperOpen}
           onClose={() => {
             setIsCropperOpen(false);
-            setImageToCrop(null); // Clear image if dialog is closed without cropping
+            setImageToCrop(null); 
           }}
           imageSrc={imageToCrop}
           onCropComplete={handleCropComplete}
@@ -301,3 +303,4 @@ export default function EditProfilePage() {
     </>
   );
 }
+

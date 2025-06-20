@@ -11,11 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Loader2, MessageSquare, Users, AlertTriangle, SendHorizontal, Search, Phone, Star, UserPlus } from "lucide-react";
 import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs, updateDoc, onSnapshot } from "firebase/firestore"; // onSnapshot eklendi
+import { collection, query, where, orderBy, Timestamp, doc, getDoc, setDoc, serverTimestamp, getDocs, updateDoc, onSnapshot } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { generateDmChatId } from "@/lib/utils";
+import { motion } from "framer-motion";
 
 interface DirectMessageConversation {
   id: string; 
@@ -33,6 +34,19 @@ interface DirectMessageConversation {
   otherParticipant?: UserData; 
   unreadCount?: number;
 }
+
+const listItemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.07,
+      duration: 0.4,
+      ease: "easeOut",
+    },
+  }),
+};
 
 export default function DirectMessagesPage() {
   const { currentUser, userData, isUserLoading: isAuthLoading, isCurrentUserPremium } = useAuth();
@@ -60,11 +74,11 @@ export default function DirectMessagesPage() {
         where("participantUids", "array-contains", currentUser.uid),
         orderBy("lastMessageTimestamp", "desc")
       );
-      // onSnapshot ile gerçek zamanlı dinleme
+      
       const unsubscribe = onSnapshot(dmQuery, async (snapshot) => {
         if (snapshot.empty) {
           setConversations([]);
-          setLoadingConversations(false); // İlk yükleme tamamlandı
+          setLoadingConversations(false); 
           return;
         }
 
@@ -104,14 +118,14 @@ export default function DirectMessagesPage() {
         const resolvedConversations = (await Promise.all(convPromises))
             .filter(conv => conv.otherParticipant !== undefined) as DirectMessageConversation[];
         setConversations(resolvedConversations);
-        setLoadingConversations(false); // İlk yükleme tamamlandı
+        setLoadingConversations(false); 
       }, (error) => {
         console.error("Error fetching DM conversations with onSnapshot:", error);
         toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive"});
         setLoadingConversations(false);
       });
 
-      return unsubscribe; // Cleanup fonksiyonu
+      return unsubscribe; 
 
     } catch (error) { 
         console.error("Error setting up DM conversations listener:", error);
@@ -190,21 +204,22 @@ export default function DirectMessagesPage() {
 
   if (isAuthLoading && !currentUser) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2">Kullanıcı bilgileri yükleniyor...</p>
+      <div className="flex flex-1 flex-col items-center justify-center text-center p-8">
+        <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+        <h2 className="text-2xl font-semibold text-foreground">Kullanıcı Bilgileri Yükleniyor</h2>
+        <p className="text-muted-foreground mt-2">Lütfen bekleyin...</p>
       </div>
     );
   }
 
   if (!currentUser && !isAuthLoading) {
      return (
-      <div className="flex flex-1 items-center justify-center">
-        <Card className="w-full max-w-md text-center p-6 shadow-lg">
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="w-full max-w-md text-center p-6 shadow-xl rounded-xl">
             <CardHeader>
-                <Users className="mx-auto h-12 w-12 text-primary mb-4" />
-                <CardTitle>Giriş Gerekli</CardTitle>
-                <CardDescription>Mesajlarınızı görmek için lütfen <Link href="/login?redirect=/direct-messages" className="text-primary hover:underline">giriş yapın</Link>.</CardDescription>
+                <Users className="mx-auto h-16 w-16 text-primary mb-4" />
+                <CardTitle className="text-2xl font-semibold">Giriş Gerekli</CardTitle>
+                <CardDescription className="text-muted-foreground mt-1">Mesajlarınızı görmek için lütfen <Link href="/login?redirect=/direct-messages" className="text-primary hover:underline font-medium">giriş yapın</Link>.</CardDescription>
             </CardHeader>
         </Card>
       </div>
@@ -213,7 +228,7 @@ export default function DirectMessagesPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="shadow-lg">
+      <Card className="shadow-xl rounded-xl border-border/40">
         <CardHeader>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -228,61 +243,71 @@ export default function DirectMessagesPage() {
                     placeholder="Sohbet ara..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-9 w-full"
+                    className="pl-10 h-9 w-full rounded-md"
                 />
                 </div>
-                <Button asChild variant="outline" size="icon" className="h-9 w-9 flex-shrink-0">
+                <Button asChild variant="outline" size="icon" className="h-9 w-9 flex-shrink-0 rounded-md border-primary/50 text-primary hover:bg-primary/10">
                     <Link href="/friends" aria-label="Arkadaş Ekle">
                         <UserPlus className="h-5 w-5"/>
                     </Link>
                 </Button>
             </div>
           </div>
-          <CardDescription className="pt-2">Arkadaşlarınızla özel olarak yaptığınız sohbetler.</CardDescription>
+          <CardDescription className="pt-2 text-sm">Arkadaşlarınızla özel olarak yaptığınız sohbetler.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loadingConversations ? (
-            <div className="flex justify-center items-center py-10">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-              <p className="ml-3 text-muted-foreground">Mesajlar yükleniyor...</p>
+          {loadingConversations && conversations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+              <p className="text-lg font-medium text-muted-foreground">Mesajlarınız Yükleniyor</p>
+              <p className="text-sm text-muted-foreground">Lütfen sabırla bekleyiniz...</p>
             </div>
           ) : conversations.length === 0 ? (
-            <div className="text-center py-10">
-              <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">Henüz direkt mesajınız yok.</p>
-              <p className="text-sm text-muted-foreground">
-                <Link href="/friends" className="text-primary hover:underline">Arkadaşlar</Link> sayfasından bir arkadaşınıza mesaj göndererek sohbet başlatın.
+            <div className="text-center py-16">
+              <MessageSquare className="mx-auto h-20 w-20 text-primary/60 mb-6" />
+              <p className="text-xl font-semibold text-foreground mb-2">Henüz Direkt Mesajınız Yok</p>
+              <p className="text-muted-foreground max-w-xs mx-auto mb-6">
+                <Link href="/friends" className="text-primary hover:underline font-medium">Arkadaşlarınızla</Link> sohbet etmeye başlayarak burayı canlandırın!
               </p>
+              <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                <Link href="/friends"><UserPlus className="mr-2 h-5 w-5"/> Arkadaş Bul</Link>
+              </Button>
             </div>
           ) : searchTerm && filteredConversations.length === 0 ? (
-            <div className="text-center py-10">
-              <Search className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">Arama sonucu bulunamadı.</p>
+            <div className="text-center py-16">
+              <Search className="mx-auto h-20 w-20 text-muted-foreground/50 mb-6" />
+              <p className="text-xl font-semibold text-muted-foreground mb-2">Arama Sonucu Bulunamadı</p>
               <p className="text-sm text-muted-foreground">
-                Farklı bir anahtar kelimeyle tekrar deneyin.
+                Farklı bir anahtar kelimeyle tekrar deneyin veya tüm sohbetlerinize geri dönün.
               </p>
             </div>
           ) : (
             <ul className="space-y-3">
-              {filteredConversations.map(conv => {
+              {filteredConversations.map((conv, index) => {
                 const otherParticipant = conv.otherParticipant;
                 if (!otherParticipant) return null;
 
                 const lastMessagePrefix = conv.lastMessageSenderId === currentUser?.uid ? "Siz: " : "";
 
                 return (
-                  <li key={conv.id}>
-                    <div className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
+                  <motion.li 
+                    key={conv.id}
+                    custom={index}
+                    variants={listItemVariants}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    <div className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/20 dark:hover:bg-secondary/10 rounded-xl shadow-sm border border-border/30 hover:border-primary/40 dark:hover:border-primary/50 transition-all duration-200 ease-out group">
                       <Link href={`/dm/${conv.id}`} className="flex items-center gap-3 min-w-0 flex-grow">
                         <div className="relative">
-                            <Avatar className="h-10 w-10 sm:h-12 sm:w-12">
+                            <Avatar className="h-10 w-10 sm:h-12 sm:w-12 border-2 border-transparent group-hover:border-primary/30 transition-colors duration-200">
                             <AvatarImage src={otherParticipant.photoURL || `https://placehold.co/48x48.png`} data-ai-hint="person avatar dm list"/>
                             <AvatarFallback>{getAvatarFallback(otherParticipant.displayName)}</AvatarFallback>
                             </Avatar>
                             {otherParticipant.isPremium && <Star className="absolute bottom-0 -right-1 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm sm:text-base truncate text-foreground">
+                          <p className="font-semibold text-sm sm:text-base truncate text-foreground group-hover:text-primary transition-colors">
                             {otherParticipant.displayName || "Bilinmeyen Kullanıcı"}
                           </p>
                           {conv.lastMessageText && (
@@ -294,14 +319,14 @@ export default function DirectMessagesPage() {
                       </Link>
                       <div className="flex items-center flex-shrink-0 ml-2">
                         {conv.lastMessageTimestamp && (
-                           <div className="text-xs text-muted-foreground whitespace-nowrap mr-2">
+                           <div className="text-xs text-muted-foreground whitespace-nowrap mr-2 hidden sm:block">
                             {formatDistanceToNow(conv.lastMessageTimestamp.toDate(), { addSuffix: true, locale: tr })}
                           </div>
                         )}
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 sm:h-9 sm:w-9 text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                          className="h-8 w-8 sm:h-9 sm:w-9 text-green-500 hover:text-green-600 hover:bg-green-500/10 rounded-full"
                           onClick={() => handleInitiateCall(conv)}
                           disabled={performingCallAction === conv.id || isAuthLoading}
                           aria-label="Sesli Ara"
@@ -314,7 +339,7 @@ export default function DirectMessagesPage() {
                         </Button>
                       </div>
                     </div>
-                  </li>
+                  </motion.li>
                 );
               })}
             </ul>
@@ -324,3 +349,4 @@ export default function DirectMessagesPage() {
     </div>
   );
 }
+

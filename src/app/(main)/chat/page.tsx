@@ -3,9 +3,9 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2 } from "lucide-react";
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2, PlusCircle, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useCallback, useRef } from "react"; // useRef eklendi
+import { useEffect, useState, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, Timestamp, updateDoc, where, limit, getDocs } from "firebase/firestore";
 import { useAuth, checkUserPremium } from "@/contexts/AuthContext";
@@ -65,7 +65,7 @@ const ROOM_DEFAULT_DURATION_MINUTES = 20;
 const MAX_PARTICIPANTS_PER_ROOM = 7;
 const PREMIUM_USER_ROOM_CAPACITY = 50;
 const MAX_VOICE_PREVIEWS_ON_CARD = 4;
-const ROOM_CREATION_RATE_LIMIT_MS = 60 * 1000; // 1 dakika
+const ROOM_CREATION_RATE_LIMIT_MS = 60 * 1000; 
 
 const SCROLL_HIDE_THRESHOLD_CHAT = 80;
 const ROOMS_INFO_CARD_SESSION_KEY = 'roomsInfoCardHidden_v1_hiwewalk';
@@ -96,6 +96,19 @@ const cardVariants = {
 const itemVariants = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
+};
+
+const listItemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.07, // Stagger delay
+      duration: 0.4,
+      ease: "easeOut",
+    },
+  }),
 };
 
 
@@ -326,7 +339,7 @@ export default function ChatRoomsPage() {
       } else {
         toast({ title: "Başarılı", description: `Premium kullanıcı olduğunuz için "${newRoomName}" odası ücretsiz oluşturuldu!` });
       }
-      lastRoomCreationTimeRef.current = Date.now(); // Update last creation time
+      lastRoomCreationTimeRef.current = Date.now(); 
       resetCreateRoomForm();
       setIsCreateModalOpen(false);
 
@@ -344,7 +357,7 @@ export default function ChatRoomsPage() {
         isGameEnabledInRoom: roomDataToCreate.isGameEnabledInRoom,
       } as ChatRoom);
       setIsEditRoomModalOpen(true);
-      fetchRooms(); // Refresh room list
+      fetchRooms(); 
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -442,11 +455,12 @@ export default function ChatRoomsPage() {
   };
 
 
-  if (loading) {
+  if (loading && (!chatRooms || chatRooms.length === 0)) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2">Sohbet odaları yükleniyor...</p>
+      <div className="flex flex-1 flex-col items-center justify-center text-center p-8">
+        <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+        <h2 className="text-2xl font-semibold text-foreground">Sohbet Odaları Yükleniyor</h2>
+        <p className="text-muted-foreground mt-2">Lütfen bekleyin, sizin için en iyi odaları buluyoruz...</p>
       </div>
     );
   }
@@ -509,6 +523,7 @@ export default function ChatRoomsPage() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground animate-subtle-pulse w-full sm:w-auto"
               disabled={!currentUser || isUserLoading || isUserDataLoading}
             >
+              <PlusCircle className="mr-2 h-5 w-5"/>
               Yeni Oda Oluştur
                {isCreatorPremiumForDialog && (
                 <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
@@ -621,136 +636,141 @@ export default function ChatRoomsPage() {
       )}
 
       {chatRooms.length === 0 && !loading ? (
-        <Card className="col-span-full text-center py-10 sm:py-16 bg-card border border-border/20 rounded-xl shadow-lg">
-            <CardHeader>
-                <MessageSquare className="mx-auto h-16 w-16 sm:h-20 sm:w-20 text-primary/70 mb-4" />
-                <CardTitle className="text-2xl sm:text-3xl font-semibold text-foreground">Vuhu! Yeni Ufuklar Sizi Bekliyor!</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p className="text-muted-foreground text-base sm:text-lg max-w-md mx-auto">
-                Görünüşe göre şu anda aktif bir sohbet odası yok. İlk adımı atıp kendi sohbet dünyanızı yaratmaya ne dersiniz?
-                </p>
-                <div className="mt-6">
-                  <Button
-                    onClick={handleOpenCreateRoomDialog}
-                    className="bg-accent hover:bg-accent/90 text-accent-foreground text-base px-6 py-3"
-                    disabled={!currentUser || isUserLoading || isUserDataLoading }
-                  >
-                    Hemen Yeni Oda Oluştur!
-                    {isCreatorPremiumForDialog && (
-                        <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
-                    )}
-                  </Button>
-                </div>
-            </CardContent>
-        </Card>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+          <Card className="col-span-full text-center py-10 sm:py-16 bg-card border border-border/20 rounded-xl shadow-lg">
+              <CardHeader>
+                  <MessageSquare className="mx-auto h-16 w-16 sm:h-20 sm:w-20 text-primary/70 mb-4" />
+                  <CardTitle className="text-2xl sm:text-3xl font-semibold text-foreground">Vuhu! Yeni Ufuklar Sizi Bekliyor!</CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <p className="text-muted-foreground text-base sm:text-lg max-w-md mx-auto">
+                  Görünüşe göre şu anda aktif bir sohbet odası yok. İlk adımı atıp kendi sohbet dünyanızı yaratmaya ne dersiniz?
+                  </p>
+                  <div className="mt-6">
+                    <Button
+                      onClick={handleOpenCreateRoomDialog}
+                      className="bg-accent hover:bg-accent/90 text-accent-foreground text-base px-6 py-3"
+                      disabled={!currentUser || isUserLoading || isUserDataLoading }
+                    >
+                      <PlusCircle className="mr-2 h-5 w-5"/>
+                      Hemen Yeni Oda Oluştur!
+                      {isCreatorPremiumForDialog && (
+                          <Badge variant="secondary" className="ml-2 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5">Premium Ücretsiz</Badge>
+                      )}
+                    </Button>
+                  </div>
+              </CardContent>
+          </Card>
+        </motion.div>
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {chatRooms.map((room) => {
+          {chatRooms.map((room, index) => {
             const isFull = (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants);
             const gameStatusText = room.isGameEnabledInRoom ? "Oyun Aktif" : "Oyun Kapalı";
             const gameStatusColor = room.isGameEnabledInRoom ? "bg-green-500/15 text-green-700 dark:bg-green-500/20 dark:text-green-300 border-green-500/30" : "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-400 border-red-500/20";
 
             return (
-            <Card
-              key={room.id}
-              className={cn(
-                "flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl border hover:border-primary/50 dark:hover:border-primary/60 group",
-                room.isPremiumRoom ? 'border-yellow-500 dark:border-yellow-400 ring-1 ring-yellow-500/50 dark:ring-yellow-400/50 bg-gradient-to-br from-yellow-500/5 via-card to-yellow-500/10 dark:from-yellow-400/10 dark:via-card dark:to-yellow-400/15' : 'border-border/30 dark:border-border/20'
-              )}
-            >
-              <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
-                <div className="flex items-center justify-between">
-                    <CardTitle
-                    className="text-lg sm:text-xl font-bold text-foreground group-hover:text-primary transition-colors truncate pr-10"
-                    title={room.name}
-                    >
-                    {room.isPremiumRoom && <Star className="inline h-4 w-4 mb-0.5 mr-1.5 text-yellow-500 dark:text-yellow-400" />}
-                    {room.name}
-                    </CardTitle>
-                    {currentUser && room.creatorId === currentUser.uid && (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute top-3 right-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDeleteRoom(room.id, room.name);
-                        }}
-                        aria-label="Odayı Sil"
-                    >
-                        <X className="h-4 w-4 sm:h-5 sm:w-5" />
-                    </Button>
-                    )}
-                </div>
-                <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground/80 group-hover:text-muted-foreground transition-colors mt-1.5" title={room.description}>
-                  {room.description || "Açıklama yok."}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                  <Badge variant="secondary" className="flex items-center justify-center gap-1.5 shadow-sm px-2.5 py-1">
-                    <UsersRound className="h-3.5 w-3.5 text-primary/80" />
-                    <span className="font-medium">{room.participantCount ?? 0} / {room.maxParticipants}</span>
-                  </Badge>
-                  <Badge
-                    variant={room.expiresAt && isPast(room.expiresAt.toDate()) ? 'destructive' : 'outline'}
-                    className="flex items-center gap-1.5 shadow-sm px-2.5 py-1"
-                  >
-                    <Clock className="h-3.5 w-3.5" />
-                    <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-start text-xs text-muted-foreground mb-1">
-                  <Badge className={cn("flex items-center gap-1.5 shadow-sm px-2 py-0.5 border", gameStatusColor)}>
-                    <Gamepad2 className="h-3.5 w-3.5" />
-                    <span className="font-medium">{gameStatusText}</span>
-                  </Badge>
-                </div>
-                {room.voiceParticipantPreviews && room.voiceParticipantPreviews.length > 0 && (
-                  <div className="mt-2.5 pt-2.5 border-t border-border/20">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                        <Mic className="h-3.5 w-3.5 text-green-500"/>
-                        <span className="text-xs font-medium text-muted-foreground">Sesli Sohbette:</span>
-                    </div>
-                    <div className="flex -space-x-2 overflow-hidden">
-                      {room.voiceParticipantPreviews.map(vp => (
-                        <Avatar key={vp.uid} className="inline-block h-6 w-6 rounded-full ring-2 ring-background" title={vp.displayName || 'Katılımcı'}>
-                          <AvatarImage src={vp.photoURL || `https://placehold.co/24x24.png`} data-ai-hint="voice participant preview" />
-                          <AvatarFallback>{getAvatarFallbackText(vp.displayName)}</AvatarFallback>
-                        </Avatar>
-                      ))}
-                    </div>
-                  </div>
+            <motion.div key={room.id} custom={index} variants={listItemVariants} initial="hidden" animate="visible">
+              <Card
+                className={cn(
+                  "flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl border hover:border-primary/50 dark:hover:border-primary/60 group",
+                  room.isPremiumRoom ? 'border-yellow-500 dark:border-yellow-400 ring-1 ring-yellow-500/50 dark:ring-yellow-400/50 bg-gradient-to-br from-yellow-500/5 via-card to-yellow-500/10 dark:from-yellow-400/10 dark:via-card dark:to-yellow-400/15' : 'border-border/30 dark:border-border/20'
                 )}
-                <p className="text-xs text-muted-foreground/70 truncate mt-2.5">
-                  Oluşturan: <span className="font-medium text-muted-foreground/90">{room.creatorName}</span>
-                  {room.creatorIsPremium && <Star className="inline h-3 w-3 ml-1 text-yellow-500 dark:text-yellow-400" title="Premium Oluşturucu" />}
-                </p>
-              </CardContent>
-              <CardFooter className="p-3 sm:p-4 border-t bg-muted/20 dark:bg-card/30 mt-auto">
-                <Button
-                  asChild
-                  className={cn(
-                    "w-full text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105",
-                    isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' :
-                    room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' :
-                    'bg-primary hover:bg-primary/80 text-primary-foreground'
+              >
+                <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
+                  <div className="flex items-center justify-between">
+                      <CardTitle
+                      className="text-lg sm:text-xl font-bold text-foreground group-hover:text-primary transition-colors truncate pr-10"
+                      title={room.name}
+                      >
+                      {room.isPremiumRoom && <Star className="inline h-4 w-4 mb-0.5 mr-1.5 text-yellow-500 dark:text-yellow-400" />}
+                      {room.name}
+                      </CardTitle>
+                      {currentUser && room.creatorId === currentUser.uid && (
+                      <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute top-3 right-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteRoom(room.id, room.name);
+                          }}
+                          aria-label="Odayı Sil"
+                      >
+                          <X className="h-4 w-4 sm:h-5 sm:w-5" />
+                      </Button>
+                      )}
+                  </div>
+                  <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground/80 group-hover:text-muted-foreground transition-colors mt-1.5" title={room.description}>
+                    {room.description || "Açıklama yok."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                    <Badge variant="secondary" className="flex items-center justify-center gap-1.5 shadow-sm px-2.5 py-1">
+                      <UsersRound className="h-3.5 w-3.5 text-primary/80" />
+                      <span className="font-medium">{room.participantCount ?? 0} / {room.maxParticipants}</span>
+                    </Badge>
+                    <Badge 
+                        variant={room.expiresAt && isPast(room.expiresAt.toDate()) ? 'destructive' : 'outline'} 
+                        className="flex items-center gap-1.5 shadow-sm px-2.5 py-1"
+                    >
+                        <Clock className="h-3.5 w-3.5" />
+                        <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-start text-xs text-muted-foreground mb-1">
+                    <Badge className={cn("flex items-center gap-1.5 shadow-sm px-2 py-0.5 border", gameStatusColor)}>
+                      <Gamepad2 className="h-3.5 w-3.5" />
+                      <span className="font-medium">{gameStatusText}</span>
+                    </Badge>
+                  </div>
+                  {room.voiceParticipantPreviews && room.voiceParticipantPreviews.length > 0 && (
+                    <div className="mt-2.5 pt-2.5 border-t border-border/20">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                          <Mic className="h-3.5 w-3.5 text-green-500"/>
+                          <span className="text-xs font-medium text-muted-foreground">Sesli Sohbette:</span>
+                      </div>
+                      <div className="flex -space-x-2 overflow-hidden">
+                        {room.voiceParticipantPreviews.map(vp => (
+                          <Avatar key={vp.uid} className="inline-block h-6 w-6 rounded-full ring-2 ring-background" title={vp.displayName || 'Katılımcı'}>
+                            <AvatarImage src={vp.photoURL || `https://placehold.co/24x24.png`} data-ai-hint="voice participant preview" />
+                            <AvatarFallback>{getAvatarFallbackText(vp.displayName)}</AvatarFallback>
+                          </Avatar>
+                        ))}
+                      </div>
+                    </div>
                   )}
-                  disabled={isFull}
-                  aria-disabled={isFull}
-                >
-                  <Link href={!isFull ? `/chat/${room.id}` : '#'}>
-                    <LogIn className="mr-2 h-4 w-4" />
-                    {isFull ? "Oda Dolu" : "Sohbete Katıl"}
-                  </Link>
-                </Button>
-              </CardFooter>
-            </Card>
+                  <p className="text-xs text-muted-foreground/70 truncate mt-2.5">
+                    Oluşturan: <span className="font-medium text-muted-foreground/90">{room.creatorName}</span>
+                    {room.creatorIsPremium && <Star className="inline h-3 w-3 ml-1 text-yellow-500 dark:text-yellow-400" title="Premium Oluşturucu" />}
+                  </p>
+                </CardContent>
+                <CardFooter className="p-3 sm:p-4 border-t bg-muted/20 dark:bg-card/30 mt-auto">
+                  <Button
+                    asChild
+                    className={cn(
+                      "w-full text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105",
+                      isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' :
+                      room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' :
+                      'bg-primary hover:bg-primary/80 text-primary-foreground'
+                    )}
+                    disabled={isFull}
+                    aria-disabled={isFull}
+                  >
+                    <Link href={!isFull ? `/chat/${room.id}` : '#'}>
+                      <LogIn className="mr-2 h-4 w-4" />
+                      {isFull ? "Oda Dolu" : "Sohbete Katıl"}
+                    </Link>
+                  </Button>
+                </CardFooter>
+              </Card>
+            </motion.div>
           )})}
         </div>
       )}
     </div>
   );
 }
+

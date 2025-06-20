@@ -21,6 +21,7 @@ import Link from "next/link";
 import { Switch } from "@/components/ui/switch";
 import { format, isPast } from "date-fns";
 import { tr } from "date-fns/locale";
+import { motion } from "framer-motion";
 
 
 const themeOptions: { value: ThemeSetting; label: string }[] = [
@@ -28,6 +29,19 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'light', label: 'Açık Tema' },
   { value: 'dark', label: 'Koyu Tema' },
 ];
+
+const sectionVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.1,
+      duration: 0.4,
+      ease: "easeOut",
+    },
+  }),
+};
 
 export default function SettingsPage() {
   const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen, isCurrentUserPremium } = useAuth();
@@ -124,9 +138,10 @@ export default function SettingsPage() {
 
   if (isUserLoading && !currentUser && !userData) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="text-muted-foreground ml-2">Ayarlar yükleniyor...</p>
+      <div className="flex flex-1 flex-col items-center justify-center text-center p-8">
+        <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+        <h2 className="text-2xl font-semibold text-foreground">Ayarlar Yükleniyor</h2>
+        <p className="text-muted-foreground mt-2">Kişisel tercihlerinizi getiriyoruz...</p>
       </div>
     );
   }
@@ -144,201 +159,214 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="shadow-sm border-border/40">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Settings className="h-7 w-7 text-primary" />
-            <CardTitle className="text-2xl font-headline">Ayarlar</CardTitle>
-          </div>
-          <CardDescription>Hesap, gizlilik ve uygulama tercihlerinizi yönetin.</CardDescription>
-        </CardHeader>
-      </Card>
+      <motion.div custom={0} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-xl rounded-xl border-border/40">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Settings className="h-7 w-7 text-primary" />
+              <CardTitle className="text-2xl font-headline">Ayarlar</CardTitle>
+            </div>
+            <CardDescription className="text-sm">Hesap, gizlilik ve uygulama tercihlerinizi yönetin.</CardDescription>
+          </CardHeader>
+        </Card>
+      </motion.div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Edit3 className="h-5 w-5 text-primary" />
-            <CardTitle className="text-xl">Hesap</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <Button asChild variant="outline" className="w-full sm:w-auto">
-            <Link href="/profile/edit">
-              <Edit3 className="mr-2 h-4 w-4" /> Profili Düzenle (Ad, Bio, Fotoğraf)
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Edit3 className="h-5 w-5 text-primary" />
+              <CardTitle className="text-xl font-semibold">Hesap</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline" className="w-full sm:w-auto rounded-md hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-all">
+              <Link href="/profile/edit">
+                <Edit3 className="mr-2 h-4 w-4" /> Profili Düzenle (Ad, Bio, Fotoğraf)
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </motion.div>
       
-      <Card>
-        <CardHeader>
-            <div className="flex items-center gap-2">
-                <LockKeyhole className="h-5 w-5 text-primary" />
-                <CardTitle className="text-xl">Gizlilik Ayarları</CardTitle>
-            </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-muted/50">
-                <Label htmlFor="postsVisibleToFriendsOnly" className="flex-1 cursor-pointer text-sm">
-                    Gönderilerimi sadece arkadaşlarım görsün
-                </Label>
-                <Switch
-                    id="postsVisibleToFriendsOnly"
-                    checked={privacySettings.postsVisibleToFriendsOnly}
-                    onCheckedChange={(checked) => handlePrivacySettingChange('postsVisibleToFriendsOnly', checked)}
-                    disabled={isSavingPrivacy}
-                />
-            </div>
-            <div className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-muted/50">
-                <Label htmlFor="activeRoomsVisibleToFriendsOnly" className="flex-1 cursor-pointer text-sm">
-                    Aktif odalarımı sadece arkadaşlarım görsün
-                </Label>
-                <Switch
-                    id="activeRoomsVisibleToFriendsOnly"
-                    checked={privacySettings.activeRoomsVisibleToFriendsOnly}
-                    onCheckedChange={(checked) => handlePrivacySettingChange('activeRoomsVisibleToFriendsOnly', checked)}
-                    disabled={isSavingPrivacy}
-                />
-            </div>
-            <div className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-muted/50">
-                <Label htmlFor="feedShowsEveryone" className="flex-1 cursor-pointer text-sm">
-                    Akışımda herkesin gönderilerini gör
-                </Label>
-                <Switch
-                    id="feedShowsEveryone"
-                    checked={privacySettings.feedShowsEveryone}
-                    onCheckedChange={(checked) => handlePrivacySettingChange('feedShowsEveryone', checked)}
-                    disabled={isSavingPrivacy}
-                />
-            </div>
-            <div className="flex justify-end">
-                <Button onClick={handleSavePrivacySettings} disabled={isSavingPrivacy} size="sm">
-                    {isSavingPrivacy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    <Save className="mr-2 h-4 w-4" /> Gizlilik Ayarlarını Kaydet
-                </Button>
-            </div>
-        </CardContent>
-      </Card>
+      <motion.div custom={2} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+          <CardHeader>
+              <div className="flex items-center gap-2">
+                  <LockKeyhole className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-xl font-semibold">Gizlilik Ayarları</CardTitle>
+              </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-secondary/30 dark:hover:bg-secondary/20 transition-colors">
+                  <Label htmlFor="postsVisibleToFriendsOnly" className="flex-1 cursor-pointer text-sm">
+                      Gönderilerimi sadece arkadaşlarım görsün
+                  </Label>
+                  <Switch
+                      id="postsVisibleToFriendsOnly"
+                      checked={privacySettings.postsVisibleToFriendsOnly}
+                      onCheckedChange={(checked) => handlePrivacySettingChange('postsVisibleToFriendsOnly', checked)}
+                      disabled={isSavingPrivacy}
+                  />
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-secondary/30 dark:hover:bg-secondary/20 transition-colors">
+                  <Label htmlFor="activeRoomsVisibleToFriendsOnly" className="flex-1 cursor-pointer text-sm">
+                      Aktif odalarımı sadece arkadaşlarım görsün
+                  </Label>
+                  <Switch
+                      id="activeRoomsVisibleToFriendsOnly"
+                      checked={privacySettings.activeRoomsVisibleToFriendsOnly}
+                      onCheckedChange={(checked) => handlePrivacySettingChange('activeRoomsVisibleToFriendsOnly', checked)}
+                      disabled={isSavingPrivacy}
+                  />
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-secondary/30 dark:hover:bg-secondary/20 transition-colors">
+                  <Label htmlFor="feedShowsEveryone" className="flex-1 cursor-pointer text-sm">
+                      Akışımda herkesin gönderilerini gör
+                  </Label>
+                  <Switch
+                      id="feedShowsEveryone"
+                      checked={privacySettings.feedShowsEveryone}
+                      onCheckedChange={(checked) => handlePrivacySettingChange('feedShowsEveryone', checked)}
+                      disabled={isSavingPrivacy}
+                  />
+              </div>
+              <div className="flex justify-end pt-2">
+                  <Button onClick={handleSavePrivacySettings} disabled={isSavingPrivacy} size="sm" className="rounded-md">
+                      {isSavingPrivacy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      <Save className="mr-2 h-4 w-4" /> Gizlilik Ayarlarını Kaydet
+                  </Button>
+              </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-      <Card>
-        <CardHeader>
-            <div className="flex items-center gap-2">
-              <Star className="h-5 w-5 text-yellow-400" />
-              <CardTitle className="text-xl">Premium Bilgileri</CardTitle>
-            </div>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-            {isCurrentlyPremium && userData ? (
-              <>
-                <p className="flex items-center gap-1.5">
-                  Durum: <span className="font-semibold text-yellow-500 capitalize">{userData.premiumStatus} Premium</span>
-                </p>
-                {userData.premiumExpiryDate && (
+      <motion.div custom={3} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+          <CardHeader>
+              <div className="flex items-center gap-2">
+                <Star className="h-5 w-5 text-yellow-400" />
+                <CardTitle className="text-xl font-semibold">Premium Bilgileri</CardTitle>
+              </div>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+              {isCurrentlyPremium && userData ? (
+                <>
                   <p className="flex items-center gap-1.5">
-                    Geçerlilik Tarihi: <span className="font-medium text-foreground">{format(userData.premiumExpiryDate.toDate(), "dd MMMM yyyy, HH:mm", { locale: tr })}</span>
+                    Durum: <span className="font-semibold text-yellow-500 capitalize">{userData.premiumStatus} Premium</span>
                   </p>
-                )}
-              </>
-            ) : (
-              <p className="text-muted-foreground">Şu anda aktif bir premium aboneliğiniz bulunmuyor.</p>
-            )}
-            <div className="pt-2">
-              <Button asChild variant="outline" className="w-full sm:w-auto border-yellow-500 text-yellow-600 hover:bg-yellow-500/10">
-                <Link href="/store">
-                  <ShoppingBag className="mr-2 h-4 w-4" /> {isCurrentlyPremium ? "Premium'u Yönet" : "Premium Paketleri Gör"}
-                </Link>
-              </Button>
-            </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <MicIcon className="h-5 w-5 text-primary" />
-            <CardTitle className="text-xl">Mikrofon Testi</CardTitle>
-          </div>
-          <CardDescription className="text-sm">Mikrofonunuzun çalışıp çalışmadığını test edin.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button onClick={handleToggleMicTest} disabled={isUserLoading} className="w-full sm:w-auto" variant="outline">
-            {isTestingMic ? <PauseCircle className="mr-2 h-4 w-4" /> : <PlayCircle className="mr-2 h-4 w-4" />}
-            {isTestingMic ? "Testi Durdur" : "Mikrofon Testini Başlat"}
-          </Button>
-          <audio ref={audioPlaybackRef} autoPlay className={isTestingMic ? "block w-full mt-2 rounded-md" : "hidden"} controls={isTestingMic}></audio>
-          {micError && <p className="text-xs text-destructive">{micError}</p>}
-          {!micError && isTestingMic && <p className="text-xs text-muted-foreground">Sesinizi duyuyor olmalısınız.</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-            <div className="flex items-center gap-2">
-                <ExternalLink className="h-5 w-5 text-primary" />
-                <CardTitle className="text-xl">Diğer Bağlantılar</CardTitle>
-            </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Button asChild variant="outline" className="w-full">
-                <Link href="/friends"> <Users className="mr-2 h-4 w-4" /> Arkadaşlarım</Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full">
-                <Link href="/store"><ShoppingBag className="mr-2 h-4 w-4" /> Mağaza</Link>
-            </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Palette className="h-5 w-5 text-primary" />
-            <CardTitle className="text-xl">Görünüm Ayarları</CardTitle>
-          </div>
-          <CardDescription className="text-sm">Uygulamanın temasını kişiselleştirin.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <Label htmlFor="theme-select" className="text-sm font-medium">Uygulama Teması</Label>
-            <Select value={theme} onValueChange={(value) => setTheme(value as ThemeSetting)}>
-              <SelectTrigger id="theme-select" className="mt-1">
-                <SelectValue placeholder="Tema Seçin" />
-              </SelectTrigger>
-              <SelectContent>
-                {themeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-transparent border-none shadow-none">
-        <CardContent className="p-0 pt-2 space-y-3">
-            {userData?.role === 'admin' && (
-                <Button
-                variant="outline"
-                className="w-full border-purple-500 text-purple-500 hover:bg-purple-500/10 hover:text-purple-600"
-                onClick={() => setIsAdminPanelOpen(true)}
-                disabled={isUserLoading}
-                >
-                <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
+                  {userData.premiumExpiryDate && (
+                    <p className="flex items-center gap-1.5">
+                      Geçerlilik Tarihi: <span className="font-medium text-foreground">{format(userData.premiumExpiryDate.toDate(), "dd MMMM yyyy, HH:mm", { locale: tr })}</span>
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-muted-foreground">Şu anda aktif bir premium aboneliğiniz bulunmuyor.</p>
+              )}
+              <div className="pt-2">
+                <Button asChild variant="outline" className="w-full sm:w-auto border-yellow-500/70 text-yellow-600 hover:bg-yellow-500/10 hover:border-yellow-500 rounded-md transition-all">
+                  <Link href="/store">
+                    <ShoppingBag className="mr-2 h-4 w-4" /> {isCurrentlyPremium ? "Premium'u Yönet" : "Premium Paketleri Gör"}
+                  </Link>
                 </Button>
-            )}
-            <Button
-                onClick={async () => await logOut()}
-                variant="destructive"
-                className="w-full"
-                disabled={isUserLoading}
-            >
-                {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOutIcon className="mr-2 h-4 w-4" />}
-                Çıkış Yap
+              </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div custom={4} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <MicIcon className="h-5 w-5 text-primary" />
+              <CardTitle className="text-xl font-semibold">Mikrofon Testi</CardTitle>
+            </div>
+            <CardDescription className="text-sm text-muted-foreground">Mikrofonunuzun çalışıp çalışmadığını test edin.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button onClick={handleToggleMicTest} disabled={isUserLoading} className="w-full sm:w-auto rounded-md" variant="outline">
+              {isTestingMic ? <PauseCircle className="mr-2 h-4 w-4 text-red-500" /> : <PlayCircle className="mr-2 h-4 w-4 text-green-500" />}
+              {isTestingMic ? "Testi Durdur" : "Mikrofon Testini Başlat"}
             </Button>
-        </CardContent>
-      </Card>
+            <audio ref={audioPlaybackRef} autoPlay className={isTestingMic ? "block w-full mt-2 rounded-md" : "hidden"} controls={isTestingMic}></audio>
+            {micError && <p className="text-xs text-destructive">{micError}</p>}
+            {!micError && isTestingMic && <p className="text-xs text-muted-foreground">Sesinizi duyuyor olmalısınız.</p>}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+          <CardHeader>
+              <div className="flex items-center gap-2">
+                  <ExternalLink className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-xl font-semibold">Diğer Bağlantılar</CardTitle>
+              </div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Button asChild variant="outline" className="w-full rounded-md hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-all">
+                  <Link href="/friends"> <Users className="mr-2 h-4 w-4" /> Arkadaşlarım</Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full rounded-md hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-all">
+                  <Link href="/store"><ShoppingBag className="mr-2 h-4 w-4" /> Mağaza</Link>
+              </Button>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Palette className="h-5 w-5 text-primary" />
+              <CardTitle className="text-xl font-semibold">Görünüm Ayarları</CardTitle>
+            </div>
+            <CardDescription className="text-sm text-muted-foreground">Uygulamanın temasını kişiselleştirin.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <Label htmlFor="theme-select" className="text-sm font-medium">Uygulama Teması</Label>
+              <Select value={theme} onValueChange={(value) => setTheme(value as ThemeSetting)}>
+                <SelectTrigger id="theme-select" className="mt-1 rounded-md">
+                  <SelectValue placeholder="Tema Seçin" />
+                </SelectTrigger>
+                <SelectContent className="rounded-md">
+                  {themeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div custom={7} variants={sectionVariants} initial="hidden" animate="visible" className="pt-2">
+          {userData?.role === 'admin' && (
+              <Button
+              variant="outline"
+              className="w-full border-purple-500/70 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 hover:border-purple-600 rounded-md mb-3 transition-all"
+              onClick={() => setIsAdminPanelOpen(true)}
+              disabled={isUserLoading}
+              >
+              <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
+              </Button>
+          )}
+          <Button
+              onClick={async () => await logOut()}
+              variant="destructive"
+              className="w-full rounded-md"
+              disabled={isUserLoading}
+          >
+              {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOutIcon className="mr-2 h-4 w-4" />}
+              Çıkış Yap
+          </Button>
+      </motion.div>
 
     </div>
   );
 }
+

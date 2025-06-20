@@ -3,22 +3,22 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Gem, ShoppingBag, Tag, CreditCard, AlertTriangle, Youtube, Star, Zap } from "lucide-react"; // Star ve Zap ikonları eklendi
+import { Gem, ShoppingBag, Tag, CreditCard, AlertTriangle, Youtube, Star, Zap } from "lucide-react"; 
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect } from "react";
 
-interface StorePackage { // DiamondPackage -> StorePackage olarak genelleştirildi
+interface StorePackage { 
   id: string;
   name: string;
   price: string; 
   description: string;
   icon: React.ReactNode;
-  actionType: "buy_diamonds" | "watch_ad_diamonds" | "buy_premium"; // actionType güncellendi
-  diamonds?: number; // Elmas paketleri için
-  durationDays?: number; // Premium paketleri için
+  actionType: "buy_diamonds" | "watch_ad_diamonds" | "buy_premium"; 
+  diamonds?: number; 
+  durationDays?: number; 
   highlight?: boolean;
 }
 
@@ -66,7 +66,7 @@ const premiumPackages: StorePackage[] = [
   {
     id: "premium_weekly",
     name: "Haftalık Premium",
-    price: "₺9.99", // Örnek fiyat
+    price: "₺9.99", 
     description: "Bir hafta boyunca premium özelliklerin keyfini çıkarın!",
     icon: <Star className="h-8 w-8 text-amber-400" />,
     actionType: "buy_premium",
@@ -75,7 +75,7 @@ const premiumPackages: StorePackage[] = [
   {
     id: "premium_monthly",
     name: "Aylık Premium",
-    price: "₺29.99", // Örnek fiyat
+    price: "₺29.99", 
     description: "Bir ay boyunca tüm premium avantajlara sahip olun!",
     icon: <Zap className="h-8 w-8 text-yellow-500" />,
     actionType: "buy_premium",
@@ -98,7 +98,7 @@ const cardVariants = {
   }),
 };
 
-export default function StorePage() { // DiamondStorePage -> StorePage
+export default function StorePage() { 
   const { userData, isUserLoading } = useAuth();
   const { toast } = useToast();
 
@@ -132,15 +132,15 @@ export default function StorePage() { // DiamondStorePage -> StorePage
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <Card className="shadow-xl bg-gradient-to-br from-primary/10 via-card to-accent/10 dark:from-primary/15 dark:via-card dark:to-accent/15 border-primary/20">
-          <CardHeader className="text-center pb-4">
+        <Card className="shadow-xl bg-gradient-to-br from-primary/10 via-card to-accent/10 dark:from-primary/15 dark:via-card dark:to-accent/15 border-primary/20 rounded-xl">
+          <CardHeader className="text-center pb-4 pt-6">
             <ShoppingBag className="h-16 w-16 mx-auto text-primary mb-3 animate-pulse" />
             <CardTitle className="text-3xl sm:text-4xl font-headline text-primary-foreground/95">Mağaza</CardTitle>
             <CardDescription className="text-base sm:text-lg text-muted-foreground mt-1">
               Sohbet deneyimini zenginleştirmek için elmas ve premium paketler!
             </CardDescription>
           </CardHeader>
-          <CardContent className="text-center">
+          <CardContent className="text-center pb-6">
              {userData && !isUserLoading && (
               <div className="flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-4">
                 <p className="text-lg font-medium text-muted-foreground">
@@ -154,11 +154,16 @@ export default function StorePage() { // DiamondStorePage -> StorePage
                 </p>
               </div>
             )}
+             {isUserLoading && (
+                <div className="flex justify-center items-center h-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+             )}
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* Premium Paketler */}
+      
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold text-center sm:text-left flex items-center gap-2">
             <Star className="h-7 w-7 text-yellow-500" /> Premium Paketler
@@ -179,7 +184,7 @@ export default function StorePage() { // DiamondStorePage -> StorePage
                     </div>
                     <CardTitle className={`text-xl font-semibold ${pkg.highlight ? 'text-yellow-700 dark:text-yellow-300' : 'text-foreground'}`}>{pkg.name}</CardTitle>
                     <div className="flex items-center justify-center gap-1.5 mt-1">
-                      {/* Premium paketler için süre bilgisi gösterilebilir */}
+                      
                       {pkg.durationDays && <Tag className={`h-5 w-5 ${pkg.highlight ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary'}`} /> }
                       <span className={`text-lg font-bold ${pkg.highlight ? 'text-yellow-700 dark:text-yellow-300' : 'text-primary'}`}>{pkg.durationDays ? `${pkg.durationDays} Gün` : ''}</span>
                     </div>
@@ -187,10 +192,10 @@ export default function StorePage() { // DiamondStorePage -> StorePage
                 <CardContent className="text-center flex-grow">
                     <p className="text-sm text-muted-foreground min-h-[40px]">{pkg.description}</p>
                 </CardContent>
-                <CardFooter className="flex-col items-center gap-3 p-5 border-t bg-muted/20 dark:bg-card/30">
+                <CardFooter className="flex-col items-center gap-3 p-5 border-t bg-muted/20 dark:bg-card/30 rounded-b-xl">
                     <p className={`text-2xl font-bold ${pkg.highlight ? 'text-yellow-600 dark:text-yellow-300' : 'text-foreground'}`}>{pkg.price}</p>
                     <Button 
-                    className={`w-full ${pkg.highlight ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}
+                    className={`w-full rounded-md ${pkg.highlight ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}
                     onClick={() => handlePackageAction(pkg)}
                     disabled={isUserLoading}
                     >
@@ -204,7 +209,7 @@ export default function StorePage() { // DiamondStorePage -> StorePage
         </div>
       </section>
 
-      {/* Elmas Paketler */}
+      
       <section className="space-y-4 pt-6">
         <h2 className="text-2xl font-semibold text-center sm:text-left flex items-center gap-2">
             <Gem className="h-7 w-7 text-blue-500" /> Elmas Paketleri
@@ -213,7 +218,7 @@ export default function StorePage() { // DiamondStorePage -> StorePage
             {diamondPackages.map((pkg, index) => (
             <motion.div
                 key={pkg.id}
-                custom={index + premiumPackages.length} // Delay için farklı bir index
+                custom={index + premiumPackages.length} 
                 variants={cardVariants}
                 initial="hidden"
                 animate="visible"
@@ -234,10 +239,10 @@ export default function StorePage() { // DiamondStorePage -> StorePage
                 <CardContent className="text-center flex-grow">
                     <p className="text-sm text-muted-foreground min-h-[40px]">{pkg.description}</p>
                 </CardContent>
-                <CardFooter className="flex-col items-center gap-3 p-5 border-t bg-muted/20 dark:bg-card/30">
+                <CardFooter className="flex-col items-center gap-3 p-5 border-t bg-muted/20 dark:bg-card/30 rounded-b-xl">
                     <p className={`text-2xl font-bold ${pkg.highlight ? 'text-green-600 dark:text-green-300' : 'text-foreground'}`}>{pkg.price}</p>
                     <Button 
-                    className={`w-full ${pkg.highlight ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}
+                    className={`w-full rounded-md ${pkg.highlight ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}
                     onClick={() => handlePackageAction(pkg)}
                     disabled={isUserLoading}
                     >
@@ -251,12 +256,12 @@ export default function StorePage() { // DiamondStorePage -> StorePage
         </div>
       </section>
       
-      <Card className="mt-8 border-blue-500/30 bg-blue-500/5 dark:bg-blue-400/10 p-6 shadow-md">
+      <Card className="mt-8 border-blue-500/30 bg-blue-500/5 dark:bg-blue-400/10 p-6 shadow-md rounded-xl">
         <CardHeader className="p-0">
             <div className="flex items-start gap-3">
                 <AlertTriangle className="h-10 w-10 text-blue-500 dark:text-blue-400 mt-1 flex-shrink-0"/>
                 <div>
-                    <CardTitle className="text-lg text-blue-700 dark:text-blue-300">Bilgilendirme</CardTitle>
+                    <CardTitle className="text-lg text-blue-700 dark:text-blue-300 font-semibold">Bilgilendirme</CardTitle>
                     <CardDescription className="text-xs text-blue-600 dark:text-blue-200 mt-1">
                         Elmas ve premium paket satın alma ile video izleyerek kazanma özellikleri şu anda geliştirme aşamasındadır. 
                         Bu sayfa, gelecekteki işlevsellik için bir önizlemedir. Anlayışınız için teşekkür ederiz!
