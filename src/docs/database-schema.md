@@ -72,6 +72,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı), `mentionedUserIds` (Array<String>, isteğe bağlı)
+    - **Kurallar:** Kendi mesajını silebilir (`request.auth.uid == resource.data.senderId`).
   - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı), `isPremium` (Boolean, isteğe bağlı)
@@ -134,6 +135,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp)
+    - **Kurallar:** Kendi mesajını silebilir (`request.auth.uid == resource.data.senderId`).
 - **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
     - *Sorgu:* `src/app/(main)/direct-messages/page.tsx`
@@ -229,3 +231,138 @@ Kullanıcıların 1v1 rastgele eşleşme için beklediği kuyruk.
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
 **Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.
+
+**GÜVENLİK KURALLARI ÖRNEĞİ (Firestore Console -> Rules):**
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Kullanıcılar kendi profil belgelerini okuyabilir ve güncelleyebilir.
+    match /users/{userId} {
+      allow read: if true; // Herkes okuyabilir veya daha sıkı: if request.auth.uid == userId;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId;
+      // allow delete: if false; // Kullanıcıların kendi hesaplarını silmesi için ayrı bir mantık gerekebilir.
+
+      // Kullanıcıların kendi alt koleksiyonlarını yönetmesine izin ver (arkadaşlar, engellenenler)
+      match /confirmedFriends/{friendId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+      match /blockedUsers/{blockedUserId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+    }
+
+    // Sohbet Odaları: Giriş yapmış kullanıcılar okuyabilir. Oluşturan güncelleyebilir/silebilir.
+    // Katılımcılar mesaj yazabilir.
+    match /chatRooms/{roomId} {
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid != null; // Oda oluşturma maliyeti/spam kontrolü düşünülmeli.
+      allow update: if request.auth.uid != null && (
+                      request.auth.uid == resource.data.creatorId ||
+                      request.resource.data.participantCount != resource.data.participantCount ||
+                      request.resource.data.voiceParticipantCount != resource.data.voiceParticipantCount ||
+                      request.resource.data.maxParticipants != resource.data.maxParticipants ||
+                      request.resource.data.name != resource.data.name ||
+                      request.resource.data.description != resource.data.description ||
+                      request.resource.data.image != resource.data.image ||
+                      request.resource.data.isGameEnabledInRoom != resource.data.isGameEnabledInRoom ||
+                      request.resource.data.currentGameQuestionId != resource.data.currentGameQuestionId ||
+                      request.resource.data.nextGameQuestionTimestamp != resource.data.nextGameQuestionTimestamp ||
+                      request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline ||
+                      request.resource.data.expiresAt != resource.data.expiresAt
+                    );
+      allow delete: if request.auth.uid != null && request.auth.uid == resource.data.creatorId;
+
+      match /messages/{messageId} {
+        allow read: if request.auth.uid != null;
+        allow create: if request.auth.uid != null && request.resource.data.senderId == request.auth.uid;
+        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; // Sadece gönderen silebilir
+      }
+      match /participants/{participantId} {
+        allow read: if request.auth.uid != null;
+        allow create: if request.auth.uid == participantId; // Sadece kendi katılabilir
+        allow delete: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId; // Kendi veya oda sahibi silebilir
+      }
+       match /voiceParticipants/{participantId} {
+        allow read: if request.auth.uid != null;
+        allow write: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId;
+      }
+       match /webrtcSignals/{userId}/{subcollection=**} {
+        allow read, write: if request.auth.uid == userId;
+      }
+    }
+
+    // Gönderiler: Giriş yapmış kullanıcılar okuyabilir. Oluşturan kendi gönderisini yönetebilir.
+    match /posts/{postId} {
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth.uid == resource.data.userId;
+      allow delete: if request.auth.uid == resource.data.userId;
+
+      match /comments/{commentId} {
+        allow read: if request.auth.uid != null;
+        allow create: if request.auth.uid == request.resource.data.userId;
+        allow delete: if request.auth.uid == resource.data.userId; // Yorumu yapan silebilir
+      }
+    }
+
+    // Direkt Mesajlar: Sadece katılımcılar okuyabilir/yazabilir.
+    match /directMessages/{dmChatId} {
+      allow read, write: if request.auth.uid in resource.data.participantUids;
+      match /messages/{messageId} {
+        allow read, write: if request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
+        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; // Sadece gönderen silebilir
+      }
+    }
+    
+    // Direkt Çağrılar: İlgili kullanıcılar yönetebilir.
+    match /directCalls/{callId} {
+      allow read, write: if request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.calleeId;
+       match /callerIceCandidates/{candidateId} {
+         allow read, write: if request.auth.uid == get(/databases/$(database)/documents/directCalls/$(callId)).data.callerId;
+       }
+       match /calleeIceCandidates/{candidateId} {
+         allow read, write: if request.auth.uid == get(/databases/$(database)/documents/directCalls/$(callId)).data.calleeId;
+       }
+    }
+
+    // Arkadaşlık İstekleri: İlgili kullanıcılar yönetebilir.
+    match /friendRequests/{requestId} {
+      allow read: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
+      allow create: if request.auth.uid == request.resource.data.fromUserId;
+      allow update, delete: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
+    }
+
+    // Uygulama Ayarları (gameConfig): Sadece admin okuyabilir/yazabilir.
+    match /appSettings/gameConfig {
+      allow read: if request.auth.uid != null;
+      allow write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Oyun Soruları: Admin yönetebilir, giriş yapmış kullanıcılar okuyabilir.
+    match /gameQuestions/{questionId} {
+      allow read: if request.auth.uid != null;
+      allow write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Raporlar: Sadece adminler erişebilir (veya kullanıcılar kendi raporlarını oluşturabilir).
+    match /reports/{reportId} {
+      allow read, write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow create: if request.auth.uid == request.resource.data.reporterId;
+    }
+    
+    // Eşleşme Kuyruğu: Giriş yapmış kullanıcılar kendi belgelerini okuyabilir/yazabilir/silebilir.
+    // Eşleşme işlemi için daha karmaşık kurallar gerekebilir (örn: bir transaction içinde iki belgeyi güncellemek).
+    match /matchmakingQueue/{queueEntryId} {
+      allow read, write: if request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId;
+      // Transaction'lar için daha spesifik kurallar:
+      // allow update: if request.auth.uid != null && ( (request.resource.data.status == 'matched' && resource.data.status == 'waiting') || (request.auth.uid == resource.data.userId) );
+      // allow delete: if request.auth.uid == resource.data.userId;
+    }
+  }
+}
+```
+
+    

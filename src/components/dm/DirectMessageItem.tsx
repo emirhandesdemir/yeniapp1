@@ -1,12 +1,26 @@
 
 "use client";
-import React from 'react';
+import React, { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
-import { Star } from 'lucide-react'; 
-import { useAuth, checkUserPremium, type UserData } from '@/contexts/AuthContext'; // UserData import edildi
-import { cn } from '@/lib/utils'; // cn import edildi
+import { Star, Trash2, Loader2 } from 'lucide-react';
+import { useAuth, checkUserPremium, type UserData } from '@/contexts/AuthContext';
+import { cn } from '@/lib/utils';
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { db } from '@/lib/firebase';
+import { doc, deleteDoc as deleteFirestoreDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 interface DirectMessage {
   id: string;
@@ -14,7 +28,7 @@ interface DirectMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; 
+  senderIsPremium?: boolean;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -23,13 +37,20 @@ interface DirectMessage {
 interface DirectMessageItemProps {
   msg: DirectMessage;
   getAvatarFallbackText: (name?: string | null) => string;
+  chatId: string; // DM silme işlemi için chatId gerekli
+  onMessageDeleted: (messageId: string) => void; // Mesaj silindiğinde çağrılacak fonksiyon
 }
 
 const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   msg,
   getAvatarFallbackText,
+  chatId,
+  onMessageDeleted,
 }) => {
   const { userData: currentUserData } = useAuth();
+  const { toast } = useToast();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const getDisplayAvatar = () => {
     if (msg.isOwn) return currentUserData?.photoURL;
@@ -50,8 +71,26 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   const displayNameText = getDisplayName();
   const displayIsPremium = getIsPremium();
 
+  const handleDeleteMessage = async () => {
+    if (!msg.isOwn || !chatId || !msg.id) return;
+    setIsDeleting(true);
+    setShowDeleteConfirm(false);
+    try {
+      const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
+      await deleteFirestoreDoc(messageRef);
+      toast({ title: "Başarılı", description: "Mesajınız silindi." });
+      onMessageDeleted(msg.id); // Parent component'i bilgilendir
+    } catch (error) {
+      console.error("Error deleting direct message:", error);
+      toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div key={msg.id} className={cn("flex items-end gap-2 my-1.5", msg.isOwn ? "justify-end" : "justify-start")}>
+    <>
+    <div key={msg.id} className={cn("flex items-end gap-2 my-1.5 group", msg.isOwn ? "justify-end" : "justify-start")}>
       {!msg.isOwn && (
           <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 relative flex-shrink-0 transition-transform hover:scale-110">
             <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
@@ -66,7 +105,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
           msg.isOwn ? "items-end" : "items-start"
       )}>
           <div className={cn(
-              "p-2.5 sm:p-3 shadow-md break-words",
+              "relative p-2.5 sm:p-3 shadow-md break-words",
               msg.isOwn
               ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
               : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
@@ -74,6 +113,18 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
             <div className="allow-text-selection">
                 <p className="text-sm">{msg.text}</p>
             </div>
+            {msg.isOwn && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="absolute top-0 right-0 h-6 w-6 text-primary-foreground/60 hover:text-destructive-foreground hover:bg-destructive/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Mesajı Sil"
+                    disabled={isDeleting}
+                >
+                    {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </Button>
+            )}
           </div>
           <p className={cn(
               "text-[10px] sm:text-xs mt-1 px-1",
@@ -92,8 +143,29 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
         </div>
       )}
     </div>
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Mesajı Sil</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Bu mesajı kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>İptal</AlertDialogCancel>
+                <AlertDialogAction
+                    onClick={handleDeleteMessage}
+                    className="bg-destructive hover:bg-destructive/90"
+                    disabled={isDeleting}
+                >
+                    {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Sil
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 });
 DirectMessageItem.displayName = 'DirectMessageItem';
 export default DirectMessageItem;
-    

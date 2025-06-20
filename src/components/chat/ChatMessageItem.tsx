@@ -1,15 +1,15 @@
 
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles } from "lucide-react";
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
-import type { Timestamp } from 'firebase/firestore';
+import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc } from 'firebase/firestore'; // deleteDoc -> deleteFirestoreDoc
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useAuth, checkUserPremium } from '@/contexts/AuthContext'; // checkUserPremium eklendi
+import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { db } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 
 interface Message {
@@ -51,11 +53,12 @@ interface ChatMessageItemProps {
   onDmAction: (targetUserId: string | undefined | null) => void;
   onViewProfileAction: (targetUserId: string | undefined | null) => void;
   getAvatarFallbackText: (name?: string | null) => string;
-  currentUserPhotoURL?: string | null; // Bu prop artık AuthContext'ten alınacak
-  currentUserDisplayName?: string | null; // Bu prop artık AuthContext'ten alınacak
-  currentUserIsPremium?: boolean; // Bu prop artık AuthContext'ten alınacak
+  currentUserIsPremium?: boolean;
   isCurrentUserRoomCreator: boolean;
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
+  roomId: string; // roomId prop'u eklendi
+  isActiveParticipant: boolean; // isActiveParticipant prop'u eklendi
+  onMessageDeleted: (messageId: string) => void; // Mesaj silindiğinde çağrılacak fonksiyon
 }
 
 const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
@@ -73,17 +76,21 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   onDmAction,
   onViewProfileAction,
   getAvatarFallbackText,
-  // currentUserPhotoURL, // Kaldırıldı
-  // currentUserDisplayName, // Kaldırıldı
-  // currentUserIsPremium, // Kaldırıldı
   isCurrentUserRoomCreator,
   onKickParticipantFromTextChat,
+  roomId, // roomId alındı
+  isActiveParticipant, // isActiveParticipant alındı
+  onMessageDeleted,
 }) => {
-  const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData } = useAuth(); // currentUserData eklendi
+  const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData } = useAuth();
+  const { toast } = useToast();
   const [isTargetUserBlocked, setIsTargetUserBlocked] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
 
   React.useEffect(() => {
     if (popoverOpenForUserId === msg.senderId && popoverTargetUser && currentUserUid !== msg.senderId) {
@@ -106,10 +113,27 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         await unblockUser(popoverTargetUser.uid);
         setIsTargetUserBlocked(false);
     } else {
-        await blockUser(popoverTargetUser.uid, popoverTargetUser.displayName, popoverTargetUser.photoURL); // displayName ve photoURL eklendi
+        await blockUser(popoverTargetUser.uid, popoverTargetUser.displayName, popoverTargetUser.photoURL);
         setIsTargetUserBlocked(true);
     }
     setActionLoading(false);
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!msg.isOwn || !roomId || !msg.id) return;
+    setIsDeleting(true);
+    setShowDeleteConfirm(false);
+    try {
+      const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
+      await deleteFirestoreDoc(messageRef);
+      toast({ title: "Başarılı", description: "Mesajınız silindi." });
+      onMessageDeleted(msg.id);
+    } catch (error) {
+      console.error("Error deleting chat message:", error);
+      toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
 
@@ -171,17 +195,18 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
 
   return (
-    <div key={msg.id} className={`flex items-end gap-2.5 my-1 ${msg.isOwn ? "justify-end" : ""}`}>
+    <div key={msg.id} className={`flex items-end gap-2.5 my-1 group ${msg.isOwn ? "justify-end" : ""}`}>
       {!msg.isOwn && (
         <Popover open={popoverOpenForUserId === msg.senderId} onOpenChange={(isOpen) => {
             if (!isOpen) setPopoverOpenForUserId(null);
-            else if (msg.senderId !== currentUserUid) onOpenUserInfoPopover(msg.senderId); // Popover açıldığında kullanıcı bilgisi yükle
+            else if (msg.senderId !== currentUserUid) onOpenUserInfoPopover(msg.senderId);
         }}>
             <PopoverTrigger asChild>
                 <Link href={`/profile/${msg.senderId}`} className="relative self-end mb-1 cursor-pointer">
                     <Avatar className="h-7 w-7">
                         <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                         <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
+                         {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
                     </Avatar>
                     {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
                 </Link>
@@ -260,10 +285,22 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline">{msg.senderName}</span>
                 </Link>
           )}
-          <div className={cn(`p-2.5 sm:p-3 shadow-md`, bubbleClasses)}>
+          <div className={cn("relative p-2.5 sm:p-3 shadow-md group", bubbleClasses)}>
               <p className={cn(textClasses, "allow-text-selection")}>
                 {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
               </p>
+              {msg.isOwn && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="absolute top-0 right-0 h-6 w-6 text-primary-foreground/60 hover:text-destructive-foreground hover:bg-destructive/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Mesajı Sil"
+                    disabled={isDeleting}
+                >
+                    {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </Button>
+              )}
           </div>
           <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
               {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
@@ -274,6 +311,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             <Avatar className="h-7 w-7">
                 <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
+                 {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
             </Avatar>
             {currentUsersActualIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
         </div>
@@ -298,9 +336,29 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Mesajı Sil</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      Bu mesajı kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>İptal</AlertDialogCancel>
+                  <AlertDialogAction
+                      onClick={handleDeleteMessage}
+                      className="bg-destructive hover:bg-destructive/90"
+                      disabled={isDeleting}
+                  >
+                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Sil
+                  </AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
-

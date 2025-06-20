@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart } from "lucide-react"; 
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot } from "lucide-react"; 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -23,8 +23,9 @@ import {
   where,
   getDocs,
   setDoc,
-  updateDoc, // Eklendi
-  writeBatch, // Eklendi
+  updateDoc,
+  writeBatch,
+  deleteDoc as deleteFirestoreDoc, // deleteDoc Firestore'dan silme için
 } from "firebase/firestore";
 import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; 
 import { useToast } from "@/hooks/use-toast";
@@ -48,7 +49,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { isPast } from 'date-fns';
+import { isPast, formatDistanceToNowStrict, differenceInMinutes } from 'date-fns'; // formatDistanceToNowStrict eklendi
+import { tr } from 'date-fns/locale';
 
 interface DirectMessage {
   id: string;
@@ -69,6 +71,7 @@ interface DmPartnerDetails {
   email?: string | null;
   isPremium?: boolean; 
   isBanned?: boolean;
+  lastSeen?: Timestamp | null; // Eklendi
 }
 
 interface DmDocumentData {
@@ -88,7 +91,8 @@ interface DmDocumentData {
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500;
-const MATCH_SESSION_DURATION_SECONDS = 4 * 60; // 4 dakika
+const MATCH_SESSION_DURATION_SECONDS = 4 * 60;
+const ACTIVE_THRESHOLD_MINUTES_DM = 2; // DM için aktiflik eşiği
 
 const messageVariants = {
   hidden: { opacity: 0, y: 10 },
@@ -116,7 +120,6 @@ export default function DirectMessagePage() {
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
 
-  // Match session states
   const [dmDocData, setDmDocData] = useState<DmDocumentData | null>(null);
   const [isMatchSessionChat, setIsMatchSessionChat] = useState(false);
   const [sessionTimeLeft, setSessionTimeLeft] = useState<number | null>(null);
@@ -125,13 +128,19 @@ export default function DirectMessagePage() {
   const [partnerDecision, setPartnerDecision] = useState<'pending' | 'yes' | 'no'>('pending');
   const [decisionProcessing, setDecisionProcessing] = useState(false);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const partnerLastSeenUnsubscribeRef = useRef<() => void | null>(null);
 
   const getAvatarFallbackText = useCallback((name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     return "PN";
   }, []);
 
-  // Firestore listener for DM document (including match session fields)
+  const handleMessageDeleted = useCallback((deletedMessageId: string) => {
+    setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
+    // Optionally, update lastMessage in DM document if the deleted one was the last.
+    // This can be complex, for now, we rely on new messages to update it.
+  }, []);
+
   useEffect(() => {
     if (!chatId || !currentUser?.uid) return;
     setLoadingDmPartner(true);
@@ -148,27 +157,57 @@ export default function DirectMessagePage() {
                 toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
                 router.push("/friends"); return;
             }
+            
+            let partnerInfo: Partial<DmPartnerDetails> = { uid: partnerUid };
 
             if (data.participantInfo && data.participantInfo[partnerUid]) {
-                 setDmPartnerDetails({
-                    uid: partnerUid,
+                 partnerInfo = {
+                    ...partnerInfo,
                     displayName: data.participantInfo[partnerUid].displayName,
                     photoURL: data.participantInfo[partnerUid].photoURL,
                     isPremium: data.participantInfo[partnerUid].isPremium || false,
-                 });
-            } else {
-                // Fetch partner details if not in participantInfo (shouldn't happen often with new logic)
-                const userDocRef = doc(db, "users", partnerUid);
-                const userSnap = await getDoc(userDocRef);
+                 };
+            }
+            
+            // Listen to partner's user document for real-time lastSeen and other details
+            if (partnerLastSeenUnsubscribeRef.current) {
+                partnerLastSeenUnsubscribeRef.current();
+            }
+            const userDocRef = doc(db, "users", partnerUid);
+            partnerLastSeenUnsubscribeRef.current = onSnapshot(userDocRef, (userSnap) => {
                 if (userSnap.exists()) {
                     const partnerData = userSnap.data() as UserData;
-                    setDmPartnerDetails({
-                        uid: partnerUid, displayName: partnerData.displayName, photoURL: partnerData.photoURL, email: partnerData.email,
-                        isPremium: checkUserPremium(partnerData), isBanned: partnerData.isBanned || false,
-                    });
+                    setDmPartnerDetails(prev => ({
+                        ...(prev || partnerInfo), // Keep existing info if available, otherwise use from dmDoc
+                        uid: partnerUid,
+                        displayName: partnerData.displayName || partnerInfo.displayName,
+                        photoURL: partnerData.photoURL || partnerInfo.photoURL,
+                        email: partnerData.email,
+                        isPremium: checkUserPremium(partnerData),
+                        isBanned: partnerData.isBanned || false,
+                        lastSeen: partnerData.lastSeen || null,
+                    }));
+                    document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
+                } else {
+                    // Fallback if user doc somehow doesn't exist but was in participantInfo
+                    setDmPartnerDetails(prev => ({
+                        ...(prev || partnerInfo),
+                        uid: partnerUid,
+                        lastSeen: null, // Cannot fetch lastSeen
+                    }));
+                     document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
                 }
-            }
-            document.title = `${dmPartnerDetails?.displayName || 'Sohbet'} - DM`;
+            }, (error) => {
+                console.error("Error listening to partner user document:", error);
+                // Fallback if listener fails
+                 setDmPartnerDetails(prev => ({
+                    ...(prev || partnerInfo),
+                    uid: partnerUid,
+                    lastSeen: null,
+                }));
+                document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
+            });
+
 
             if (currentUser && partnerUid) {
                 checkIfUserBlocked(partnerUid).then(setIsPartnerBlockedByCurrentUser);
@@ -195,7 +234,6 @@ export default function DirectMessagePage() {
                     }
                 }
 
-                // Process decisions if both are made
                 if ((data.matchSessionUser1Decision !== 'pending' && data.matchSessionUser2Decision !== 'pending') && !data.matchSessionEnded) {
                    await processMatchDecisions(data.matchSessionUser1Decision!, data.matchSessionUser2Decision!, data.matchSessionUser1Id!, data.matchSessionUser2Id!);
                 }
@@ -211,12 +249,16 @@ export default function DirectMessagePage() {
         toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive"});
         setLoadingDmPartner(false);
     });
-    return () => unsubscribeDmDoc();
+    return () => {
+        unsubscribeDmDoc();
+        if (partnerLastSeenUnsubscribeRef.current) {
+            partnerLastSeenUnsubscribeRef.current();
+        }
+    };
 
-  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy, dmPartnerDetails?.displayName]);
+  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
 
 
-  // Match session timer logic
   useEffect(() => {
     if (isMatchSessionChat && sessionTimeLeft !== null && sessionTimeLeft > 0 && dmDocData && !dmDocData.matchSessionEnded) {
       if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
@@ -254,7 +296,6 @@ export default function DirectMessagePage() {
     const dmDocRef = doc(db, "directMessages", chatId);
 
     if (decision1 === 'yes' && decision2 === 'yes') {
-        // Add friends
         try {
             const batch = writeBatch(db);
             const user1DocRef = doc(db, "users", user1Id);
@@ -280,7 +321,6 @@ export default function DirectMessagePage() {
             batch.update(dmDocRef, {
                 isMatchSession: false,
                 matchSessionEnded: true,
-                // Optionally clear other matchSession fields
                 matchSessionExpiresAt: null,
                 matchSessionUser1Decision: null,
                 matchSessionUser2Decision: null,
@@ -293,15 +333,14 @@ export default function DirectMessagePage() {
             toast({ title: "Hata", description: "Arkadaş ekleme işlemi sırasında bir hata oluştu.", variant: "destructive" });
         }
     } else {
-        // One or both said no
         try {
             await updateDoc(dmDocRef, {
                 matchSessionEnded: true,
-                matchSessionExpiresAt: null, // Oturumu sonlandır
+                matchSessionExpiresAt: null,
             });
             toast({ title: "Eşleşme Sonlandı", description: "Sohbet devam etmeyecek.", variant: "default" });
             setShowDecisionModal(false);
-            router.push('/match'); // Redirect to match page for new search
+            router.push('/match');
         } catch (error) {
             console.error("Error ending match session:", error);
         }
@@ -309,7 +348,6 @@ export default function DirectMessagePage() {
     setDecisionProcessing(false);
   }, [chatId, currentUser, userData, dmPartnerDetails, router, toast, decisionProcessing]);
 
-  // Listen for both decisions to be made, or timer to end.
   useEffect(() => {
     if (!dmDocData || dmDocData.matchSessionEnded || !isMatchSessionChat) return;
 
@@ -321,7 +359,6 @@ export default function DirectMessagePage() {
     if (decisionsMade) {
       processMatchDecisions(matchSessionUser1Decision!, matchSessionUser2Decision!, matchSessionUser1Id!, matchSessionUser2Id!);
     } else if (timerExpired && (matchSessionUser1Decision === 'pending' || matchSessionUser2Decision === 'pending')) {
-      // If timer expired and one user hasn't decided, treat their decision as 'no'
       const finalUser1Decision = matchSessionUser1Decision === 'pending' ? 'no' : matchSessionUser1Decision!;
       const finalUser2Decision = matchSessionUser2Decision === 'pending' ? 'no' : matchSessionUser2Decision!;
       processMatchDecisions(finalUser1Decision, finalUser2Decision, matchSessionUser1Id!, matchSessionUser2Id!);
@@ -340,8 +377,7 @@ export default function DirectMessagePage() {
       await updateDoc(doc(db, "directMessages", chatId), {
         [updateField]: decision
       });
-      setMyDecision(decision); // Optimistic update for UI
-      // Listener will pick up the change and trigger processMatchDecisions if partner also decided
+      setMyDecision(decision);
     } catch (error) {
       console.error("Error submitting decision:", error);
       toast({ title: "Hata", description: "Kararınız kaydedilemedi.", variant: "destructive" });
@@ -357,7 +393,7 @@ export default function DirectMessagePage() {
     const messagesQuery = query(collection(db, `directMessages/${chatId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
       const fetchedMessages: DirectMessage[] = [];
-      querySnapshot.forEach((docSnap) => { // doc -> docSnap olarak değiştirildi
+      querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
         fetchedMessages.push({
           id: docSnap.id,
@@ -443,8 +479,6 @@ export default function DirectMessagePage() {
 
     try {
       const dmChatDocRef = doc(db, "directMessages", chatId);
-      // Parent DM doc update is handled by onSnapshot listener to avoid race conditions if it doesn't exist
-      // Here we just add the message.
       
       const messageDataForParentDoc = {
         lastMessageTimestamp: serverTimestamp(),
@@ -453,7 +487,7 @@ export default function DirectMessagePage() {
       };
 
       const dmChatDocSnap = await getDoc(dmChatDocRef);
-      if (!dmChatDocSnap.exists() && !isMatchSessionChat) { // Only create if not a match session that should pre-exist
+      if (!dmChatDocSnap.exists() && !isMatchSessionChat) {
          await setDoc(dmChatDocRef, {
           participantUids: [currentUser.uid, dmPartnerDetails.uid].sort(),
           participantInfo: {
@@ -462,7 +496,7 @@ export default function DirectMessagePage() {
           },
           createdAt: serverTimestamp(),
           ...messageDataForParentDoc,
-          isMatchSession: false, // Ensure it's marked as not a match session
+          isMatchSession: false,
         });
       } else if (dmChatDocSnap.exists()) {
          await updateDoc(dmChatDocRef, messageDataForParentDoc);
@@ -543,7 +577,7 @@ export default function DirectMessagePage() {
 
   const handleBlockOrUnblockUser = async () => {
     if (!currentUser || !dmPartnerDetails) return;
-    // setIsUserLoading(true); // Use isUserLoading for consistency, or a new state if needed
+    setIsSending(true); // Use isSending to disable actions during block/unblock
     if (isPartnerBlockedByCurrentUser) {
         await unblockUser(dmPartnerDetails.uid);
         setIsPartnerBlockedByCurrentUser(false);
@@ -551,7 +585,7 @@ export default function DirectMessagePage() {
         await blockUser(dmPartnerDetails.uid, dmPartnerDetails.displayName, dmPartnerDetails.photoURL);
         setIsPartnerBlockedByCurrentUser(true);
     }
-    // setIsUserLoading(false);
+    setIsSending(false);
   };
 
   const formatSessionTime = (seconds: number | null): string => {
@@ -559,6 +593,16 @@ export default function DirectMessagePage() {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const formatPartnerLastSeen = (lastSeen: Timestamp | null | undefined): string => {
+    if (!lastSeen) return "Son görülme bilinmiyor";
+    const lastSeenDate = lastSeen.toDate();
+    const now = new Date();
+    const diffMins = differenceInMinutes(now, lastSeenDate);
+
+    if (diffMins < ACTIVE_THRESHOLD_MINUTES_DM) return "Aktif";
+    return `Son görülme: ${formatDistanceToNowStrict(lastSeenDate, { addSuffix: true, locale: tr })}`;
   };
 
 
@@ -586,6 +630,9 @@ export default function DirectMessagePage() {
     );
   }
 
+  const partnerActivityStatus = formatPartnerLastSeen(dmPartnerDetails?.lastSeen);
+  const isPartnerCurrentlyActive = partnerActivityStatus === "Aktif";
+
   return (
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
       <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
@@ -599,10 +646,14 @@ export default function DirectMessagePage() {
                 <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
                     <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
                     <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                    {isPartnerCurrentlyActive && <Dot className="absolute -bottom-1 -right-1 h-6 w-6 text-green-500 fill-green-500" />}
                 </Avatar>
                 {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
                 <div className="flex-1 min-w-0">
                     <h2 className="text-sm sm:text-base font-semibold text-foreground group-hover:text-primary transition-colors truncate" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                    <p className={cn("text-xs", isPartnerCurrentlyActive ? "text-green-600" : "text-muted-foreground")}>
+                        {partnerActivityStatus}
+                    </p>
                     {isMatchSessionChat && sessionTimeLeft !== null && sessionTimeLeft > 0 && !dmDocData?.matchSessionEnded && (
                         <div className="flex items-center text-xs text-destructive animate-pulse">
                             <Clock className="h-3 w-3 mr-1" /> Kalan Süre: {formatSessionTime(sessionTimeLeft)}
@@ -632,7 +683,7 @@ export default function DirectMessagePage() {
               <DropdownMenuItem onClick={() => router.push(`/profile/${dmPartnerDetails.uid}`)} className="cursor-pointer">
                  <UserCircle className="mr-2 h-4 w-4"/> Profili Görüntüle
               </DropdownMenuItem>
-              {!isMatchSessionChat && ( // Sadece kalıcı DM'lerde göster
+              {!isMatchSessionChat && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)} className="cursor-pointer text-orange-600 focus:text-orange-700 focus:bg-orange-500/10">
@@ -684,6 +735,8 @@ export default function DirectMessagePage() {
                 <DirectMessageItem
                   msg={msg}
                   getAvatarFallbackText={getAvatarFallbackText}
+                  chatId={chatId}
+                  onMessageDeleted={handleMessageDeleted}
                 />
               </motion.div>
             ))}
@@ -739,7 +792,6 @@ export default function DirectMessagePage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Match Decision Modal */}
       <AlertDialog open={showDecisionModal && isMatchSessionChat && !dmDocData?.matchSessionEnded && myDecision === 'pending'} onOpenChange={(open) => { if(!open) setShowDecisionModal(false); }}>
         <AlertDialogContent className="sm:max-w-sm">
             <AlertDialogHeader>
@@ -765,10 +817,6 @@ export default function DirectMessagePage() {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
-
-
-    
