@@ -123,6 +123,13 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `lastMessageTimestamp`: (Timestamp, nullable) Bu sohbetteki son mesajın zaman damgası. Eğer hiç mesaj yoksa `null` olabilir.
   - `lastMessageText`: (String, isteğe bağlı) Son mesajın kısa bir özeti.
   - `lastMessageSenderId`: (String, isteğe bağlı) Son mesajı gönderenin UID'si.
+  - `isMatchSession`: (Boolean, isteğe bağlı) `true` ise bu DM geçici bir 1v1 eşleşme seansıdır. (Varsayılan: `false`)
+  - `matchSessionExpiresAt`: (Timestamp, nullable) `isMatchSession` `true` ise, seansın sona ereceği zaman.
+  - `matchSessionUser1Id`: (String, nullable) `isMatchSession` `true` ise, eşleşen kullanıcılardan birinin UID'si.
+  - `matchSessionUser2Id`: (String, nullable) `isMatchSession` `true` ise, eşleşen diğer kullanıcının UID'si.
+  - `matchSessionUser1Decision`: (String, nullable) `isMatchSession` `true` ise, User1'in kararı ('pending', 'yes', 'no').
+  - `matchSessionUser2Decision`: (String, nullable) `isMatchSession` `true` ise, User2'nin kararı ('pending', 'yes', 'no').
+  - `matchSessionEnded`: (Boolean, isteğe bağlı) `isMatchSession` `true` ise ve seans kararlar sonucu veya süre aşımıyla bittiyse `true`. (Varsayılan: `false`)
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
@@ -214,12 +221,11 @@ Kullanıcıların 1v1 rastgele eşleşme için beklediği kuyruk.
   - `joinedAt`: (Timestamp) Kullanıcının kuyruğa katıldığı zaman.
   - `status`: (String) Kullanıcının kuyruktaki durumu: 'waiting', 'matched', 'cancelled'.
   - `matchedWithUserId`: (String, nullable) Eğer eşleştiyse, eşleştiği kullanıcının UID'si.
-  - `dmChatId`: (String, nullable) Eğer eşleştiyse, oluşturulan DM sohbet odasının ID'si.
+  - `temporaryDmChatId`: (String, nullable) Eğer eşleştiyse, oluşturulan geçici DM sohbet odasının ID'si.
+  - `matchSessionExpiresAt`: (Timestamp, nullable) Eğer eşleştiyse, geçici DM seansının sona erme zamanı.
 - **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `matchmakingQueue` koleksiyonu için: `status` (Artan), `userId` (Artan, eşitlik dışı sorgular için), `joinedAt` (Artan)
     - *Sorgu:* `src/app/(main)/match/page.tsx` (Eş arama sorgusu için)
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
 **Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.
-
-```
