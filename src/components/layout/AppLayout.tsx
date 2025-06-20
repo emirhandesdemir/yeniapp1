@@ -18,6 +18,7 @@ import {
   Settings,
   MessageCircle,
   Compass,
+  Users, // Eksik olan Users ikonu buraya eklendi
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -25,8 +26,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { useAuth, type UserData, checkUserPremium } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { db, messaging as firebaseMessaging } from '@/lib/firebase'; 
-import { onMessage } from 'firebase/messaging'; 
+import { db, messaging as firebaseMessaging } from '@/lib/firebase';
+import { onMessage } from 'firebase/messaging';
 import {
   collection,
   query,
@@ -240,7 +241,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return () => unsubscribeDms();
   }, [currentUser?.uid, pathname, isClient, showInAppNotification]);
 
-  
+
   useEffect(() => {
     if (typeof window !== 'undefined' && firebaseMessaging && isClient) {
       const unsubscribeForeground = onMessage(firebaseMessaging, (payload) => {
@@ -258,7 +259,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
   }, [isClient, showInAppNotification]);
 
-  
+
   useEffect(() => {
     if (isClient && currentUser && userData) {
       const checkPermissionAndSubscribe = async () => {
@@ -273,11 +274,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             await subscribeUserToPush();
           }
         } else if (currentPermission === 'granted') {
-           
+
            await subscribeUserToPush();
         }
       };
-      
+
       const timer = setTimeout(checkPermissionAndSubscribe, 3000);
       return () => clearTimeout(timer);
     }
@@ -288,7 +289,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (!activeIncomingCall) return;
     try {
       await updateDoc(doc(db, "directCalls", activeIncomingCall.callId), {
-        status: 'active', 
+        status: 'active',
         updatedAt: serverTimestamp()
       });
       setIsCallModalOpen(false);
@@ -451,4 +452,3 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
