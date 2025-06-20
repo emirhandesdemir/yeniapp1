@@ -1,10 +1,10 @@
 
 "use client";
 
+import React, { useEffect, useState } from "react"; // Added explicit React import
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, ShieldAlert, ShieldCheck, Users, MessageSquareText, Activity, BarChart3 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where, Timestamp } from "firebase/firestore";
 

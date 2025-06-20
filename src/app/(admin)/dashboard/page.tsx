@@ -1,6 +1,7 @@
 
 "use client";
 
+import React from 'react'; // Added explicit React import
 import AdminDashboardContent from "@/components/admin/sections/AdminDashboardContent";
 
 export default function AdminDashboardPage() {
