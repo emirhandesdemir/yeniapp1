@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, MoreHorizontal } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
-import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc, FieldValue } from 'firebase/firestore'; // deleteDoc -> deleteFirestoreDoc, FieldValue eklendi
+import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc, FieldValue } from 'firebase/firestore';
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
@@ -22,15 +22,21 @@ import {
 } from "@/components/ui/alert-dialog";
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { Input } from '@/components/ui/input'; // Input eklendi
-import { Textarea } from '@/components/ui/textarea'; // Textarea eklendi
+import { Textarea } from '@/components/ui/textarea';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 
 interface ReactionDetail {
   count: number;
-  users: string[]; // User display names or UIDs for tooltip
+  users: string[]; 
 }
 
 interface Message {
@@ -45,8 +51,8 @@ interface Message {
   userAiHint?: string;
   isGameMessage?: boolean;
   mentionedUserIds?: string[];
-  editedAt?: Timestamp | null; // Eklendi
-  reactions?: { [key: string]: string[] }; // Emoji -> UserID[] map (Eklendi)
+  editedAt?: Timestamp | null;
+  reactions?: { [key: string]: string[] };
 }
 
 interface ChatMessageItemProps {
@@ -70,7 +76,7 @@ interface ChatMessageItemProps {
   roomId: string;
   isActiveParticipant: boolean;
   onMessageDeleted: (messageId: string) => void;
-  onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void; // Eklendi
+  onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
 }
 
 const PREDEFINED_REACTIONS = [
@@ -101,7 +107,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   roomId,
   isActiveParticipant,
   onMessageDeleted,
-  onMessageEdited, // Eklendi
+  onMessageEdited,
 }) => {
   const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
@@ -109,12 +115,12 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedText, setEditedText] = useState(msg.text);
+  const [isProcessingEditOrDelete, setIsProcessingEditOrDelete] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  const [isEditing, setIsEditing] = useState(false); // Eklendi
-  const [editedText, setEditedText] = useState(msg.text); // Eklendi
-  const editInputRef = useRef<HTMLTextAreaElement>(null); // Eklendi
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -153,7 +159,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
   const handleDeleteMessage = async () => {
     if (!msg.isOwn || !roomId || !msg.id) return;
-    setIsDeleting(true);
+    setIsProcessingEditOrDelete(true);
     setShowDeleteConfirm(false);
     try {
       const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
@@ -164,21 +170,21 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       console.error("Error deleting chat message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
     } finally {
-      setIsDeleting(false);
+      setIsProcessingEditOrDelete(false);
     }
   };
 
-  const handleEditMessage = () => { // Eklendi
+  const handleEditMessage = () => {
     setEditedText(msg.text);
     setIsEditing(true);
   };
 
-  const handleSaveEdit = async () => { // Eklendi
+  const handleSaveEdit = async () => {
     if (!msg.isOwn || !roomId || !msg.id || !editedText.trim() || editedText.trim() === msg.text) {
       setIsEditing(false);
       return;
     }
-    setIsDeleting(true); // Use same loading state for simplicity
+    setIsProcessingEditOrDelete(true);
     try {
       const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
       const newEditedAt = Timestamp.now();
@@ -193,11 +199,11 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       console.error("Error editing message:", error);
       toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
     } finally {
-      setIsDeleting(false);
+      setIsProcessingEditOrDelete(false);
     }
   };
 
-  const handleCancelEdit = () => { // Eklendi
+  const handleCancelEdit = () => {
     setIsEditing(false);
     setEditedText(msg.text);
   };
@@ -206,24 +212,33 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     if (!currentUser || !roomId || !msg.id) return;
 
     const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
-    const currentReactions = msg.reactions || {};
-    const usersWhoReactedWithEmoji = currentReactions[emoji] || [];
-    const userHasReacted = usersWhoReactedWithEmoji.includes(currentUser.uid);
+    const currentReactions = { ...(msg.reactions || {}) }; 
+    let userPreviousReactionEmoji: string | null = null;
 
-    let newReactions = { ...currentReactions };
+    for (const e in currentReactions) {
+        if (currentReactions[e]?.includes(currentUser.uid)) {
+            userPreviousReactionEmoji = e;
+            break;
+        }
+    }
 
-    if (userHasReacted) {
-      newReactions[emoji] = usersWhoReactedWithEmoji.filter(uid => uid !== currentUser.uid);
-      if (newReactions[emoji].length === 0) {
-        delete newReactions[emoji];
-      }
+    if (userPreviousReactionEmoji === emoji) {
+        currentReactions[emoji] = (currentReactions[emoji] || []).filter(uid => uid !== currentUser.uid);
+        if (currentReactions[emoji].length === 0) {
+            delete currentReactions[emoji];
+        }
     } else {
-      newReactions[emoji] = [...usersWhoReactedWithEmoji, currentUser.uid];
+        if (userPreviousReactionEmoji) {
+            currentReactions[userPreviousReactionEmoji] = (currentReactions[userPreviousReactionEmoji] || []).filter(uid => uid !== currentUser.uid);
+            if (currentReactions[userPreviousReactionEmoji].length === 0) {
+                delete currentReactions[userPreviousReactionEmoji];
+            }
+        }
+        currentReactions[emoji] = [...(currentReactions[emoji] || []), currentUser.uid];
     }
     
     try {
-      await updateDoc(messageRef, { reactions: newReactions });
-      // Optimistic update handled by onSnapshot
+      await updateDoc(messageRef, { reactions: currentReactions });
     } catch (error) {
       console.error("Error updating reactions:", error);
       toast({ title: "Hata", description: "Tepki verilirken bir sorun oluştu.", variant: "destructive" });
@@ -379,69 +394,85 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline">{msg.senderName}</span>
                 </Link>
           )}
-          <div className={cn("relative p-2.5 sm:p-3 shadow-md group", bubbleClasses)}>
-              {isEditing ? (
-                <div className="space-y-2">
-                    <Textarea
-                        ref={editInputRef}
-                        value={editedText}
-                        onChange={(e) => setEditedText(e.target.value)}
-                        className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px]"
-                        rows={2}
-                        disabled={isDeleting}
-                    />
-                    <div className="flex justify-end gap-2">
-                        <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isDeleting} className="text-xs">İptal</Button>
-                        <Button size="xs" onClick={handleSaveEdit} disabled={isDeleting || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                            {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                        </Button>
+           <div className={cn("relative p-2.5 sm:p-3 shadow-md group", bubbleClasses)}>
+                {isEditing ? (
+                    <div className="space-y-2">
+                        <Textarea
+                            ref={editInputRef}
+                            value={editedText}
+                            onChange={(e) => setEditedText(e.target.value)}
+                            className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
+                            rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
+                            disabled={isProcessingEditOrDelete}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
+                            <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
+                                {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
+                            </Button>
+                        </div>
                     </div>
-                </div>
-              ) : (
-                <p className={cn(textClasses, "allow-text-selection")}>
-                    {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
-                    {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5">(düzenlendi)</span>}
-                </p>
-              )}
-              {msg.isOwn && !isEditing && (
-                <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleEditMessage}
-                        className="h-6 w-6 text-primary-foreground/60 hover:text-primary-foreground/90"
-                        aria-label="Mesajı Düzenle"
-                        disabled={isDeleting}
-                    >
-                        <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="h-6 w-6 text-primary-foreground/60 hover:text-destructive-foreground hover:bg-destructive/70"
-                        aria-label="Mesajı Sil"
-                        disabled={isDeleting}
-                    >
-                        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </Button>
-                </div>
-              )}
-          </div>
-          {/* Reactions Display */}
+                ) : (
+                    <p className={cn(textClasses, "allow-text-selection")}>
+                        {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
+                        {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
+                    </p>
+                )}
+                {!isEditing && (
+                    <div className={cn("absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex", msg.isOwn ? "right-0" : "left-0")}>
+                         <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className={cn("h-6 w-6", msg.isOwn ? "text-primary-foreground/60 hover:text-primary-foreground/90" : "text-secondary-foreground/60 hover:text-secondary-foreground/90")}>
+                                    <MoreHorizontal className="h-3.5 w-3.5" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent side={msg.isOwn ? "left" : "right"} align={msg.isOwn ? "end" : "start"}>
+                                {msg.isOwn && (
+                                    <>
+                                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                                            <Edit2 className="mr-2 h-4 w-4" /> Düzenle
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
+                                            <Trash2 className="mr-2 h-4 w-4" /> Sil
+                                        </DropdownMenuItem>
+                                    </>
+                                )}
+                                {!msg.isOwn && PREDEFINED_REACTIONS.map(reaction => (
+                                     <DropdownMenuItem key={reaction.emoji} onClick={() => handleReaction(reaction.emoji)} disabled={!currentUser}>
+                                        {React.cloneElement(reaction.icon as React.ReactElement, { 
+                                            className: cn("mr-2 h-4 w-4", (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "") ? "text-primary fill-primary/20" : "")
+                                        })}
+                                        {reaction.name}
+                                    </DropdownMenuItem>
+                                ))}
+                                {msg.isOwn && PREDEFINED_REACTIONS.length > 0 && <DropdownMenuSeparator />}
+                                {msg.isOwn && PREDEFINED_REACTIONS.map(reaction => (
+                                     <DropdownMenuItem key={`my-${reaction.emoji}`} onClick={() => handleReaction(reaction.emoji)} disabled={!currentUser}>
+                                        {React.cloneElement(reaction.icon as React.ReactElement, { 
+                                            className: cn("mr-2 h-4 w-4", (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "") ? "text-primary fill-primary/20" : "")
+                                        })}
+                                        Tepki Ver: {reaction.name}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                )}
+            </div>
+            {/* Reactions Display */}
             {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
-                <div className="mt-1 flex flex-wrap gap-1 px-1">
+                <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
                     if (users.length === 0) return null;
-                    const hasReacted = users.includes(currentUser?.uid || "");
+                    const userHasReacted = users.includes(currentUser?.uid || "");
                     return (
                     <Button
                         key={emoji}
                         variant="outline"
                         size="xs"
                         className={cn(
-                            "h-6 px-1.5 py-0.5 text-xs rounded-full border-border/50 hover:border-primary/50",
-                            hasReacted ? "bg-primary/10 border-primary/60 text-primary" : "bg-secondary/50 hover:bg-secondary/80"
+                            "h-6 px-1.5 py-0.5 text-xs rounded-full border-border/50 hover:border-primary/50 cursor-default",
+                            userHasReacted && "bg-primary/10 border-primary/60 text-primary"
                         )}
                         onClick={() => handleReaction(emoji)}
                         disabled={!currentUser}
@@ -453,28 +484,6 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 })}
                 </div>
             )}
-
-            {/* Reaction Picker - only show if not editing */}
-            {!isEditing && (
-                <div className="mt-0.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-1">
-                {PREDEFINED_REACTIONS.map(reaction => (
-                    <Button
-                    key={reaction.emoji}
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-primary"
-                    onClick={() => handleReaction(reaction.emoji)}
-                    disabled={!currentUser}
-                    title={reaction.name}
-                    >
-                    {React.cloneElement(reaction.icon as React.ReactElement, { 
-                        className: cn("h-4 w-4", (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "") ? "text-primary fill-primary/20" : "")
-                    })}
-                    </Button>
-                ))}
-                </div>
-            )}
-
           <p className={`text-[10px] sm:text-xs mt-1 px-2 ${msg.isOwn ? "text-primary-foreground/60 text-right" : "text-muted-foreground/80 text-left"}`}>
               {msg.timestamp ? formatDistanceToNowStrict(msg.timestamp.toDate(), { addSuffix: true, locale: tr }) : "Gönderiliyor..."}
           </p>
@@ -518,13 +527,13 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                   </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>İptal</AlertDialogCancel>
+                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingEditOrDelete}>İptal</AlertDialogCancel>
                   <AlertDialogAction
                       onClick={handleDeleteMessage}
                       className="bg-destructive hover:bg-destructive/90"
-                      disabled={isDeleting}
+                      disabled={isProcessingEditOrDelete}
                   >
-                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isProcessingEditOrDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Sil
                   </AlertDialogAction>
               </AlertDialogFooter>

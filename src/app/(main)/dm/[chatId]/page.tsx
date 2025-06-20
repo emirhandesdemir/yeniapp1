@@ -714,7 +714,10 @@ export default function DirectMessagePage() {
             <Button variant="ghost" size="icon" onClick={headerBackButtonAction} className="flex-shrink-0 h-9 w-9 rounded-full text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div className={cn("flex items-center gap-2 min-w-0 relative group", !isMatchSessionActive && "cursor-pointer")}
+            <div className={cn(
+                "flex items-center gap-2 min-w-0 relative group",
+                !isMatchSessionActive && "cursor-pointer"
+                )}
                  onClick={!isMatchSessionActive ? () => router.push(`/profile/${dmPartnerDetails.uid}`) : undefined}
             >
                 <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
@@ -724,7 +727,10 @@ export default function DirectMessagePage() {
                 </Avatar>
                 {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
                 <div className="flex-1 min-w-0">
-                    <h2 className={cn("text-sm sm:text-base font-semibold text-foreground truncate transition-colors", !isMatchSessionActive && "group-hover:text-primary")} title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                    <h2 className={cn(
+                        "text-sm sm:text-base font-semibold text-foreground truncate transition-colors",
+                        !isMatchSessionActive && "group-hover:text-primary"
+                        )} title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
                     {!isMatchSessionActive && (
                          <p className={cn("text-xs", isPartnerCurrentlyActive ? "text-green-600" : "text-muted-foreground")}>
                             {partnerActivityStatus}

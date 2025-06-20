@@ -141,7 +141,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `matchSessionUser1Decision`: (String, nullable) `isMatchSession` `true` ise, User1'in kararı ('pending', 'yes', 'no').
   - `matchSessionUser2Decision`: (String, nullable) `isMatchSession` `true` ise, User2'nin kararı ('pending', 'yes', 'no').
   - `matchSessionEnded`: (Boolean, isteğe bağlı) `isMatchSession` `true` ise ve seans kararlar sonucu veya süre aşımıyla bittiyse `true`. (Varsayılan: `false`)
-  - `matchSessionEndedReason`: (String, nullable) Eşleşme seansının bitiş nedeni (örneğin, 'partner_left_USERID', 'user_left', 'timer_expired', 'both_yes', 'one_no', 'both_no').
+  - `matchSessionEndedReason`: (String, nullable) Eşleşme seansının bitiş nedeni (örneğin, 'partner_left_USERID', 'user_left', 'user_left_page', 'timer_expired', 'both_yes', 'one_no', 'both_no').
   - `matchSessionEndedBy`: (String, nullable) Eşleşme seansını sonlandıran (örneğin ayrılan veya 'Hayır' diyen) kullanıcının UID'si.
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
@@ -273,7 +273,7 @@ service cloud.firestore {
 
       // Sender can edit text and editedAt
       if (request.auth.uid == message.senderId &&
-          (affectedKeys.hasOnly(['text', 'editedAt']) || affectedKeys.hasOnly(['text', 'editedAt', 'reactions'])) &&
+          (affectedKeys.hasOnly(['text', 'editedAt']) || affectedKeys.hasOnly(['text', 'editedAt', 'reactions'])) && // Allow changing reactions alongside text/editedAt
           requestData.text != message.text) { // text must actually change for edit
         return true;
       }
@@ -302,12 +302,17 @@ service cloud.firestore {
       allow update: if request.auth.uid != null && (
                       request.auth.uid == resource.data.creatorId ||
                       isUserAdmin(request.auth.uid) ||
-                      request.resource.data.participantCount != resource.data.participantCount || // Allow system updates
+                      request.resource.data.participantCount != resource.data.participantCount ||
                       request.resource.data.voiceParticipantCount != resource.data.voiceParticipantCount ||
                       request.resource.data.maxParticipants != resource.data.maxParticipants ||
+                      request.resource.data.name != resource.data.name ||
+                      request.resource.data.description != resource.data.description ||
+                      request.resource.data.image != resource.data.image ||
+                      request.resource.data.isGameEnabledInRoom != resource.data.isGameEnabledInRoom ||
                       request.resource.data.currentGameQuestionId != resource.data.currentGameQuestionId ||
                       request.resource.data.nextGameQuestionTimestamp != resource.data.nextGameQuestionTimestamp ||
-                      request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline
+                      request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline ||
+                      request.resource.data.expiresAt != resource.data.expiresAt
                     );
       allow delete: if request.auth.uid != null && (request.auth.uid == resource.data.creatorId || isUserAdmin(request.auth.uid));
 
@@ -388,8 +393,8 @@ service cloud.firestore {
     match /matchmakingQueue/{queueEntryId} {
       allow read: if request.auth.uid != null;
       allow create: if request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth.uid == resource.data.userId || request.auth.uid == resource.data.matchedWithUserId; // Kendisi veya eşleştiği kişi güncelleyebilir (status vs.)
-      allow delete: if request.auth.uid == resource.data.userId; // Sadece kendi silebilir
+      allow update: if request.auth.uid == resource.data.userId || request.auth.uid == resource.data.matchedWithUserId; 
+      allow delete: if request.auth.uid == resource.data.userId;
     }
   }
 }
