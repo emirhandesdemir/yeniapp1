@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, FormEvent, useCallback } from "react";
+import React, { useEffect, useState, FormEvent, useCallback } from "react"; // React importu eklendi
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, setDoc, collection, addDoc, deleteDoc as deleteFirestoreDoc, query, orderBy, onSnapshot, serverTimestamp, type Timestamp, getDocs } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
@@ -402,3 +402,5 @@ export default function AdminGameSettingsContent() {
     </div>
   );
 }
+
+    
