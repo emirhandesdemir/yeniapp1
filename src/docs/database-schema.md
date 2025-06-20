@@ -94,19 +94,23 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `sdp`: (String, isteğe bağlı) Offer veya Answer için SDP.
       - `candidate`: (Object, isteğe bağlı) ICE adayı nesnesi.
       - `signalTimestamp`: (Timestamp) Sinyalin Firestore'a yazıldığı zaman.
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan), `participantCount` (Azalan), `createdAt` (Azalan)
+    - *Sorgu:* `src/app/(main)/chat/page.tsx` ve `src/app/page.tsx`
   - **Kullanıcının Aktif Odalarını Listeleme (Gönderi Oluşturma Formu ve Profil Sayfası):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `creatorId` (Artan), `expiresAt` (Artan)
+    - *Sorgu:* `src/components/feed/CreatePostForm.tsx` ve `src/app/(main)/profile/[userId]/page.tsx`
   - **Süresi Dolmuş Odaları Toplu Silme (Admin Paneli):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `expiresAt` (Artan)
+    - *Sorgu:* `src/components/admin/sections/AdminChatRoomsContent.tsx`
   - **Tüm Odaları Oluşturulma Tarihine Göre Listeleme (Admin Paneli):**
     - Koleksiyon: `chatRooms`
     - Alanlar: `createdAt` (Azalan)
+    - *Sorgu:* `src/components/admin/sections/AdminChatRoomsContent.tsx`
 
 ## `directMessages`
 İki kullanıcı arasındaki özel mesajlaşmaları saklar.
@@ -123,7 +127,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
     - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp)
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
     - *Sorgu:* `src/app/(main)/direct-messages/page.tsx`
 
@@ -148,18 +152,22 @@ Birebir sesli/görüntülü çağrı oturumlarını yönetir.
   - `endedReason`: (String, nullable) Çağrı sonlandıysa nedeni.
 - **Alt Koleksiyonlar:**
   - `callerIceCandidates`, `calleeIceCandidates`
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `directCalls` koleksiyonu için: `calleeId` (Artan), `status` (Artan), `createdAt` (Azalan)
+    - *Sorgu:* `src/components/layout/AppLayout.tsx` (Gelen çağrıları dinlemek için)
 
 ## `friendRequests`
 Bekleyen, kabul edilen veya reddedilen arkadaşlık isteklerini saklar.
 - **Yol:** `/friendRequests/{requestId}`
 - **Alanlar:**
   - `fromUserId`, `fromUsername`, `fromAvatarUrl`, `fromUserIsPremium` (Boolean, isteğe bağlı), `toUserId`, `toUsername`, `toAvatarUrl`, `status`, `createdAt`
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `toUserId` (Artan), `status` (Artan), `createdAt` (Azalan)
+    - *Sorgu:* `src/components/layout/AppLayout.tsx` (Bildirim popover'ı için)
   - `fromUserId` (Artan), `toUserId` (Artan), `status` (Artan)
-  - `status` (Artan), `fromUserId` (Artan), `toUserId` (Artan)
+    - *Sorgu:* `src/app/(main)/profile/[userId]/page.tsx` ve `src/app/(main)/friends/page.tsx`
+  - `status` (Artan), `fromUserId` (Artan), `toUserId` (Artan) (Arkadaşlık silindiğinde ilgili istekleri bulmak için)
+    - *Sorgu:* `src/app/(main)/profile/[userId]/page.tsx` ve `src/app/(main)/friends/page.tsx`
 
 ## `posts`
 Kullanıcıların paylaştığı gönderileri saklar.
@@ -168,15 +176,17 @@ Kullanıcıların paylaştığı gönderileri saklar.
   - `userId`, `username`, `userAvatar`, `authorIsPremium` (Boolean, isteğe bağlı), `content`, `createdAt`, `likeCount`, `commentCount`, `likedBy`, `sharedRoomId`, `sharedRoomName`, `isRepost`, `originalPostId`, `originalPostUserId`, `originalPostUsername`, `originalPostUserAvatar`, `originalPostAuthorIsPremium`, `originalPostContent`, `originalPostCreatedAt`, `originalPostSharedRoomId`, `originalPostSharedRoomName`
 - **Alt Koleksiyonlar:**
   - `comments`: Yorumlar. Alanlar: `userId`, `username`, `userAvatar`, `commenterIsPremium` (Boolean, isteğe bağlı), `content`, `createdAt`
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `posts` koleksiyonu için: `createdAt` (Azalan)
+    - *Sorgu:* `src/app/page.tsx` (Ana akış için)
   - `posts` koleksiyonu için: `userId` (Artan), `createdAt` (Azalan)
+    - *Sorgu:* `src/app/(main)/profile/[userId]/page.tsx` (Kullanıcı profili gönderileri için)
 
 ## `reports`
 Kullanıcı şikayetlerini saklar.
 - **Yol:** `/reports/{reportId}`
 - **Alanlar:** `reporterId`, `reporterName`, `reportedUserId`, `reason`, `timestamp`, `status`
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `reports` koleksiyonu için: `timestamp` (Azalan)
   - `reports` koleksiyonu için: `reportedUserId` (Artan), `status` (Artan)
 
@@ -189,7 +199,9 @@ Genel uygulama ayarlarını saklar.
 Sohbet odası quiz oyunu için soruları saklar.
 - **Yol:** `/gameQuestions/{questionId}`
 - **Alanlar:** `text`, `answer`, `hint`, `createdAt`
-- **Gerekli İndeksler:**
+- **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `gameQuestions` koleksiyonu için: `createdAt` (Azalan)
+    - *Sorgu:* `src/components/admin/sections/AdminGameSettingsContent.tsx`
 
 Bu dokümanın, uygulamanın Firebase Firestore veritabanını nasıl yapılandırdığı konusunda sana fikir vermesini umuyorum!
+**Not:** İndeksler, sorgu performansını artırmak için gereklidir. Eğer Firestore konsolunda sorgu yaptığınızda "Bu sorgu için bir indeks gereklidir..." şeklinde bir uyarı alırsanız, genellikle bu uyarı üzerinden tek tıkla gerekli indeksi oluşturabilirsiniz.

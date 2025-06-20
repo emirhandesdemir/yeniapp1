@@ -4,11 +4,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth, checkUserPremium } from "@/contexts/AuthContext"; // checkUserPremium eklendi
+import { useAuth, checkUserPremium } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, MessageSquarePlus, XCircle, LinkIcon, List, Star } from "lucide-react"; // Star eklendi
+import { Loader2, Send, MessageSquarePlus, XCircle, LinkIcon, List, Star } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -111,7 +111,7 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
         userId: currentUser.uid,
         username: userData.displayName,
         userAvatar: userData.photoURL,
-        authorIsPremium: userIsCurrentlyPremium, // Eklendi
+        authorIsPremium: userIsCurrentlyPremium,
         content: content.trim(),
         createdAt: serverTimestamp(),
         likeCount: 0,
@@ -124,18 +124,19 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
         postData.sharedRoomName = selectedRoom.name;
       }
 
-      await addDoc(collection(db, "posts"), postData);
+      const docRef = await addDoc(collection(db, "posts"), postData);
+      console.log("[CreatePostForm] Post successfully created with ID:", docRef.id);
       setContent("");
       setSelectedRoom(null);
       toast({ title: "Başarılı", description: "Gönderiniz paylaşıldı!" });
       if (onPostCreated) {
         onPostCreated();
       }
-    } catch (error) {
-      console.error("Error creating post:", error);
+    } catch (error: any) {
+      console.error("[CreatePostForm] Error creating post:", error, "Error Code:", error.code, "Error Message:", error.message);
       toast({
-        title: "Hata",
-        description: "Gönderi oluşturulurken bir sorun oluştu.",
+        title: "Gönderi Oluşturma Hatası",
+        description: `Gönderi oluşturulurken bir sorun oluştu. Lütfen daha sonra tekrar deneyin. (Hata: ${error.message})`,
         variant: "destructive",
       });
     } finally {
@@ -257,5 +258,4 @@ export default function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
     </form>
   );
 }
-
     
