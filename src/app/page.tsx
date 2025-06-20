@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit, RefreshCw, Star, Gamepad2, MessageSquarePlus } from "lucide-react";
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit3, RefreshCw, Star, Gamepad2, MessageSquarePlus } from "lucide-react"; // Edit3 eklendi
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -28,7 +28,7 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     height: 'auto',
-    marginBottom: '1.5rem',
+    marginBottom: '1.5rem', // Adjusted from 1.5rem
     transition: {
       type: "spring",
       stiffness: 100,
@@ -47,32 +47,32 @@ const cardVariants = {
 
 const itemVariants = {
   hidden: { opacity: 0, y: 10 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.2 } }, // Increased delay
 };
 
 const buttonsContainerVariants = {
   hidden: {},
   visible: {
     transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2,
+      staggerChildren: 0.15, // Slightly increased stagger
+      delayChildren: 0.3,  // Increased delay
     },
   },
 };
 
 const buttonItemVariants = {
-  hidden: { opacity: 0, scale: 0.95 },
-  visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 200, damping: 10 } },
+  hidden: { opacity: 0, scale: 0.9, y: 5 }, // Added y transform
+  visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 200, damping: 12 } }, // Adjusted damping
 };
 
 const feedItemEntryVariants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 25 }, // Increased y offset
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
     transition: {
-      delay: i * 0.07,
-      duration: 0.4,
+      delay: i * 0.1, // Slightly increased stagger delay
+      duration: 0.5,  // Increased duration
       ease: "easeOut",
     },
   }),
@@ -362,7 +362,7 @@ export default function HomePage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
         <div className="mb-6">
-          <MessageSquare className="h-16 w-16 text-primary animate-pulse mx-auto" />
+          <MessageSquare className="h-20 w-20 text-primary animate-pulse mx-auto" />
         </div>
         <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
           Anasayfanız Hazırlanıyor
@@ -390,13 +390,15 @@ export default function HomePage() {
                 animate="visible"
                 exit="exit"
               >
-                <Card className="shadow-lg bg-card border border-border/30 rounded-xl overflow-hidden">
-                  <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-primary/10 via-card to-red-500/10 dark:from-primary/15 dark:via-card dark:to-red-500/15">
+                <Card className="shadow-xl bg-card border border-border/30 rounded-xl overflow-hidden">
+                  <CardHeader className="p-4 sm:p-5 bg-gradient-to-r from-primary/10 via-card to-accent/10 dark:from-primary/20 dark:via-card dark:to-accent/20">
                     <motion.div
                       className="flex items-center gap-3"
                       variants={itemVariants}
                     >
-                      <Target className="h-7 w-7 text-primary" />
+                      <div className="p-2 bg-primary/20 dark:bg-primary/25 rounded-full">
+                        <Target className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
+                      </div>
                       <div>
                         <CardTitle className="text-lg sm:text-xl font-semibold text-foreground">
                           Merhaba, {greetingName}!
@@ -421,7 +423,7 @@ export default function HomePage() {
                       variants={buttonsContainerVariants}
                     >
                       <motion.div variants={buttonItemVariants}>
-                        <Button asChild size="sm" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-md py-2 text-xs sm:text-sm">
+                        <Button asChild size="sm" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-md py-2.5 text-xs sm:text-sm">
                           <Link href="/chat">
                             <Compass className="mr-1.5 h-4 sm:h-4" />
                             Odaları Keşfet
@@ -429,7 +431,7 @@ export default function HomePage() {
                         </Button>
                       </motion.div>
                       <motion.div variants={buttonItemVariants}>
-                        <Button asChild size="sm" variant="outline" className="w-full border-primary/60 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-2 text-xs sm:text-sm">
+                        <Button asChild size="sm" variant="outline" className="w-full border-primary/60 text-primary hover:bg-primary/10 hover:text-primary rounded-md py-2.5 text-xs sm:text-sm">
                           <Link href="/chat">
                             <PlusCircle className="mr-1.5 h-4 sm:h-4" />
                             Yeni Oda Oluştur
@@ -449,13 +451,14 @@ export default function HomePage() {
                  initial={{ opacity: 0, y: 20 }} 
                  animate={{ opacity: 1, y: 0 }} 
                  transition={{ delay: isWelcomeCardVisible ? 0.3 : 0.1, duration: 0.5 }}
-                 className="bg-card p-3 sm:p-4 rounded-lg shadow-sm border border-border/30 hover:border-primary/40 transition-colors cursor-pointer flex items-center gap-3"
+                 className="bg-card p-3 sm:p-4 rounded-xl shadow-md border border-border/30 hover:border-primary/50 transition-all duration-200 ease-out cursor-pointer flex items-center gap-3 group hover:shadow-lg"
                >
-                  <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+                  <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent group-hover:border-primary/50 transition-colors">
                     <AvatarImage src={userData?.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="user avatar" />
                     <AvatarFallback>{getAvatarFallbackText(userData?.displayName)}</AvatarFallback>
                   </Avatar>
-                  <span className="text-muted-foreground text-sm sm:text-base">Bir şeyler paylaş, {userData?.displayName || 'Kullanıcı'}...</span>
+                  <span className="text-muted-foreground group-hover:text-foreground text-sm sm:text-base flex-1">Bir şeyler paylaş, {userData?.displayName || 'Kullanıcı'}...</span>
+                  <Edit3 className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                </motion.div>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg p-0">
@@ -483,7 +486,7 @@ export default function HomePage() {
               <Button
                 onClick={handleRefreshClick}
                 variant="outline"
-                className="py-2.5 text-sm bg-card/80 dark:bg-background/80 backdrop-blur-sm border-primary/40 text-primary/90 hover:bg-primary/10 hover:text-primary shadow-md rounded-full w-auto px-6"
+                className="py-2.5 text-sm bg-card/80 dark:bg-background/80 backdrop-blur-md border-primary/50 text-primary/90 hover:bg-primary/15 hover:text-primary shadow-lg rounded-full w-auto px-6 animate-subtle-pulse"
                 disabled={isRefreshingFeed || isLoadingPosts || isLoadingRooms}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
@@ -498,11 +501,11 @@ export default function HomePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
-              className="flex flex-col items-center justify-center py-16 text-center"
+              className="flex flex-col items-center justify-center py-20 text-center"
             >
-              <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-              <h2 className="text-xl font-medium text-foreground mb-1">Akışınız Hazırlanıyor</h2>
-              <p className="text-sm text-muted-foreground">En yeni içerikler getiriliyor...</p>
+              <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+              <h2 className="text-2xl font-semibold text-foreground mb-2">Akışınız Hazırlanıyor</h2>
+              <p className="text-md text-muted-foreground max-w-sm">En yeni ve en taze içerikleri sizin için bir araya getiriyoruz, lütfen biraz bekleyin.</p>
             </motion.div>
           )}
 
@@ -511,30 +514,33 @@ export default function HomePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.2 }}
-              className="flex items-center justify-center py-4 text-sm text-muted-foreground"
+              className="flex items-center justify-center py-6 text-sm text-muted-foreground"
             >
-              <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
-              Akış yenileniyor...
+              <Loader2 className="h-6 w-6 animate-spin text-primary mr-2.5" />
+              Akış yenileniyor, en güncel içerikler geliyor...
             </motion.div>
           )}
 
           {!isLoadingPosts && !isLoadingRooms && !loadingBlockedUsers && !isRefreshingFeed && combinedFeedItems.length === 0 && (
              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                <Card className="text-center py-10 sm:py-12 bg-card/80 backdrop-blur-sm border border-border/20 rounded-xl shadow-sm">
-                    <CardHeader className="pb-2">
-                        <Sparkles className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-primary/70 mb-3" />
+                <Card className="text-center py-10 sm:py-16 bg-gradient-to-b from-card to-secondary/20 dark:from-card dark:to-secondary/10 border border-border/20 rounded-xl shadow-lg">
+                    <CardHeader className="pb-3">
+                        <Sparkles className="mx-auto h-16 w-16 sm:h-20 sm:w-20 text-primary/70 mb-4 opacity-80" />
                         <CardTitle className="text-xl sm:text-2xl font-semibold text-foreground">
                         {(userData?.privacySettings?.feedShowsEveryone === false)
                             ? "Arkadaş Akışın Henüz Boş!"
-                            : "Akışta Henüz Bir Şey Yok!"}
+                            : "Akışta Keşfedilecek Yeni Şeyler Var!"}
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-muted-foreground text-sm sm:text-base max-w-xs mx-auto">
+                        <p className="text-muted-foreground text-sm sm:text-base max-w-sm mx-auto mb-6">
                         {(userData?.privacySettings?.feedShowsEveryone === false)
-                        ? "Arkadaşların henüz bir şey paylaşmamış veya kendi gönderin yok. Yeni arkadaşlar edin veya ilk gönderini sen paylaş!"
-                        : "İlk gönderiyi sen paylaşarak veya yeni bir sohbet odası bularak etkileşimi başlat!"}
+                        ? "Arkadaşların henüz bir şey paylaşmamış veya kendi gönderin yok. Yeni arkadaşlar edin veya ilk gönderini sen paylaşarak akışı canlandır!"
+                        : "Görünüşe göre etrafta henüz yeni bir hareketlilik yok. İlk gönderiyi sen paylaşarak veya yeni bir sohbet odası keşfederek topluluğa enerji kat!"}
                         </p>
+                        <Button size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground px-8 py-3 text-base rounded-lg shadow-md hover:shadow-lg transition-shadow" onClick={() => setIsCreatePostDialogOpen(true)}>
+                            <PlusCircle className="mr-2 h-5 w-5"/> İlk Gönderini Paylaş
+                        </Button>
                     </CardContent>
                 </Card>
              </motion.div>
@@ -551,6 +557,7 @@ export default function HomePage() {
                         variants={feedItemEntryVariants}
                         initial="hidden"
                         animate="visible"
+                        className="rounded-xl" // Animasyonlu öğelere yuvarlak köşe
                     >
                       <PostCard post={item as Post} />
                     </motion.div>
@@ -563,6 +570,7 @@ export default function HomePage() {
                         variants={feedItemEntryVariants}
                         initial="hidden"
                         animate="visible"
+                        className="rounded-xl" // Animasyonlu öğelere yuvarlak köşe
                     >
                       <RoomInFeedCard room={item as RoomInFeedCardData} />
                     </motion.div>
@@ -578,10 +586,11 @@ export default function HomePage() {
     );
   }
 
+  // Fallback for when currentUser is null (e.g., after logout, before redirect)
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
       <div className="mb-6">
-        <Globe className="h-16 w-16 text-primary animate-pulse mx-auto" />
+        <Globe className="h-20 w-20 text-primary animate-pulse mx-auto" />
       </div>
       <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
         Bir An...
@@ -592,3 +601,4 @@ export default function HomePage() {
     </div>
   );
 }
+
