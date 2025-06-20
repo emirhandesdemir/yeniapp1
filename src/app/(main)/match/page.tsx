@@ -26,7 +26,7 @@ import {
   setDoc,
   updateDoc,
   runTransaction,
-  getDoc, // getDoc import edildi
+  getDoc,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId } from "@/lib/utils";
@@ -42,15 +42,39 @@ interface MatchmakingQueueEntry {
   joinedAt: Timestamp;
   status: 'waiting' | 'matched' | 'cancelled';
   matchedWithUserId?: string | null;
-  temporaryDmChatId?: string | null; // dmChatId -> temporaryDmChatId
-  matchSessionExpiresAt?: Timestamp | null; // Eklendi
+  temporaryDmChatId?: string | null;
+  matchSessionExpiresAt?: Timestamp | null;
 }
 
 export default function MatchPage() {
-  const [searchState, setSearchState] = useState<SearchState>("idle");
-  const [statusMessage, setStatusMessage] = useState("Uygun bir sohbet partneri bulmak için butona tıkla.");
-  const [queueDocId, setQueueDocId] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [searchState, _setSearchState] = useState<SearchState>("idle");
+  const searchStateRef = useRef(searchState);
+  const setSearchState = (data: SearchState) => {
+    searchStateRef.current = data;
+    _setSearchState(data);
+  };
+
+  const [statusMessage, _setStatusMessage] = useState("Uygun bir sohbet partneri bulmak için butona tıkla.");
+  const statusMessageRef = useRef(statusMessage);
+  const setStatusMessage = (data: string) => {
+    statusMessageRef.current = data;
+    _setStatusMessage(data);
+  };
+  
+  const [queueDocId, _setQueueDocId] = useState<string | null>(null);
+  const queueDocIdRef = useRef(queueDocId);
+  const setQueueDocId = (data: string | null) => {
+    queueDocIdRef.current = data;
+    _setQueueDocId(data);
+  };
+
+  const [errorMessage, _setErrorMessage] = useState<string | null>(null);
+  const errorMessageRef = useRef(errorMessage);
+  const setErrorMessage = (data: string | null) => {
+    errorMessageRef.current = data;
+    _setErrorMessage(data);
+  };
+
 
   const { currentUser, userData, isUserLoading: authLoading, isUserDataLoading } = useAuth();
   const router = useRouter();
@@ -67,33 +91,60 @@ export default function MatchPage() {
     }
   }, [currentUser, authLoading, router]);
 
-  useEffect(() => {
-    return () => {
-      if (unsubscribeQueueListenerRef.current) {
-        unsubscribeQueueListenerRef.current();
-      }
-      if (queueDocId && (searchState === 'searching' || searchState === 'idle')) {
-        const docRef = doc(db, "matchmakingQueue", queueDocId);
-        deleteDoc(docRef).catch(e => console.warn("Error cleaning up queue on unmount:", e));
-      }
-    };
-  }, [queueDocId, searchState]);
-
-
-  const resetSearch = useCallback((message?: string) => {
+  const cleanupListenerAndDoc = useCallback(async (currentQueueId: string | null, reason?: string) => {
     if (unsubscribeQueueListenerRef.current) {
+      console.log(`[MatchPage Cleanup] Unsubscribing listener for ${currentUser?.uid}. Reason: ${reason || 'N/A'}`);
       unsubscribeQueueListenerRef.current();
       unsubscribeQueueListenerRef.current = null;
     }
-    if (queueDocId) {
-        const docRef = doc(db, "matchmakingQueue", queueDocId);
-        deleteDoc(docRef).catch(err => console.warn("Failed to delete queue doc on reset:", err));
-        setQueueDocId(null);
+    if (currentQueueId) {
+      console.log(`[MatchPage Cleanup] Attempting to delete queue doc ${currentQueueId} for ${currentUser?.uid}. Reason: ${reason || 'N/A'}`);
+      const docRef = doc(db, "matchmakingQueue", currentQueueId);
+      try {
+        // Check if document still exists before attempting to delete
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          await deleteDoc(docRef);
+          console.log(`[MatchPage Cleanup] Successfully deleted queue doc ${currentQueueId}`);
+        } else {
+          console.log(`[MatchPage Cleanup] Queue doc ${currentQueueId} already deleted or never existed.`);
+        }
+      } catch (e) {
+        console.warn(`[MatchPage Cleanup] Error deleting queue doc ${currentQueueId} on cleanup:`, e);
+      }
     }
+  }, [currentUser?.uid]);
+  
+  const resetSearch = useCallback((message?: string) => {
+    cleanupListenerAndDoc(queueDocIdRef.current, `resetSearch: ${message || 'general reset'}`);
+    setQueueDocId(null); 
     setSearchState("idle");
     setStatusMessage(message || "Uygun bir sohbet partneri bulmak için butona tıkla.");
     setErrorMessage(null);
-  }, [queueDocId]);
+  }, [cleanupListenerAndDoc, setQueueDocId, setSearchState, setStatusMessage, setErrorMessage]);
+
+
+  useEffect(() => {
+    // This ref will hold the current queueDocId for the cleanup function.
+    // This is important because the queueDocId in the cleanup might be stale.
+    const currentQueueDocIdForCleanup = queueDocIdRef.current;
+    const currentSearchStateForCleanup = searchStateRef.current;
+
+    return () => {
+      console.log(`[MatchPage Unmount] User: ${currentUser?.uid}, Current queueDocId: ${currentQueueDocIdForCleanup}, Current searchState: ${currentSearchStateForCleanup}`);
+      if (unsubscribeQueueListenerRef.current) {
+        console.log(`[MatchPage Unmount] Unsubscribing listener for ${currentUser?.uid}`);
+        unsubscribeQueueListenerRef.current();
+        unsubscribeQueueListenerRef.current = null;
+      }
+      if (currentQueueDocIdForCleanup && (currentSearchStateForCleanup === 'searching' || currentSearchStateForCleanup === 'idle')) {
+        console.log(`[MatchPage Unmount] Cleaning up queue document ${currentQueueDocIdForCleanup} for user ${currentUser?.uid} as state was ${currentSearchStateForCleanup}`);
+        const docRef = doc(db, "matchmakingQueue", currentQueueDocIdForCleanup);
+        // This delete is a "best effort" as the component is unmounting.
+        deleteDoc(docRef).catch(e => console.warn("[MatchPage Unmount] Error cleaning up queue on unmount (best effort):", e));
+      }
+    };
+  }, [currentUser?.uid]); // Dependency array is minimal to avoid re-running excessively
 
 
   const handleStartSearch = useCallback(async () => {
@@ -101,14 +152,17 @@ export default function MatchPage() {
       toast({ title: "Hata", description: "Eşleşme başlatılamadı. Lütfen giriş yapın.", variant: "destructive" });
       return;
     }
-    if (searchState === 'searching') return;
+    if (searchStateRef.current === 'searching') return;
+
+    // Ensure any previous listener/doc is cleaned up before starting a new search
+    await cleanupListenerAndDoc(queueDocIdRef.current, "new search initiated");
+    setQueueDocId(null); 
 
     setSearchState("searching");
     setStatusMessage("Sizin için uygun bir sohbet partneri aranıyor...");
     setErrorMessage(null);
-    if (unsubscribeQueueListenerRef.current) unsubscribeQueueListenerRef.current();
 
-    let newQueueEntryId: string | null = null;
+    let currentAttemptQueueId: string | null = null;
 
     try {
       const queueEntry: Omit<MatchmakingQueueEntry, 'joinedAt'> & { joinedAt: any } = {
@@ -120,15 +174,15 @@ export default function MatchPage() {
         joinedAt: serverTimestamp(),
       };
       const newQueueDocRef = await addDoc(collection(db, "matchmakingQueue"), queueEntry);
-      newQueueEntryId = newQueueDocRef.id;
-      setQueueDocId(newQueueEntryId);
+      currentAttemptQueueId = newQueueDocRef.id;
+      setQueueDocId(currentAttemptQueueId); // Set the ID for the current user's new queue entry
 
       const q = query(
         collection(db, "matchmakingQueue"),
         where("status", "==", "waiting"),
-        where("userId", "!=", currentUser.uid),
+        where("userId", "!=", currentUser.uid), // Ensure not matching self
         orderBy("joinedAt", "asc"),
-        limit(10) // Biraz daha fazla aday çekelim, belki ilk uygun değilse diye.
+        limit(10) 
       );
       const querySnapshot = await getDocs(q);
 
@@ -136,36 +190,37 @@ export default function MatchPage() {
       let matchedPartnerDocRef: any = null;
 
       for (const otherUserDoc of querySnapshot.docs) {
-        const otherUserData = otherUserDoc.data() as MatchmakingQueueEntry;
-        // Burada daha karmaşık eşleştirme kuralları eklenebilir (örn: cinsiyet tercihi, engellenen kullanıcı kontrolü vs.)
-        // Şimdilik en eski bekleyeni alıyoruz.
-        matchedPartner = otherUserData;
-        matchedPartnerDocRef = otherUserDoc.ref;
-        break; 
+        const otherUserData = { ...otherUserDoc.data(), id: otherUserDoc.id } as MatchmakingQueueEntry;
+        if (otherUserData.userId !== currentUser.uid) { // Double check, query should handle
+            matchedPartner = otherUserData;
+            matchedPartnerDocRef = otherUserDoc.ref;
+            break; 
+        }
       }
 
-
-      if (matchedPartner && matchedPartnerDocRef) {
+      if (matchedPartner && matchedPartnerDocRef && currentAttemptQueueId) {
+        console.log(`[MatchPage] Immediate match found by ${currentUser.uid} with ${matchedPartner.userId}`);
         const temporaryDmChatId = generateDmChatId(currentUser.uid, matchedPartner.userId);
         const sessionExpiresAt = Timestamp.fromDate(addMinutes(new Date(), 4));
 
         await runTransaction(db, async (transaction) => {
-          const myQueueDocInTransaction = await transaction.get(newQueueDocRef);
-          const otherUserQueueDocInTransaction = await transaction.get(matchedPartnerDocRef);
+          const myQueueDocInTransaction = await transaction.get(newQueueDocRef); // User A's doc
+          const otherUserQueueDocInTransaction = await transaction.get(matchedPartnerDocRef); // User B's doc
 
           if (!myQueueDocInTransaction.exists() || !otherUserQueueDocInTransaction.exists() ||
               myQueueDocInTransaction.data()?.status !== 'waiting' ||
               otherUserQueueDocInTransaction.data()?.status !== 'waiting') {
+            console.warn(`[MatchPage Transaction] Match candidate no longer valid. My status: ${myQueueDocInTransaction.data()?.status}, Other status: ${otherUserQueueDocInTransaction.data()?.status}`);
             throw new Error("Eşleşme adayı artık uygun değil veya zaten eşleşmiş.");
           }
 
-          transaction.update(newQueueDocRef, {
+          transaction.update(newQueueDocRef, { // User A's doc
             status: 'matched',
             matchedWithUserId: matchedPartner!.userId,
             temporaryDmChatId: temporaryDmChatId,
             matchSessionExpiresAt: sessionExpiresAt,
           });
-          transaction.update(matchedPartnerDocRef, {
+          transaction.update(matchedPartnerDocRef, { // User B's doc
             status: 'matched',
             matchedWithUserId: currentUser.uid,
             temporaryDmChatId: temporaryDmChatId,
@@ -175,11 +230,7 @@ export default function MatchPage() {
         
         const dmDocRef = doc(db, "directMessages", temporaryDmChatId);
         const otherUserProfile = await getDoc(doc(db, "users", matchedPartner.userId));
-        let otherProfileData = { 
-            displayName: matchedPartner.displayName, 
-            photoURL: matchedPartner.photoURL, 
-            isPremium: false 
-        };
+        let otherProfileData = { displayName: matchedPartner.displayName, photoURL: matchedPartner.photoURL, isPremium: false };
         if(otherUserProfile.exists()){
             const opData = otherUserProfile.data();
             otherProfileData.displayName = opData.displayName || matchedPartner.displayName;
@@ -193,45 +244,60 @@ export default function MatchPage() {
                 [currentUser.uid]: { displayName: userData.displayName, photoURL: userData.photoURL, isPremium: checkUserPremium(userData) },
                 [matchedPartner.userId]: otherProfileData
             },
-            createdAt: serverTimestamp(),
-            lastMessageTimestamp: null,
-            isMatchSession: true,
-            matchSessionExpiresAt: sessionExpiresAt,
-            matchSessionUser1Id: currentUser.uid, // Ya da sıralamaya göre belirlenebilir
-            matchSessionUser2Id: matchedPartner.userId,
-            matchSessionUser1Decision: 'pending',
-            matchSessionUser2Decision: 'pending',
-            matchSessionEnded: false,
+            createdAt: serverTimestamp(), lastMessageTimestamp: null, isMatchSession: true,
+            matchSessionExpiresAt: sessionExpiresAt, matchSessionUser1Id: currentUser.uid,
+            matchSessionUser2Id: matchedPartner.userId, matchSessionUser1Decision: 'pending',
+            matchSessionUser2Decision: 'pending', matchSessionEnded: false,
         });
         
         setStatusMessage(`Partner bulundu: ${matchedPartner.displayName || 'Kullanıcı'}. Geçici sohbete yönlendiriliyorsunuz...`);
         setSearchState("matched");
+        
+        // This user (the one who found the match) navigates.
+        // The other user (matchedPartner) relies on THEIR listener to navigate.
         router.push(`/dm/${temporaryDmChatId}`);
-        // Kuyruktan silme artık DM sayfasında veya session bitiminde ele alınabilir, veya burada kalabilir.
-        // Şimdilik burada bırakalım, dm sayfası kendi kendine sonlanınca da temizleyebilir.
+        
+        // Delete this user's queue document as they are matched and redirected
         await deleteDoc(newQueueDocRef); 
-        setQueueDocId(null);
+        setQueueDocId(null); // Crucial: clear doc ID for this user
 
-      } else {
-        unsubscribeQueueListenerRef.current = onSnapshot(newQueueDocRef, async (docSnap) => {
+      } else if (currentAttemptQueueId) {
+        // No immediate match found, set up listener on own queue document
+        console.log(`[MatchPage] No immediate match for ${currentUser.uid}. Setting up listener for ${currentAttemptQueueId}`);
+        const selfQueueDocRef = doc(db, "matchmakingQueue", currentAttemptQueueId);
+        unsubscribeQueueListenerRef.current = onSnapshot(selfQueueDocRef, async (docSnap) => {
+          console.log(`[Match Listener - ${currentUser.uid}] Snapshot received for ${docSnap.id}. Exists: ${docSnap.exists()}`);
+          if (!docSnap.exists()) {
+            console.log(`[Match Listener - ${currentUser.uid}] Queue document ${docSnap.id} deleted.`);
+            if (searchStateRef.current !== 'matched') { 
+              resetSearch("Eşleşme kaydınız bulunamadı veya silindi.");
+            }
+            return;
+          }
+
           const data = docSnap.data() as MatchmakingQueueEntry;
+          console.log(`[Match Listener - ${currentUser.uid}] Data:`, data);
+
           if (data?.status === 'matched' && data.temporaryDmChatId && data.matchedWithUserId) {
+            console.log(`[Match Listener - ${currentUser.uid}] Matched! With ${data.matchedWithUserId}. DM: ${data.temporaryDmChatId}`);
             if (unsubscribeQueueListenerRef.current) unsubscribeQueueListenerRef.current();
-            setSearchState("matched");
+            unsubscribeQueueListenerRef.current = null;
             
+            setSearchState("matched");
             const otherUserSnap = await getDoc(doc(db, "users", data.matchedWithUserId));
             const otherUserName = otherUserSnap.exists() ? otherUserSnap.data().displayName : "Kullanıcı";
-
             setStatusMessage(`Partner bulundu: ${otherUserName || 'Kullanıcı'}. Geçici sohbete yönlendiriliyorsunuz...`);
+            
             router.push(`/dm/${data.temporaryDmChatId}`);
-            deleteDoc(docSnap.ref).catch(err => console.warn("Error deleting matched queue doc (listener):", err));
-            setQueueDocId(null);
-          } else if (data?.status === 'cancelled' || !docSnap.exists()) {
-            if (unsubscribeQueueListenerRef.current) unsubscribeQueueListenerRef.current();
-            resetSearch(data?.status === 'cancelled' ? "Eşleşme arama iptal edildi (başka bir yerden)." : undefined);
+            
+            await deleteDoc(docSnap.ref);
+            setQueueDocId(null); // Crucial: clear doc ID for this user
+          } else if (data?.status === 'cancelled') {
+            console.log(`[Match Listener - ${currentUser.uid}] Search cancelled by server/other means.`);
+            resetSearch("Eşleşme arama iptal edildi (başka bir yerden).");
           }
         }, (error) => {
-          console.error("Error listening to queue document:", error);
+          console.error(`[Match Listener - ${currentUser.uid}] Error listening to queue document:`, error);
           setErrorMessage("Eşleşme durumu dinlenirken bir hata oluştu.");
           resetSearch("Bir hata nedeniyle arama durduruldu.");
           setSearchState("error");
@@ -239,40 +305,43 @@ export default function MatchPage() {
       }
 
     } catch (error: any) {
-      console.error("Error starting search or matching:", error);
+      console.error("[MatchPage] Error starting search or matching:", error);
       setErrorMessage(`Eşleşme sırasında bir hata oluştu: ${error.message}`);
       setSearchState("error");
-      if (newQueueEntryId) { // newQueueEntryId olarak değiştirildi
-        await deleteDoc(doc(db, "matchmakingQueue", newQueueEntryId));
-        setQueueDocId(null);
-      } else if (queueDocId) { // Fallback if newQueueEntryId was not set due to early error
-        await deleteDoc(doc(db, "matchmakingQueue", queueDocId));
-        setQueueDocId(null);
+      if (currentAttemptQueueId) { 
+        await deleteDoc(doc(db, "matchmakingQueue", currentAttemptQueueId));
       }
+      setQueueDocId(null); // Clear queueDocId on error
     }
-  }, [currentUser, userData, toast, router, searchState, queueDocId, resetSearch]);
+  }, [currentUser, userData, toast, router, cleanupListenerAndDoc, resetSearch, setSearchState, setStatusMessage, setErrorMessage, setQueueDocId]);
 
 
   const handleCancelSearch = useCallback(async () => {
+    console.log(`[MatchPage] User ${currentUser?.uid} cancelling search. Current queueDocId: ${queueDocIdRef.current}`);
+    const idToCancel = queueDocIdRef.current; // Capture current ref value
+    
+    // First, update local state to prevent further actions and show UI change
+    setSearchState("cancelled");
+    setStatusMessage("Eşleşme arama iptal edildi. Tekrar denemek için butona tıkla.");
+    setErrorMessage(null);
+
     if (unsubscribeQueueListenerRef.current) {
       unsubscribeQueueListenerRef.current();
       unsubscribeQueueListenerRef.current = null;
     }
-    if (queueDocId) {
+    
+    if (idToCancel) {
       try {
-        const docRef = doc(db, "matchmakingQueue", queueDocId);
-        // Status 'cancelled' olarak güncellemek yerine direkt siliyoruz, listener bunu yakalamalı
-        await deleteDoc(docRef);
-        setQueueDocId(null); // Ensure queueDocId is cleared
+        const docRef = doc(db, "matchmakingQueue", idToCancel);
+        await deleteDoc(docRef); // Delete the user's own queue document
+        console.log(`[MatchPage] Successfully deleted queue doc ${idToCancel} on cancel.`);
       } catch (error) {
         console.error("Error cancelling search (deleting queue doc):", error);
         toast({ title: "Hata", description: "Arama iptal edilirken bir sorun oluştu.", variant: "destructive" });
       }
     }
-    setSearchState("cancelled"); // Önce state'i ayarla
-    setStatusMessage("Eşleşme arama iptal edildi. Tekrar denemek için butona tıkla.");
-    setErrorMessage(null);
-  }, [queueDocId, toast]);
+    setQueueDocId(null); // Clear queueDocId after attempting deletion
+  }, [currentUser?.uid, toast, setSearchState, setStatusMessage, setErrorMessage, setQueueDocId]);
 
 
   if (authLoading || (currentUser && (isUserDataLoading && !userData)) ) {
@@ -369,7 +438,7 @@ export default function MatchPage() {
                     <div className="flex items-center justify-center text-green-500">
                         <CheckCircle className="h-10 w-10" />
                     </div>
-                     <p className="text-sm text-green-600 font-medium">Eşleşme bulundu, sohbete yönlendiriliyorsunuz!</p>
+                     <p className="text-sm text-green-600 font-medium">{statusMessageRef.current}</p>
                 </motion.div>
             )}
           </CardContent>
@@ -378,4 +447,3 @@ export default function MatchPage() {
     </div>
   );
 }
-
