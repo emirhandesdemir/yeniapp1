@@ -1,6 +1,7 @@
 
 "use client";
 
+import React from "react"; // Eklendi
 import { WifiOff, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -40,3 +41,4 @@ export default function OfflinePage() {
     </div>
   );
 }
+
