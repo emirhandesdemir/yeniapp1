@@ -1,6 +1,7 @@
 
 "use client";
 
+import React from "react"; // React importunun varlığı kontrol edildi
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
@@ -19,7 +20,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { User, Mail, Lock, Loader2, VenetianMask, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
-import { useToast } from "@/hooks/use-toast"; // useToast eklendi
+import { useToast } from "@/hooks/use-toast";
 
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
@@ -40,7 +41,7 @@ const formSchema = z.object({
 export default function SignupForm() {
   const { signUp, signInWithGoogle, isUserLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
-  const { toast } = useToast(); // useToast hook'u çağrıldı
+  const { toast } = useToast();
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
   const form = useForm<z.infer<typeof formSchema>>({
