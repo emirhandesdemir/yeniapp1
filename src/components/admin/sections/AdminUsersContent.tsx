@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, Timestamp, doc, updateDoc, query, orderBy, runTransaction } from "firebase/firestore";
 import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext";
@@ -27,6 +26,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { addDays, format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+
+const REPORT_BAN_THRESHOLD = 5; // Bu satır AuthContext'ten buraya taşınabilir veya global bir config dosyasında tanımlanabilir.
 
 export default function AdminUsersContent() {
   const [users, setUsers] = useState<UserData[]>([]);

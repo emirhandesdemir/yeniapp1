@@ -1,7 +1,9 @@
-
 "use client";
 
+import React from 'react';
 import AdminProjectAssistantContent from "@/components/admin/sections/AdminProjectAssistantContent";
+
+export const dynamic = 'force-dynamic'; // Sayfanın dinamik olarak render edilmesini zorla
 
 export default function AdminProjectAssistantPage() {
   // Bu sayfa, AdminOverlayPanel içinde AdminProjectAssistantContent komponentini kullanır.
