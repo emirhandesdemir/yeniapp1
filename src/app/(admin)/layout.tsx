@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { ReactNode } from 'react';
@@ -8,6 +9,13 @@ import { Loader2, ShieldAlert } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
+const DEFAULT_GAME_SETTINGS = {
+  isGameEnabled: false,
+  questionIntervalSeconds: 180,
+};
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { currentUser, userData, loading, isUserDataLoading } = useAuth();
@@ -16,9 +24,27 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loading && !isUserDataLoading) {
       if (!currentUser) {
-        router.replace('/login?redirect=/admin/dashboard'); // Admin girişi için yönlendirme
+        router.replace('/login?redirect=/admin/dashboard');
       } else if (userData?.role !== 'admin') {
-        router.replace('/'); // Admin değilse ana sayfaya yönlendir
+        router.replace('/');
+      } else {
+        // Admin kullanıcısı doğrulandı, gameConfig'i kontrol et/oluştur
+        const checkAndCreateGameConfig = async () => {
+          try {
+            const gameConfigRef = doc(db, "appSettings", "gameConfig");
+            const gameConfigSnap = await getDoc(gameConfigRef);
+            if (!gameConfigSnap.exists()) {
+              await setDoc(gameConfigRef, {
+                ...DEFAULT_GAME_SETTINGS,
+                updatedAt: serverTimestamp(), 
+              });
+              console.log("[AdminLayout] Default gameConfig created in Firestore.");
+            }
+          } catch (error) {
+            console.error("[AdminLayout] Error checking/creating gameConfig:", error);
+          }
+        };
+        checkAndCreateGameConfig();
       }
     }
   }, [currentUser, userData, loading, isUserDataLoading, router]);
@@ -33,7 +59,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   if (!currentUser || userData?.role !== 'admin') {
-    // Yönlendirme gerçekleşene kadar veya kullanıcı admin değilse bir mesaj göster
     return (
         <div className="flex flex-1 items-center justify-center min-h-screen bg-background p-4">
             <Card className="w-full max-w-md text-center shadow-2xl">
@@ -56,6 +81,5 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Kullanıcı giriş yapmış ve admin ise içeriği göster
   return <>{children}</>;
 }
