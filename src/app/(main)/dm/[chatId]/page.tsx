@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut } from "lucide-react"; 
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut, Edit2 } from "lucide-react"; 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -26,6 +26,7 @@ import {
   updateDoc,
   writeBatch,
   deleteDoc as deleteFirestoreDoc, 
+  FieldValue
 } from "firebase/firestore";
 import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; 
 import { useToast } from "@/hooks/use-toast";
@@ -49,7 +50,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { isPast, formatDistanceToNowStrict, differenceInMinutes } from 'date-fns'; 
+import { isPast, formatDistanceToNowStrict, differenceInMinutes, formatDistanceToNow } from 'date-fns'; 
 import { tr } from 'date-fns/locale';
 
 interface DirectMessage {
@@ -62,6 +63,8 @@ interface DirectMessage {
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
+  editedAt?: Timestamp | null; 
+  reactions?: { [key: string]: string[] };
 }
 
 interface DmPartnerDetails {
@@ -88,8 +91,8 @@ interface DmDocumentData {
     matchSessionUser1Decision?: 'pending' | 'yes' | 'no';
     matchSessionUser2Decision?: 'pending' | 'yes' | 'no';
     matchSessionEnded?: boolean;
-    matchSessionEndedReason?: string; // 'partner_left_user1id', 'timer_expired', 'both_no', 'one_no'
-    matchSessionEndedBy?: string; // UID of user who initiated the end (e.g. by leaving or clicking "no")
+    matchSessionEndedReason?: string; 
+    matchSessionEndedBy?: string; 
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500;
@@ -144,7 +147,13 @@ export default function DirectMessagePage() {
     setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
   }, []);
 
-  const handleLeaveMatchSession = useCallback(async (reason: 'user_left' = 'user_left') => {
+  const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
+    setMessages(prevMessages => prevMessages.map(msg => 
+        msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
+    ));
+  }, []);
+
+  const handleLeaveMatchSession = useCallback(async (reason: 'user_left' | 'user_left_page' = 'user_left') => {
     if (!currentUser || !chatId || !dmDocDataRef.current || !dmDocDataRef.current.isMatchSession || dmDocDataRef.current.matchSessionEnded) return;
     
     const updates: Partial<DmDocumentData> = {
@@ -153,7 +162,7 @@ export default function DirectMessagePage() {
         matchSessionEndedBy: currentUser.uid,
     };
 
-    // If current user hasn't made a decision yet, mark it as 'no' implicitly
+    
     const myCurrentDecision = currentUser.uid === dmDocDataRef.current.matchSessionUser1Id 
         ? dmDocDataRef.current.matchSessionUser1Decision 
         : dmDocDataRef.current.matchSessionUser2Decision;
@@ -167,8 +176,10 @@ export default function DirectMessagePage() {
 
     try {
         await updateDoc(doc(db, "directMessages", chatId), updates);
-        router.push('/match');
-        toast({ title: "Eşleşme Sonlandırıldı", description: "Yeni bir eşleşme arayabilirsiniz." });
+        if(reason !== 'user_left_page') { 
+            router.push('/match');
+            toast({ title: "Eşleşme Sonlandırıldı", description: "Yeni bir eşleşme arayabilirsiniz." });
+        }
     } catch (error) {
         console.error("Error explicitly ending match session:", error);
         toast({ title: "Hata", description: "Eşleşme sonlandırılamadı.", variant: "destructive" });
@@ -257,9 +268,9 @@ export default function DirectMessagePage() {
 
             if (data.isMatchSession && !data.matchSessionEnded) {
                 const myId = currentUser.uid;
-                const otherId = partnerUid;
+                
                 setMyDecision(myId === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
-                setPartnerDecision(otherId === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
+                setPartnerDecision(partnerUid === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
 
                 if (data.matchSessionExpiresAt) {
                     const now = Timestamp.now().toMillis();
@@ -271,7 +282,7 @@ export default function DirectMessagePage() {
                     }
                 }
             } else if (data.isMatchSession && data.matchSessionEnded && data.matchSessionEndedBy !== currentUser.uid && (data.matchSessionEndedReason?.startsWith('partner_left') || data.matchSessionEndedReason === 'user_left')) {
-                // Partner left, and this user is still on the page
+                
                 toast({ title: "Partner Ayrıldı", description: "Sohbet partneriniz eşleşmeden ayrıldı. Yeni bir eşleşme arayabilirsiniz.", duration: 7000 });
                 router.push('/match');
             }
@@ -293,7 +304,7 @@ export default function DirectMessagePage() {
         }
     };
 
-  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
+  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy, myDecision, partnerDecision]);
 
 
   useEffect(() => {
@@ -303,8 +314,8 @@ export default function DirectMessagePage() {
         setSessionTimeLeft(prev => {
           if (prev === null || prev <= 1) {
             clearInterval(sessionTimerRef.current!);
-            if(myDecision === 'pending' || partnerDecision === 'pending') {
-                setShowDecisionModal(true);
+            if(dmDocDataRef.current && !dmDocDataRef.current.matchSessionEnded && ( (dmDocDataRef.current.matchSessionUser1Id === currentUser?.uid && dmDocDataRef.current.matchSessionUser1Decision === 'pending') || (dmDocDataRef.current.matchSessionUser2Id === currentUser?.uid && dmDocDataRef.current.matchSessionUser2Decision === 'pending') ) ) {
+                 setShowDecisionModal(true);
             }
             return 0;
           }
@@ -312,14 +323,14 @@ export default function DirectMessagePage() {
         });
       }, 1000);
     } else if (sessionTimeLeft === 0 && isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded) {
-        if(myDecision === 'pending' || partnerDecision === 'pending') {
+        if(dmDocDataRef.current && !dmDocDataRef.current.matchSessionEnded && ( (dmDocDataRef.current.matchSessionUser1Id === currentUser?.uid && dmDocDataRef.current.matchSessionUser1Decision === 'pending') || (dmDocDataRef.current.matchSessionUser2Id === currentUser?.uid && dmDocDataRef.current.matchSessionUser2Decision === 'pending') )) {
              setShowDecisionModal(true);
         }
     }
     return () => {
         if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
     };
-  }, [isMatchSessionChat, sessionTimeLeft, dmDocData, myDecision, partnerDecision]);
+  }, [isMatchSessionChat, sessionTimeLeft, dmDocData, currentUser?.uid]);
 
 
   const processMatchDecisions = useCallback(async (
@@ -329,7 +340,7 @@ export default function DirectMessagePage() {
     user2Id: string
   ) => {
     if (decisionProcessing || !currentUser || !userData || !dmPartnerDetails || !dmDocDataRef.current) return;
-    if (dmDocDataRef.current.matchSessionEnded) return; // Already ended
+    if (dmDocDataRef.current.matchSessionEnded) return; 
     setDecisionProcessing(true);
     const dmDocRef = doc(db, "directMessages", chatId);
 
@@ -357,11 +368,11 @@ export default function DirectMessagePage() {
             }
 
             batch.update(dmDocRef, {
-                isMatchSession: false, // Convert to normal DM
+                isMatchSession: false, 
                 matchSessionEnded: true,
                 matchSessionEndedReason: 'both_yes',
                 matchSessionExpiresAt: null,
-                matchSessionUser1Decision: null, // Clear decisions
+                matchSessionUser1Decision: null, 
                 matchSessionUser2Decision: null,
                 matchSessionEndedBy: null,
             });
@@ -378,12 +389,12 @@ export default function DirectMessagePage() {
             await updateDoc(dmDocRef, {
                 matchSessionEnded: true,
                 matchSessionEndedReason: endedReason,
-                matchSessionEndedBy: decision1 === 'no' ? user1Id : (decision2 === 'no' ? user2Id : null), // Who said no first or who ended it
+                matchSessionEndedBy: decision1 === 'no' ? user1Id : (decision2 === 'no' ? user2Id : null), 
                 matchSessionExpiresAt: null,
             });
             toast({ title: "Eşleşme Sonlandı", description: "Sohbet devam etmeyecek.", variant: "default" });
             setShowDecisionModal(false);
-            if(!dmDocDataRef.current?.matchSessionEnded) router.push('/match'); // Only redirect if not already handled by partner_left
+            if(!dmDocDataRef.current?.matchSessionEnded) router.push('/match'); 
         } catch (error) {
             console.error("Error ending match session:", error);
         }
@@ -402,7 +413,7 @@ export default function DirectMessagePage() {
     if (decisionsMade) {
       processMatchDecisions(matchSessionUser1Decision!, matchSessionUser2Decision!, matchSessionUser1Id!, matchSessionUser2Id!);
     } else if (timerExpired) {
-      // If timer expired and one or both decisions are still pending, treat pending as 'no'
+      
       const finalUser1Decision = matchSessionUser1Decision === 'pending' ? 'no' : matchSessionUser1Decision!;
       const finalUser2Decision = matchSessionUser2Decision === 'pending' ? 'no' : matchSessionUser2Decision!;
       processMatchDecisions(finalUser1Decision, finalUser2Decision, matchSessionUser1Id!, matchSessionUser2Id!);
@@ -422,7 +433,7 @@ export default function DirectMessagePage() {
         [updateField]: decision
       });
       setMyDecision(decision);
-      // Don't close modal here, let the processMatchDecisions handle it
+      
     } catch (error) {
       console.error("Error submitting decision:", error);
       toast({ title: "Hata", description: "Kararınız kaydedilemedi.", variant: "destructive" });
@@ -448,6 +459,8 @@ export default function DirectMessagePage() {
           senderAvatar: data.senderAvatar,
           senderIsPremium: data.senderIsPremium || false, 
           timestamp: data.timestamp,
+          editedAt: data.editedAt, 
+          reactions: data.reactions,
         });
       });
       setMessages(fetchedMessages.map(msg => ({
@@ -467,8 +480,7 @@ export default function DirectMessagePage() {
 
 
   useEffect(() => {
-    // Cleanup on unmount
-    const currentDmDocData = dmDocDataRef.current; // Capture ref value
+    const currentDmDocData = dmDocDataRef.current; 
     return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -477,7 +489,6 @@ export default function DirectMessagePage() {
         clearInterval(sessionTimerRef.current);
       }
       if (isMatchSessionChat && currentDmDocData && !currentDmDocData.matchSessionEnded && currentUser) {
-        // If user leaves the page during an active match session without deciding
         handleLeaveMatchSession('user_left_page');
       }
     };
@@ -561,6 +572,8 @@ export default function DirectMessagePage() {
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         senderIsPremium: userIsCurrentlyPremium, 
         timestamp: serverTimestamp(),
+        editedAt: null, 
+        reactions: {},
       });
       setNewMessage("");
     } catch (error) {
@@ -580,7 +593,7 @@ export default function DirectMessagePage() {
       toast({ title: "Engellendi", description: "Engellenmiş bir kullanıcı ile arama başlatamazsınız.", variant: "destructive"});
       return;
     }
-    if (isMatchSessionChat && !dmDocData?.matchSessionEnded) {
+    if (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded) {
         toast({ title: "Geçici Sohbet", description: "Bu geçici sohbette arama yapılamaz. Arkadaş olarak ekledikten sonra arayabilirsiniz.", variant: "default" });
         return;
     }
@@ -653,7 +666,7 @@ export default function DirectMessagePage() {
     const diffMins = differenceInMinutes(now, lastSeenDate);
 
     if (diffMins < ACTIVE_THRESHOLD_MINUTES_DM) return "Aktif";
-    return `Son görülme: ${formatDistanceToNowStrict(lastSeenDate, { addSuffix: true, locale: tr })}`;
+    return `Son görülme: ${formatDistanceToNow(lastSeenDate, { addSuffix: true, locale: tr })}`;
   };
 
 
@@ -707,7 +720,7 @@ export default function DirectMessagePage() {
                 <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
                     <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
                     <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
-                    {isPartnerCurrentlyActive && <Dot className="absolute -bottom-1 -right-1 h-6 w-6 text-green-500 fill-green-500" />}
+                    {isPartnerCurrentlyActive && !isMatchSessionActive && <Dot className="absolute -bottom-1 -right-1 h-6 w-6 text-green-500 fill-green-500" />}
                 </Avatar>
                 {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
                 <div className="flex-1 min-w-0">
@@ -730,10 +743,10 @@ export default function DirectMessagePage() {
         </div>
         {!isMatchSessionActive && (
             <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && !dmDocData?.matchSessionEnded)} aria-label="Sesli Ara">
+            <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Sesli Ara">
                 <Phone className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && !dmDocData?.matchSessionEnded)} aria-label="Görüntülü Ara (Yakında)">
+            <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Görüntülü Ara (Yakında)">
                 <Video className="h-5 w-5" />
             </Button>
             <DropdownMenu>
@@ -802,7 +815,8 @@ export default function DirectMessagePage() {
                   getAvatarFallbackText={getAvatarFallbackText}
                   chatId={chatId}
                   onMessageDeleted={handleMessageDeleted}
-                  isMatchSession={isMatchSessionChat && !dmDocData?.matchSessionEnded}
+                  onMessageEdited={handleMessageEdited}
+                  isMatchSession={isMatchSessionActive}
                 />
               </motion.div>
             ))}
@@ -858,7 +872,7 @@ export default function DirectMessagePage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={showDecisionModal && isMatchSessionChat && !dmDocData?.matchSessionEnded && myDecision === 'pending'} onOpenChange={(open) => { if(!open) setShowDecisionModal(false); }}>
+      <AlertDialog open={showDecisionModal && isMatchSessionChat && dmDocDataRef.current && !dmDocDataRef.current.matchSessionEnded && myDecision === 'pending'} onOpenChange={(open) => { if(!open) setShowDecisionModal(false); }}>
         <AlertDialogContent className="sm:max-w-sm">
             <AlertDialogHeader>
                 <div className="flex justify-center mb-3">
@@ -903,3 +917,4 @@ export default function DirectMessagePage() {
   );
 }
 
+    

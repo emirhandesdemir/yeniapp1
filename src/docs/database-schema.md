@@ -71,8 +71,18 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
     - **Yol:** `/chatRooms/{roomId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp), `isGameMessage` (Boolean, isteğe bağlı), `mentionedUserIds` (Array<String>, isteğe bağlı)
-    - **Kurallar:** Kendi mesajını silebilir (`request.auth.uid == resource.data.senderId`).
+    - **Alanlar:**
+      - `text`: (String) Mesaj içeriği.
+      - `senderId`: (String) Gönderen kullanıcının UID'si.
+      - `senderName`: (String) Gönderenin görünen adı.
+      - `senderAvatar`: (String, nullable) Gönderenin avatar URL'si.
+      - `senderIsPremium`: (Boolean, isteğe bağlı) Gönderenin premium olup olmadığı.
+      - `timestamp`: (Timestamp) Mesajın gönderildiği zaman.
+      - `isGameMessage`: (Boolean, isteğe bağlı) Sistemsel bir oyun mesajı olup olmadığı.
+      - `mentionedUserIds`: (Array<String>, isteğe bağlı) Mesajda etiketlenen kullanıcıların UID'leri.
+      - `editedAt`: (Timestamp, nullable) Mesajın son düzenlenme zamanı.
+      - `reactions`: (Map<String, Array<String>>, nullable) Mesaja verilen tepkiler. Anahtar emoji (örn: "👍"), değer tepkiyi veren kullanıcı UID'lerinin listesi. Örnek: `{ "👍": ["uid1", "uid2"], "❤️": ["uid3"] }`
+    - **Kurallar:** Kendi mesajını silebilir veya düzenleyebilir. Diğer kullanıcılar tepki verebilir.
   - `participants`: Odadaki aktif metin sohbeti katılımcılarını saklar.
     - **Yol:** `/chatRooms/{roomId}/participants/{userId}`
     - **Alanlar:** `joinedAt` (Timestamp), `displayName` (String), `photoURL` (String, nullable), `uid` (String), `isTyping` (Boolean, isteğe bağlı), `isPremium` (Boolean, isteğe bağlı)
@@ -131,13 +141,21 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `matchSessionUser1Decision`: (String, nullable) `isMatchSession` `true` ise, User1'in kararı ('pending', 'yes', 'no').
   - `matchSessionUser2Decision`: (String, nullable) `isMatchSession` `true` ise, User2'nin kararı ('pending', 'yes', 'no').
   - `matchSessionEnded`: (Boolean, isteğe bağlı) `isMatchSession` `true` ise ve seans kararlar sonucu veya süre aşımıyla bittiyse `true`. (Varsayılan: `false`)
-  - `matchSessionEndedReason`: (String, nullable) Eşleşme seansının bitiş nedeni (örneğin, 'partner_left_USERID', 'timer_expired', 'both_yes', 'one_no', 'both_no').
+  - `matchSessionEndedReason`: (String, nullable) Eşleşme seansının bitiş nedeni (örneğin, 'partner_left_USERID', 'user_left', 'timer_expired', 'both_yes', 'one_no', 'both_no').
   - `matchSessionEndedBy`: (String, nullable) Eşleşme seansını sonlandıran (örneğin ayrılan veya 'Hayır' diyen) kullanıcının UID'si.
 - **Alt Koleksiyonlar:**
   - `messages`: DM'deki mesajları saklar.
     - **Yol:** `/directMessages/{dmChatId}/messages/{messageId}`
-    - **Alanlar:** `text` (String), `senderId` (String), `senderName` (String), `senderAvatar` (String, nullable), `senderIsPremium` (Boolean, isteğe bağlı), `timestamp` (Timestamp)
-    - **Kurallar:** Kendi mesajını silebilir (`request.auth.uid == resource.data.senderId`).
+    - **Alanlar:**
+        - `text`: (String) Mesaj içeriği.
+        - `senderId`: (String) Gönderen kullanıcının UID'si.
+        - `senderName`: (String) Gönderenin görünen adı.
+        - `senderAvatar`: (String, nullable) Gönderenin avatar URL'si.
+        - `senderIsPremium`: (Boolean, isteğe bağlı) Gönderenin premium olup olmadığı.
+        - `timestamp`: (Timestamp) Mesajın gönderildiği zaman.
+        - `editedAt`: (Timestamp, nullable) Mesajın son düzenlenme zamanı.
+        - `reactions`: (Map<String, Array<String>>, nullable) Mesaja verilen tepkiler.
+    - **Kurallar:** Kendi mesajını silebilir veya düzenleyebilir. Diğer kullanıcılar tepki verebilir.
 - **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - `directMessages` koleksiyonunda, `participantUids` (ARRAY_CONTAINS) ve `lastMessageTimestamp` (DESCENDING) alanlarını içeren bir birleşik indeks gereklidir.
     - *Sorgu:* `src/app/(main)/direct-messages/page.tsx`
@@ -240,14 +258,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Kullanıcılar kendi profil belgelerini okuyabilir ve güncelleyebilir.
-    match /users/{userId} {
-      allow read: if true; // Herkes okuyabilir veya daha sıkı: if request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId;
-      // allow delete: if false; // Kullanıcıların kendi hesaplarını silmesi için ayrı bir mantık gerekebilir.
+    function isUserAdmin(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role == 'admin';
+    }
 
-      // Kullanıcıların kendi alt koleksiyonlarını yönetmesine izin ver (arkadaşlar, engellenenler)
+    function isMessageOwner(messageId, pathPrefix) {
+      return request.auth.uid == get(/databases/$(database)/documents/$(pathPrefix)/$(messageId)).data.senderId;
+    }
+
+    function canUpdateMessage(messageId, pathPrefix) {
+      let message = get(/databases/$(database)/documents/$(pathPrefix)/$(messageId)).data;
+      let requestData = request.resource.data;
+      let affectedKeys = requestData.diff(message).affectedKeys();
+
+      // Sender can edit text and editedAt
+      if (request.auth.uid == message.senderId &&
+          (affectedKeys.hasOnly(['text', 'editedAt']) || affectedKeys.hasOnly(['text', 'editedAt', 'reactions'])) &&
+          requestData.text != message.text) { // text must actually change for edit
+        return true;
+      }
+      // Anyone can update reactions if ONLY reactions are changed
+      if (affectedKeys.hasOnly(['reactions']) && requestData.reactions != message.reactions) {
+        return true;
+      }
+      return false;
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId || isUserAdmin(request.auth.uid);
       match /confirmedFriends/{friendId} {
         allow read, write: if request.auth.uid == userId;
       }
@@ -256,70 +296,64 @@ service cloud.firestore {
       }
     }
 
-    // Sohbet Odaları: Giriş yapmış kullanıcılar okuyabilir. Oluşturan güncelleyebilir/silebilir.
-    // Katılımcılar mesaj yazabilir.
     match /chatRooms/{roomId} {
       allow read: if request.auth.uid != null;
-      allow create: if request.auth.uid != null; // Oda oluşturma maliyeti/spam kontrolü düşünülmeli.
+      allow create: if request.auth.uid != null;
       allow update: if request.auth.uid != null && (
                       request.auth.uid == resource.data.creatorId ||
-                      request.resource.data.participantCount != resource.data.participantCount ||
+                      isUserAdmin(request.auth.uid) ||
+                      request.resource.data.participantCount != resource.data.participantCount || // Allow system updates
                       request.resource.data.voiceParticipantCount != resource.data.voiceParticipantCount ||
                       request.resource.data.maxParticipants != resource.data.maxParticipants ||
-                      request.resource.data.name != resource.data.name ||
-                      request.resource.data.description != resource.data.description ||
-                      request.resource.data.image != resource.data.image ||
-                      request.resource.data.isGameEnabledInRoom != resource.data.isGameEnabledInRoom ||
                       request.resource.data.currentGameQuestionId != resource.data.currentGameQuestionId ||
                       request.resource.data.nextGameQuestionTimestamp != resource.data.nextGameQuestionTimestamp ||
-                      request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline ||
-                      request.resource.data.expiresAt != resource.data.expiresAt
+                      request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline
                     );
-      allow delete: if request.auth.uid != null && request.auth.uid == resource.data.creatorId;
+      allow delete: if request.auth.uid != null && (request.auth.uid == resource.data.creatorId || isUserAdmin(request.auth.uid));
 
       match /messages/{messageId} {
         allow read: if request.auth.uid != null;
         allow create: if request.auth.uid != null && request.resource.data.senderId == request.auth.uid;
-        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; 
+        allow update: if request.auth.uid != null && canUpdateMessage(messageId, "chatRooms/" + roomId + "/messages");
+        allow delete: if request.auth.uid != null && isMessageOwner(messageId, "chatRooms/" + roomId + "/messages");
       }
       match /participants/{participantId} {
         allow read: if request.auth.uid != null;
-        allow create: if request.auth.uid == participantId; 
-        allow delete: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId; 
+        allow create: if request.auth.uid == participantId;
+        allow delete: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId;
       }
-       match /voiceParticipants/{participantId} {
+      match /voiceParticipants/{participantId} {
         allow read: if request.auth.uid != null;
         allow write: if request.auth.uid == participantId || request.auth.uid == get(/databases/$(database)/documents/chatRooms/$(roomId)).data.creatorId;
       }
-       match /webrtcSignals/{userId}/{subcollection=**} {
+      match /webrtcSignals/{userId}/{subcollection=**} {
         allow read, write: if request.auth.uid == userId;
       }
     }
 
-    // Gönderiler: Giriş yapmış kullanıcılar okuyabilir. Oluşturan kendi gönderisini yönetebilir.
     match /posts/{postId} {
       allow read: if request.auth.uid != null;
       allow create: if request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth.uid == resource.data.userId; 
+      allow update: if request.auth.uid == resource.data.userId;
       allow delete: if request.auth.uid == resource.data.userId;
 
       match /comments/{commentId} {
         allow read: if request.auth.uid != null;
         allow create: if request.auth.uid == request.resource.data.userId;
-        allow delete: if request.auth.uid == resource.data.userId; 
+        allow delete: if request.auth.uid == resource.data.userId;
       }
     }
 
-    // Direkt Mesajlar: Sadece katılımcılar okuyabilir/yazabilir.
     match /directMessages/{dmChatId} {
-      allow read, write: if request.auth.uid in resource.data.participantUids;
+      allow read, write: if request.auth.uid in resource.data.participantUids || request.auth.uid in request.resource.data.participantUids;
       match /messages/{messageId} {
-        allow read, write: if request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
-        allow delete: if request.auth.uid != null && request.auth.uid == resource.data.senderId; 
+        allow read: if request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
+        allow create: if request.auth.uid == request.resource.data.senderId && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmChatId)).data.participantUids;
+        allow update: if request.auth.uid != null && canUpdateMessage(messageId, "directMessages/" + dmChatId + "/messages");
+        allow delete: if request.auth.uid != null && isMessageOwner(messageId, "directMessages/" + dmChatId + "/messages");
       }
     }
-    
-    // Direkt Çağrılar: İlgili kullanıcılar yönetebilir.
+
     match /directCalls/{callId} {
       allow read, write: if request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.calleeId;
        match /callerIceCandidates/{candidateId} {
@@ -330,35 +364,35 @@ service cloud.firestore {
        }
     }
 
-    // Arkadaşlık İstekleri: İlgili kullanıcılar yönetebilir.
     match /friendRequests/{requestId} {
       allow read: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
-      allow create: if request.auth.uid == request.resource.data.fromUserId; 
-      allow update, delete: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId; 
+      allow create: if request.auth.uid == request.resource.data.fromUserId;
+      allow update, delete: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
     }
 
-    // Uygulama Ayarları (gameConfig): Sadece admin okuyabilir/yazabilir.
     match /appSettings/gameConfig {
-      allow read: if request.auth.uid != null; 
-      allow write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if request.auth.uid != null;
+      allow write: if isUserAdmin(request.auth.uid);
     }
 
-    // Oyun Soruları: Admin yönetebilir, giriş yapmış kullanıcılar okuyabilir.
     match /gameQuestions/{questionId} {
       allow read: if request.auth.uid != null;
-      allow write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow write: if isUserAdmin(request.auth.uid);
     }
 
-    // Raporlar: Sadece adminler erişebilir (veya kullanıcılar kendi raporlarını oluşturabilir).
     match /reports/{reportId} {
-      allow read, write: if request.auth.uid != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read, write: if isUserAdmin(request.auth.uid);
       allow create: if request.auth.uid == request.resource.data.reporterId;
     }
-    
+
     match /matchmakingQueue/{queueEntryId} {
-      allow read, write: if request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId;
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth.uid == resource.data.userId || request.auth.uid == resource.data.matchedWithUserId; // Kendisi veya eşleştiği kişi güncelleyebilir (status vs.)
+      allow delete: if request.auth.uid == resource.data.userId; // Sadece kendi silebilir
     }
   }
 }
 ```
 
+    

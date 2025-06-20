@@ -32,7 +32,7 @@ import {
 } from "firebase/firestore";
 import { useAuth, type UserData, type FriendRequest, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast, addSeconds, format, differenceInMinutes } from 'date-fns';
+import { addMinutes, formatDistanceToNow, isPast, addSeconds, format, differenceInMinutes, formatDistanceToNowStrict } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -75,6 +75,8 @@ interface Message {
   userAiHint?: string;
   isGameMessage?: boolean;
   mentionedUserIds?: string[];
+  editedAt?: Timestamp | null; 
+  reactions?: { [key: string]: string[] };
 }
 
 interface ChatRoomDetails {
@@ -104,7 +106,7 @@ export interface ActiveTextParticipant {
   isPremium?: boolean;
   joinedAt?: Timestamp;
   isTyping?: boolean;
-  lastSeen?: Timestamp | null; // Aktiflik için eklendi
+  lastSeen?: Timestamp | null; 
 }
 
 export interface ActiveVoiceParticipantData {
@@ -161,7 +163,7 @@ const PREMIUM_USER_ROOM_CAPACITY = 50;
 
 const SPEAKING_THRESHOLD = 5;
 const SILENCE_DELAY_MS = 1000;
-const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2; // 2 dakika içinde aktivite
+const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2; 
 
 
 export default function ChatRoomPage() {
@@ -242,6 +244,13 @@ export default function ChatRoomPage() {
   const handleMessageDeleted = useCallback((deletedMessageId: string) => {
     setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
   }, []);
+
+  const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
+    setMessages(prevMessages => prevMessages.map(msg => 
+        msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
+    ));
+  }, []);
+
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
     if (!currentUser || !roomId) return;
@@ -1170,7 +1179,7 @@ export default function ChatRoomPage() {
           uid: currentUser.uid,
           isTyping: false,
           isPremium: userIsCurrentlyPremium,
-          lastSeen: serverTimestamp(), // Katılırken son görülme güncellenir
+          lastSeen: serverTimestamp(), 
        });
       batch.update(roomRef, { participantCount: increment(1) });
 
@@ -1261,7 +1270,7 @@ export default function ChatRoomPage() {
     const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
       const fetchedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, mentionedUserIds: data.mentionedUserIds || [] }); });
+      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
       setLoadingMessages(false); setTimeout(() => scrollToBottom(), 0);
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
@@ -1362,6 +1371,8 @@ export default function ChatRoomPage() {
             timestamp: serverTimestamp(),
             isGameMessage: false,
             mentionedUserIds: mentionedUserIds,
+            editedAt: null,
+            reactions: {},
         });
         setNewMessage("");
         lastMessageTimesRef.current.push(now);
@@ -1567,7 +1578,7 @@ export default function ChatRoomPage() {
     const diffMins = differenceInMinutes(now, lastSeenDate);
 
     if (diffMins < ACTIVE_IN_ROOM_THRESHOLD_MINUTES) return "Aktif";
-    return formatDistanceToNow(lastSeenDate, { addSuffix: true, locale: tr });
+    return formatDistanceToNowStrict(lastSeenDate, { addSuffix: true, locale: tr });
   }, []);
 
 
@@ -1738,6 +1749,7 @@ export default function ChatRoomPage() {
               roomId={roomId}
               isActiveParticipant={isActiveInRoom}
               onMessageDeleted={handleMessageDeleted}
+              onMessageEdited={handleMessageEdited}
             />
           )})}
         </ScrollArea>
@@ -1765,3 +1777,5 @@ export default function ChatRoomPage() {
     </>
   );
 }
+
+    

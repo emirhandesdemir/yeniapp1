@@ -1,10 +1,10 @@
 
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import type { Timestamp } from 'firebase/firestore';
+import type { Timestamp, FieldValue } from 'firebase/firestore';
 import Link from "next/link";
-import { Star, Trash2, Loader2 } from 'lucide-react';
+import { Star, Trash2, Loader2, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, MoreHorizontal } from 'lucide-react';
 import { useAuth, checkUserPremium, type UserData } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { db } from '@/lib/firebase';
-import { doc, deleteDoc as deleteFirestoreDoc } from 'firebase/firestore';
+import { doc, deleteDoc as deleteFirestoreDoc, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea'; // Textarea eklendi
+import { formatDistanceToNowStrict } from 'date-fns';
+import { tr } from 'date-fns/locale';
+
 
 interface DirectMessage {
   id: string;
@@ -32,27 +36,51 @@ interface DirectMessage {
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
+  editedAt?: Timestamp | null; // Eklendi
+  reactions?: { [key: string]: string[] }; // Emoji -> UserID[] map (Eklendi)
 }
 
 interface DirectMessageItemProps {
   msg: DirectMessage;
   getAvatarFallbackText: (name?: string | null) => string;
-  chatId: string; 
+  chatId: string;
   onMessageDeleted: (messageId: string) => void;
-  isMatchSession?: boolean; // Added prop
+  onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void; // Eklendi
+  isMatchSession?: boolean;
 }
+
+const PREDEFINED_REACTIONS = [
+    { emoji: "👍", name: "Beğen", icon: <ThumbsUp className="h-4 w-4" /> },
+    { emoji: "❤️", name: "Sevgi", icon: <Heart className="h-4 w-4" /> },
+    { emoji: "😂", name: "Gülme", icon: <Laugh className="h-4 w-4" /> },
+    { emoji: "🎉", name: "Kutlama", icon: <PartyPopper className="h-4 w-4" /> },
+    { emoji: "🤔", name: "Düşünme", icon: <HelpCircle className="h-4 w-4" /> },
+];
 
 const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   msg,
   getAvatarFallbackText,
   chatId,
   onMessageDeleted,
-  isMatchSession, // Consumed prop
+  onMessageEdited, // Eklendi
+  isMatchSession,
 }) => {
-  const { userData: currentUserData } = useAuth();
+  const { userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const [isEditing, setIsEditing] = useState(false); // Eklendi
+  const [editedText, setEditedText] = useState(msg.text); // Eklendi
+  const editInputRef = useRef<HTMLTextAreaElement>(null); // Eklendi
+
+  useEffect(() => {
+    if (isEditing && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [isEditing]);
+
 
   const getDisplayAvatar = () => {
     if (msg.isOwn) return currentUserData?.photoURL;
@@ -81,12 +109,73 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
-      onMessageDeleted(msg.id); 
+      onMessageDeleted(msg.id);
     } catch (error) {
       console.error("Error deleting direct message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleEditMessage = () => { // Eklendi
+    setEditedText(msg.text);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async () => { // Eklendi
+    if (!msg.isOwn || !chatId || !msg.id || !editedText.trim() || editedText.trim() === msg.text) {
+      setIsEditing(false);
+      return;
+    }
+    setIsDeleting(true); // Use same loading state
+    try {
+      const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
+      const newEditedAt = Timestamp.now();
+      await updateDoc(messageRef, {
+        text: editedText.trim(),
+        editedAt: newEditedAt,
+      });
+      onMessageEdited(msg.id, editedText.trim(), newEditedAt);
+      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Error editing message:", error);
+      toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCancelEdit = () => { // Eklendi
+    setIsEditing(false);
+    setEditedText(msg.text);
+  };
+
+  const handleReaction = async (emoji: string) => {
+    if (!currentUser || !chatId || !msg.id) return;
+
+    const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
+    const currentReactions = msg.reactions || {};
+    const usersWhoReactedWithEmoji = currentReactions[emoji] || [];
+    const userHasReacted = usersWhoReactedWithEmoji.includes(currentUser.uid);
+
+    let newReactions = { ...currentReactions };
+
+    if (userHasReacted) {
+      newReactions[emoji] = usersWhoReactedWithEmoji.filter(uid => uid !== currentUser.uid);
+      if (newReactions[emoji].length === 0) {
+        delete newReactions[emoji];
+      }
+    } else {
+      newReactions[emoji] = [...usersWhoReactedWithEmoji, currentUser.uid];
+    }
+    
+    try {
+      await updateDoc(messageRef, { reactions: newReactions });
+    } catch (error) {
+      console.error("Error updating reactions:", error);
+      toast({ title: "Hata", description: "Tepki verilirken bir sorun oluştu.", variant: "destructive" });
     }
   };
 
@@ -120,27 +209,105 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
               ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
               : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
           )}>
-            <div className="allow-text-selection">
-                <p className="text-sm">{msg.text}</p>
-            </div>
-            {msg.isOwn && (
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="absolute top-0 right-0 h-6 w-6 text-primary-foreground/60 hover:text-destructive-foreground hover:bg-destructive/70 opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label="Mesajı Sil"
-                    disabled={isDeleting}
-                >
-                    {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                </Button>
+            {isEditing ? (
+                <div className="space-y-2">
+                    <Textarea
+                        ref={editInputRef}
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px]"
+                        rows={2}
+                        disabled={isDeleting}
+                    />
+                    <div className="flex justify-end gap-2">
+                        <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isDeleting} className="text-xs">İptal</Button>
+                        <Button size="xs" onClick={handleSaveEdit} disabled={isDeleting || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
+                            {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
+                        </Button>
+                    </div>
+                </div>
+            ) : (
+              <div className="allow-text-selection">
+                  <p className="text-sm">{msg.text}</p>
+                  {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5">(düzenlendi)</span>}
+              </div>
+            )}
+            {msg.isOwn && !isEditing && (
+                <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex">
+                     <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleEditMessage}
+                        className="h-6 w-6 text-primary-foreground/60 hover:text-primary-foreground/90"
+                        aria-label="Mesajı Düzenle"
+                        disabled={isDeleting}
+                    >
+                        <Edit2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="h-6 w-6 text-primary-foreground/60 hover:text-destructive-foreground hover:bg-destructive/70"
+                        aria-label="Mesajı Sil"
+                        disabled={isDeleting}
+                    >
+                        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </Button>
+                </div>
             )}
           </div>
+           {/* Reactions Display */}
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
+                <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
+                {Object.entries(msg.reactions).map(([emoji, users]) => {
+                    if (users.length === 0) return null;
+                    const hasReacted = users.includes(currentUser?.uid || "");
+                    return (
+                    <Button
+                        key={emoji}
+                        variant="outline"
+                        size="xs"
+                        className={cn(
+                            "h-6 px-1.5 py-0.5 text-xs rounded-full border-border/50 hover:border-primary/50",
+                            hasReacted ? "bg-primary/10 border-primary/60 text-primary" : "bg-secondary/50 hover:bg-secondary/80"
+                        )}
+                        onClick={() => handleReaction(emoji)}
+                        disabled={!currentUser}
+                    >
+                        <span className="mr-0.5">{emoji}</span>
+                        <span>{users.length}</span>
+                    </Button>
+                    );
+                })}
+                </div>
+            )}
+
+            {/* Reaction Picker - only show if not editing */}
+            {!isEditing && !isMatchSession && ( // Do not show reaction picker in match session
+                <div className={cn("mt-0.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
+                {PREDEFINED_REACTIONS.map(reaction => (
+                    <Button
+                    key={reaction.emoji}
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-primary"
+                    onClick={() => handleReaction(reaction.emoji)}
+                    disabled={!currentUser}
+                    title={reaction.name}
+                    >
+                    {React.cloneElement(reaction.icon as React.ReactElement, {
+                        className: cn("h-4 w-4", (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "") ? "text-primary fill-primary/20" : "")
+                    })}
+                    </Button>
+                ))}
+                </div>
+            )}
           <p className={cn(
               "text-[10px] sm:text-xs mt-1 px-1",
               msg.isOwn ? "text-muted-foreground/70 text-right" : "text-muted-foreground/80 text-left"
           )}>
-              {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Gönderiliyor..."}
+              {msg.timestamp ? formatDistanceToNowStrict(msg.timestamp.toDate(), { addSuffix: true, locale: tr }) : "Gönderiliyor..."}
           </p>
       </div>
       {msg.isOwn && (
@@ -180,3 +347,4 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
 DirectMessageItem.displayName = 'DirectMessageItem';
 export default DirectMessageItem;
 
+    
