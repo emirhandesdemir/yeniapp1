@@ -1,3 +1,4 @@
+import React from "react"; // Eklendi
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Frown } from "lucide-react";
