@@ -26,7 +26,7 @@ import {
 } from "firebase/firestore";
 import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; 
 import { useToast } from "@/hooks/use-toast";
-import { generateDmChatId } from "@/lib/utils";
+import { generateDmChatId, cn } from "@/lib/utils";
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
 import {
   DropdownMenu,
@@ -45,7 +45,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
+import { motion, AnimatePresence } from "framer-motion";
 
 interface DirectMessage {
   id: string;
@@ -70,6 +70,12 @@ interface DmPartnerDetails {
 
 const TYPING_DEBOUNCE_DELAY = 1500;
 
+const messageVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" } },
+};
+
+
 export default function DirectMessagePage() {
   const params = useParams();
   const router = useRouter();
@@ -85,8 +91,8 @@ export default function DirectMessagePage() {
   const { toast } = useToast();
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [isPartnerBlockedByCurrentUser, setIsPartnerBlockedByCurrentUser] = useState(false); // Mevcut kullanıcının DM partnerini engelleyip engellemediği
-  const [isCurrentUserBlockedByPartner, setIsCurrentUserBlockedByPartner] = useState(false); // Mevcut kullanıcının DM partneri tarafından engellenip engellenmediği
+  const [isPartnerBlockedByCurrentUser, setIsPartnerBlockedByCurrentUser] = useState(false);
+  const [isCurrentUserBlockedByPartner, setIsCurrentUserBlockedByPartner] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
 
@@ -171,7 +177,7 @@ export default function DirectMessagePage() {
         userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking"
       })));
       setLoadingMessages(false);
-      setTimeout(() => scrollToBottom(), 0);
+      setTimeout(() => scrollToBottom(), 0); // Ensure scroll after messages are rendered
     }, (error) => {
       console.error("Error fetching DM messages:", error);
       toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
@@ -345,7 +351,7 @@ export default function DirectMessagePage() {
 
   const handleBlockOrUnblockUser = async () => {
     if (!currentUser || !dmPartnerDetails) return;
-    setIsUserLoading(true);
+    setIsUserLoading(true); // Use isUserLoading for consistency, or a new state if needed
     if (isPartnerBlockedByCurrentUser) {
         await unblockUser(dmPartnerDetails.uid);
         setIsPartnerBlockedByCurrentUser(false);
@@ -359,77 +365,73 @@ export default function DirectMessagePage() {
 
   if (loadingDmPartner || !dmPartnerDetails || isUserLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center h-screen">
+      <div className="flex flex-1 items-center justify-center h-screen bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-2 text-lg">Sohbet yükleniyor...</p>
+        <p className="ml-3 text-lg text-muted-foreground">Sohbet yükleniyor...</p>
       </div>
     );
   }
   
   if (isCurrentUserBlockedByPartner) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center h-screen bg-card p-6 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center h-screen bg-card p-6 text-center rounded-xl shadow-lg">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
         <h2 className="text-xl font-semibold text-destructive mb-2">Engellendiniz</h2>
         <p className="text-muted-foreground mb-6">
           {dmPartnerDetails.displayName || "Bu kullanıcı"} tarafından engellendiğiniz için bu sohbeti görüntüleyemezsiniz.
         </p>
-        <Button variant="outline" onClick={() => router.push('/direct-messages')}>
+        <Button variant="outline" onClick={() => router.push('/direct-messages')} className="rounded-lg">
           <ArrowLeft className="mr-2 h-4 w-4" /> Direkt Mesajlara Dön
         </Button>
       </div>
     );
   }
 
-  const userIsCurrentlyPremium = isCurrentUserPremium();
-
   return (
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
-      <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+      <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-            <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
-            <Link href="/direct-messages">
+            <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9 rounded-full text-muted-foreground hover:text-foreground">
+            <Link href="/direct-messages" aria-label="Direkt Mesajlara Dön">
                 <ArrowLeft className="h-5 w-5" />
-                <span className="sr-only">Geri</span>
             </Link>
             </Button>
-            <Link href={`/profile/${dmPartnerDetails.uid}`} className="flex items-center gap-2 min-w-0 relative">
-                <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+            <Link href={`/profile/${dmPartnerDetails.uid}`} className="flex items-center gap-2 min-w-0 relative group">
+                <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
                     <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
-                    <AvatarFallback>{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                    <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
                 </Avatar>
-                {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-6 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow" />}
+                {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
                 <div className="flex-1 min-w-0">
-                    <h2 className="text-sm sm:text-base font-semibold text-foreground hover:underline" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                    <h2 className="text-sm sm:text-base font-semibold text-foreground group-hover:text-primary transition-colors truncate" title={dmPartnerDetails.displayName || "Sohbet"}>{dmPartnerDetails.displayName || "Sohbet"}</h2>
+                    {/* Add online status indicator here if available */}
                 </div>
             </Link>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 text-muted-foreground hover:text-primary" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
+          <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading} aria-label="Sesli Ara">
             <Phone className="h-5 w-5" />
-            <span className="sr-only">Sesli Ara</span>
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 text-muted-foreground hover:text-primary" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
+          <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading} aria-label="Görüntülü Ara (Yakında)">
             <Video className="h-5 w-5" />
-            <span className="sr-only">Görüntülü Ara</span>
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-primary">
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary" disabled={isUserLoading}>
                 <MoreVertical className="h-5 w-5" />
                 <span className="sr-only">Daha Fazla Seçenek</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => router.push(`/profile/${dmPartnerDetails.uid}`)}>
+            <DropdownMenuContent align="end" className="rounded-lg shadow-xl border-border/50">
+              <DropdownMenuItem onClick={() => router.push(`/profile/${dmPartnerDetails.uid}`)} className="cursor-pointer">
                  <UserCircle className="mr-2 h-4 w-4"/> Profili Görüntüle
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)}>
-                <Flag className="mr-2 h-4 w-4 text-orange-500" />
+              <DropdownMenuItem onClick={() => setIsReportDialogOpen(true)} className="cursor-pointer text-orange-600 focus:text-orange-700 focus:bg-orange-500/10">
+                <Flag className="mr-2 h-4 w-4" />
                 Kullanıcıyı Şikayet Et
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleBlockOrUnblockUser} className={isPartnerBlockedByCurrentUser ? "text-green-600 focus:text-green-700 focus:bg-green-500/10" : "text-destructive focus:text-destructive focus:bg-destructive/10"}>
+              <DropdownMenuItem onClick={handleBlockOrUnblockUser} className={cn("cursor-pointer", isPartnerBlockedByCurrentUser ? "text-green-600 focus:text-green-700 focus:bg-green-500/10" : "text-destructive focus:text-destructive focus:bg-destructive/10")}>
                 <Ban className="mr-2 h-4 w-4" />
                 {isPartnerBlockedByCurrentUser ? "Engeli Kaldır" : "Kullanıcıyı Engelle"}
               </DropdownMenuItem>
@@ -439,54 +441,66 @@ export default function DirectMessagePage() {
       </header>
 
     <div className="flex flex-1 overflow-hidden">
-        <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}>
-            {loadingMessages && (
-                <div className="flex flex-1 items-center justify-center py-10">
+      <ScrollArea className="flex-1 p-3 sm:p-4" ref={scrollAreaRef}>
+        <AnimatePresence initial={false}>
+            {loadingMessages && messages.length === 0 && (
+                <motion.div 
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="flex flex-1 items-center justify-center py-10"
+                >
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p>
-                </div>
+                </motion.div>
             )}
             {!loadingMessages && messages.length === 0 && (
-                <div className="text-center text-muted-foreground py-10 px-4">
+                <motion.div 
+                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="text-center text-muted-foreground py-10 px-4"
+                >
                     <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" />
                     <p className="text-lg font-medium">Henüz hiç mesaj yok.</p>
                     <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p>
-                </div>
+                </motion.div>
             )}
 
             {messages.map((msg) => (
-              <DirectMessageItem
+              <motion.div
                 key={msg.id}
-                msg={msg}
-                currentUserPhotoURL={userData?.photoURL || currentUser?.photoURL || undefined}
-                currentUserDisplayName={userData?.displayName || currentUser?.displayName || undefined}
-                currentUserIsPremium={userIsCurrentlyPremium}
-                getAvatarFallbackText={getAvatarFallbackText}
-              />
+                layout
+                variants={messageVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                <DirectMessageItem
+                  msg={msg}
+                  getAvatarFallbackText={getAvatarFallbackText}
+                />
+              </motion.div>
             ))}
+        </AnimatePresence>
         </ScrollArea>
     </div>
 
-      <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
+      <form onSubmit={handleSendMessage} className="p-2.5 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
-            <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" />
+          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner} className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 text-muted-foreground hover:text-primary">
+            <Smile className="h-5 w-5" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
           <Input
             placeholder={isPartnerBlockedByCurrentUser ? "Bu kullanıcıyı engellediniz" : isCurrentUserBlockedByPartner ? "Bu kullanıcı tarafından engellendiniz" : "Mesajınızı yazın..."}
             value={newMessage}
             onChange={handleNewMessageInputChange}
-            className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
+            className="flex-1 pr-[calc(2.5rem+0.5rem+2.25rem)] sm:pr-[calc(2.5rem+0.5rem+2.5rem)] rounded-full h-10 sm:h-11 text-sm bg-muted/50 dark:bg-muted/30 focus:bg-background focus-visible:ring-primary/80"
             autoComplete="off"
             disabled={isSending || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}
           />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
-              <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner} className="h-8 w-8 sm:h-9 sm:w-9 rounded-full hidden sm:inline-flex text-muted-foreground hover:text-primary">
+              <Paperclip className="h-5 w-5" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
-            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
+            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9 shadow-md hover:shadow-lg transition-shadow" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner}>
               {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               <span className="sr-only">Gönder</span>
             </Button>
@@ -508,11 +522,12 @@ export default function DirectMessagePage() {
                 className="w-full p-2 border rounded-md min-h-[80px] text-sm bg-background"
             />
             <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setReportReason("")}>İptal</AlertDialogCancel>
-            <AlertDialogAction onClick={handleReportUserConfirmation} className="bg-destructive hover:bg-destructive/90">Şikayet Et</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setReportReason("")} disabled={isUserLoading}>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReportUserConfirmation} className="bg-destructive hover:bg-destructive/90" disabled={isUserLoading}>Şikayet Et</AlertDialogAction>
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
+
