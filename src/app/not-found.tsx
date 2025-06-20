@@ -1,3 +1,5 @@
+"use client"; // Added to ensure client-side rendering context
+
 import React from "react"; // Eklendi
 import Link from "next/link";
 import { Button } from "@/components/ui/button";

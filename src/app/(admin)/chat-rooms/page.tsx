@@ -1,5 +1,6 @@
 "use client";
 
+import React from 'react';
 import AdminChatRoomsContent from "@/components/admin/sections/AdminChatRoomsContent";
 
 export const dynamic = 'force-dynamic'; // Sayfanın dinamik olarak render edilmesini zorla

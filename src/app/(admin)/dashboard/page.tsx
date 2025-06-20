@@ -1,7 +1,6 @@
-
 "use client";
 
-import React from 'react'; // Added explicit React import
+import React from 'react';
 import AdminDashboardContent from "@/components/admin/sections/AdminDashboardContent";
 
 export const dynamic = 'force-dynamic'; // Sayfanın dinamik olarak render edilmesini zorla

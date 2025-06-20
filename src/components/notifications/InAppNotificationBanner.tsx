@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react'; // Ensured full React import
 import { motion, PanInfo } from 'framer-motion';
 import { X, UserPlus, MessageSquareText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,19 +14,17 @@ interface InAppNotificationBannerProps {
   onDismiss: (id: string) => void;
 }
 
-const AUTO_DISMISS_DURATION = 5000; // 5 saniye olarak güncellendi
+const AUTO_DISMISS_DURATION = 5000;
 
 export default function InAppNotificationBanner({ notification, onDismiss }: InAppNotificationBannerProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
 
-  const handleDismiss = () => {
+  const handleDismiss = React.useCallback(() => {
     if (isExiting) return;
     setIsExiting(true);
-    // Animasyonun bitmesi için kısa bir süre tanıyıp sonra state'ten kaldıralım
-    // Bu doğrudan onDismiss'i çağıracak, context halledecek
     onDismiss(notification.id);
-  };
+  }, [isExiting, notification.id, onDismiss]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -37,10 +34,10 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
       }, AUTO_DISMISS_DURATION);
     }
     return () => clearTimeout(timer);
-  }, [isHovered, notification.id, onDismiss, isExiting]); // handleDismiss bağımlılıklardan çıkarıldı, useCallback ile sarılabilir ama şimdilik sorun yaratmaz
+  }, [isHovered, isExiting, handleDismiss]);
 
   const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.y < -30 || info.velocity.y < -200) { // Eşik değerler biraz düşürüldü
+    if (info.offset.y < -30 || info.velocity.y < -200) {
       handleDismiss();
     }
   };
@@ -52,7 +49,7 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
       case 'new_dm':
         return <MessageSquareText className="h-6 w-6 text-green-500" />;
       default:
-        return <UserPlus className="h-6 w-6 text-primary" />; // Varsayılan ikon
+        return <UserPlus className="h-6 w-6 text-primary" />; 
     }
   };
 
@@ -69,17 +66,17 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
       exit={{ opacity: 0, y: -100, transition: { duration: 0.3, ease: "easeIn" } }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       drag="y"
-      dragConstraints={{ top: 0, bottom: 0 }} // Sadece dikey sürüklemeye izin ver
-      dragElastic={0.2} // Sürükleme direncini ayarla
+      dragConstraints={{ top: 0, bottom: 0 }} 
+      dragElastic={0.2} 
       onDragEnd={handleDragEnd}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "fixed top-4 left-1/2 -translate-x-1/2 z-[150] w-[calc(100%-2rem)] max-w-md p-1 rounded-xl shadow-2xl cursor-grab active:cursor-grabbing",
-        "bg-card border border-border/60 backdrop-blur-lg bg-opacity-90 dark:bg-opacity-80", // Opaklık biraz artırıldı
+        "bg-card border border-border/60 backdrop-blur-lg bg-opacity-90 dark:bg-opacity-80", 
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       )}
-      style={{ WebkitBackdropFilter: 'blur(12px)'}} // Safari için backdrop-filter
+      style={{ WebkitBackdropFilter: 'blur(12px)'}} 
       aria-live="assertive"
       aria-atomic="true"
       role="alertdialog"
@@ -106,7 +103,7 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
         <Button
           variant="ghost"
           size="icon"
-          onClick={(e) => { e.stopPropagation(); handleDismiss(); }} // Event'in yayılmasını engelle
+          onClick={(e) => { e.stopPropagation(); handleDismiss(); }} 
           className="h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0 ml-auto -mr-1 -mt-1"
           aria-label="Bildirimi kapat"
         >
@@ -122,10 +119,8 @@ export default function InAppNotificationBanner({ notification, onDismiss }: InA
   if (notification.link) {
     return (
       <Link href={notification.link} onClick={(e) => { 
-          // e.preventDefault(); // Linke gitmeyi engellememek için kaldırıldı, ama handleDismiss çağrılmalı
           handleDismiss(); 
-          // router.push(notification.link) çağrısı burada yapılabilir veya Link'in kendi davranışı yeterli olacaktır.
-      }} className="focus:outline-none" draggable="false"> {/* draggable false eklendi */}
+      }} className="focus:outline-none" draggable="false"> 
         {content}
       </Link>
     );
