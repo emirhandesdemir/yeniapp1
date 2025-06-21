@@ -96,6 +96,7 @@ interface Message {
   mentionedUserIds?: string[];
   editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
+  systemMessageType?: 'premium_join' | 'normal_join';
 }
 
 interface ChatRoomDetails {
@@ -287,7 +288,6 @@ export default function ChatRoomPage() {
   }, []);
 
   const handleStartEdit = (messageId: string, text: string) => {
-    // This function will be called from ChatMessageItem
     console.log("Not implemented, but would start editing for", messageId);
   };
 
@@ -1263,7 +1263,15 @@ export default function ChatRoomPage() {
       setIsCurrentUserParticipant(true);
       toast({ title: "Odaya Katıldınız!", description: `${roomDetails.name} odasına başarıyla katıldınız.` });
       const userDisplayNameForJoin = userData.displayName || currentUser.displayName || "Bir kullanıcı";
-      await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[SİSTEM] ${userDisplayNameForJoin} odaya katıldı.`, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true });
+      await addDoc(collection(db, `chatRooms/${roomId}/messages`), { 
+          text: `[SİSTEM] ${userDisplayNameForJoin} odaya katıldı.`, 
+          senderId: "system", 
+          senderName: "Sistem", 
+          senderAvatar: null, 
+          timestamp: serverTimestamp(), 
+          isGameMessage: true, 
+          systemMessageType: userIsCurrentlyPremium ? 'premium_join' : 'normal_join',
+      });
 
       if (globalGameSettings?.isGameEnabled && currentRoomData.isGameEnabledInRoom) {
         let gameInfoMessage = `[BİLGİ] Hoş geldin ${userDisplayNameForJoin}! `;
@@ -1340,7 +1348,7 @@ export default function ChatRoomPage() {
     const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
       const fetchedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, isChestMessage: data.isChestMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
+      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, isChestMessage: data.isChestMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions, systemMessageType: data.systemMessageType }); });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
       setLoadingMessages(false);
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
@@ -2015,4 +2023,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-

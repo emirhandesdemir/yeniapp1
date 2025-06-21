@@ -88,6 +88,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `timestamp`: (Timestamp) Mesajın gönderildiği zaman.
       - `isGameMessage`: (Boolean, isteğe bağlı) Sistemsel bir oyun mesajı olup olmadığı.
       - `isChestMessage`: (Boolean, isteğe bağlı) Sistemsel bir sandık mesajı olup olmadığı.
+      - `systemMessageType`: (String, isteğe bağlı) Sistemsel mesajın tipini belirtir (örn: 'premium_join', 'normal_join').
       - `mentionedUserIds`: (Array<String>, isteğe bağlı) Mesajda etiketlenen kullanıcıların UID'leri.
       - `editedAt`: (Timestamp, nullable) Mesajın son düzenlenme zamanı.
       - `reactions`: (Map<String, Array<String>>, nullable) Mesaja verilen tepkiler. Anahtar emoji (örn: "👍"), değer tepkiyi veren kullanıcı UID'lerinin listesi. Örnek: `{ "👍": ["uid1", "uid2"], "❤️": ["uid3"] }`
@@ -369,6 +370,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth.uid == userId;
       allow update: if request.auth.uid == userId || isUserAdmin(request.auth.uid);
+      allow delete: if isUserAdmin(request.auth.uid); // Kullanıcıları sadece adminler silebilir.
+      
       match /confirmedFriends/{friendId} {
         allow read, write: if request.auth.uid == userId;
       }
@@ -430,12 +433,12 @@ service cloud.firestore {
       allow read: if request.auth.uid != null;
       allow create: if request.auth.uid == request.resource.data.userId;
       allow update: if request.auth.uid == resource.data.userId;
-      allow delete: if request.auth.uid == resource.data.userId;
+      allow delete: if request.auth.uid == resource.data.userId || isUserAdmin(request.auth.uid);
 
       match /comments/{commentId} {
         allow read: if request.auth.uid != null;
         allow create: if request.auth.uid == request.resource.data.userId;
-        allow delete: if request.auth.uid == resource.data.userId;
+        allow delete: if request.auth.uid == resource.data.userId || isUserAdmin(request.auth.uid);
       }
     }
 
@@ -489,6 +492,8 @@ service cloud.firestore {
   }
 }
 \`\`\`
+
+
 
 
 

@@ -5,7 +5,7 @@ import { useState, useEffect, type ChangeEvent, useRef, useCallback, useMemo } f
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2, Settings, Edit3, LogOutIcon, LayoutDashboard, Save, ExternalLink, Brush, Framer, MessageSquare, CheckCircle } from "lucide-react";
+import { Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2, Settings, Edit3, LogOutIcon, LayoutDashboard, Save, ExternalLink, Brush, Framer, MessageSquare, CheckCircle, Lock } from "lucide-react";
 import { useAuth, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -27,6 +27,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
 
 const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'system', label: 'Sistem Varsayılanı' },
@@ -35,23 +42,25 @@ const themeOptions: { value: ThemeSetting; label: string }[] = [
 ];
 
 const bubbleStyles = [
-  { id: 'default', name: 'Varsayılan' },
-  { id: 'sparkle', name: 'Parıltı' },
-  { id: 'neon-green', name: 'Neon Yeşil' },
-  { id: 'gradient-blue', name: 'Mavi Gradient' },
-  { id: 'gradient-purple', name: 'Mor Gradient' },
-  { id: 'striped', name: 'Çizgili' },
-  { id: 'snake', name: 'Yılan' },
+  { id: 'default', name: 'Varsayılan', premium: false },
+  { id: 'premium-gold', name: 'Altın Destan', premium: true },
+  { id: 'sparkle', name: 'Parıltı', premium: false },
+  { id: 'neon-green', name: 'Neon Yeşil', premium: false },
+  { id: 'gradient-blue', name: 'Mavi Gradient', premium: false },
+  { id: 'gradient-purple', name: 'Mor Gradient', premium: false },
+  { id: 'striped', name: 'Çizgili', premium: false },
+  { id: 'snake', name: 'Yılan', premium: false },
 ];
 
 const avatarFrameStyles = [
-  { id: 'default', name: 'Yok' },
-  { id: 'gold', name: 'Altın' },
-  { id: 'silver', name: 'Gümüş' },
-  { id: 'neon-pink', name: 'Neon Pembe' },
-  { id: 'angel-wings', name: 'Melek Kanatları' },
-  { id: 'tech-ring', name: 'Teknoloji Halkası' },
-  { id: 'snake', name: 'Yılan' },
+  { id: 'default', name: 'Yok', premium: false },
+  { id: 'premium-gold', name: 'Altın Taç', premium: true },
+  { id: 'gold', name: 'Altın', premium: false },
+  { id: 'silver', name: 'Gümüş', premium: false },
+  { id: 'neon-pink', name: 'Neon Pembe', premium: false },
+  { id: 'angel-wings', name: 'Melek Kanatları', premium: false },
+  { id: 'tech-ring', name: 'Teknoloji Halkası', premium: false },
+  { id: 'snake', name: 'Yılan', premium: false },
 ];
 
 const sectionVariants = {
@@ -246,6 +255,45 @@ export default function SettingsPage() {
   
   const isCurrentlyPremium = isCurrentUserPremium();
 
+  const renderStyleButton = (style: { id: string, name: string, premium?: boolean }, type: 'bubble' | 'frame') => {
+    const isLocked = style.premium && !isCurrentlyPremium;
+    const isSelected = type === 'bubble' ? selectedBubbleStyle === style.id : selectedFrameStyle === style.id;
+
+    const buttonContent = (
+      <>
+        {isLocked && <Lock className="absolute h-4 w-4 text-background/80" />}
+        {isSelected && !isLocked && <CheckCircle className="mr-2 h-4 w-4"/>} 
+        <span className={cn(isLocked && "opacity-50")}>{style.name}</span>
+      </>
+    );
+
+    if (isLocked) {
+      return (
+        <TooltipProvider key={style.id}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Link href="/store" className="w-full">
+                        <Button variant="outline" size="sm" className="w-full relative justify-center">
+                           {buttonContent}
+                        </Button>
+                    </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>Bu özellik için Premium gerekir.</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+      );
+    }
+    
+    return (
+        <Button key={style.id} variant={isSelected ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange(type, style.id)}>
+            {buttonContent}
+        </Button>
+    );
+  };
+
+
   return (
     <div className="space-y-6">
       <motion.div custom={0} variants={sectionVariants} initial="hidden" animate="visible">
@@ -312,11 +360,7 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {enabledBubbleStyles.map(style => (
-                                    <Button key={style.id} variant={selectedBubbleStyle === style.id ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange('bubble', style.id)}>
-                                        {selectedBubbleStyle === style.id && <CheckCircle className="mr-2 h-4 w-4"/>} {style.name}
-                                    </Button>
-                                ))}
+                                {enabledBubbleStyles.map(style => renderStyleButton(style, 'bubble'))}
                             </div>
                         </AccordionContent>
                     </AccordionItem>
@@ -332,11 +376,7 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {enabledAvatarFrameStyles.map(style => (
-                                    <Button key={style.id} variant={selectedFrameStyle === style.id ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange('frame', style.id)}>
-                                       {selectedFrameStyle === style.id && <CheckCircle className="mr-2 h-4 w-4"/>} {style.name}
-                                    </Button>
-                                ))}
+                               {enabledAvatarFrameStyles.map(style => renderStyleButton(style, 'frame'))}
                             </div>
                         </AccordionContent>
                     </AccordionItem>

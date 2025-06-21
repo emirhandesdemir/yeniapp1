@@ -54,6 +54,7 @@ interface Message {
   mentionedUserIds?: string[];
   editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
+  systemMessageType?: 'premium_join' | 'normal_join';
 }
 
 interface ChatMessageItemProps {
@@ -138,7 +139,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       checkIfUserBlocked(msg.senderId).then(setIsTargetUserBlocked);
     }
   }, [popoverOpenForUserId, msg.senderId, popoverTargetUser, currentUserUid, checkIfUserBlocked]);
-
+  
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
         setIsMenuOpen(true);
@@ -285,30 +286,36 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     });
   }, []);
 
-
-  const getSystemMessageContent = (message: Message) => {
-    let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
-    if (message.text.toLowerCase().includes("tebrikler")) {
-        icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
-    } else if (message.text.toLowerCase().includes("ipucu")) {
-        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
-    } else if (message.isChestMessage) {
-        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
+  if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
+    const isPremiumJoin = msg.systemMessageType === 'premium_join';
+    let icon;
+    if (isPremiumJoin) {
+      icon = <Star className="inline h-4 w-4 mr-1.5" />;
+    } else if (msg.text.toLowerCase().includes("tebrikler")) {
+      icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
+    } else if (msg.text.toLowerCase().includes("ipucu")) {
+      icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
+    } else if (msg.isChestMessage) {
+      icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
+    } else {
+      icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
     }
-    return (
-        <>
-            {icon}
-            <span className="font-medium text-foreground/80">{message.senderName}: </span>
-            {message.text}
-        </>
-    );
-};
-
-if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
+  
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
-        <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
-           {getSystemMessageContent(msg)}
+        <div className={cn(
+          "text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm",
+          isPremiumJoin && "system-message-premium-join"
+        )}>
+          {icon}
+          {isPremiumJoin ? (
+            <span className="font-semibold">{msg.text.replace('[SİSTEM] ', '')}</span>
+          ) : (
+            <>
+              <span className="font-medium text-foreground/80">{msg.senderName}: </span>
+              {msg.text}
+            </>
+          )}
         </div>
       </div>
     );
@@ -446,7 +453,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
                     onContextMenu={handleContextMenu}
                     className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble cursor-pointer", bubbleClasses)}
                 >
-                    {isEditing ? (
+                     {isEditing ? (
                         <div className="space-y-2 w-full">
                             <Textarea
                                 ref={editInputRef}
@@ -511,7 +518,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
            </DropdownMenu>
 
             {/* Reactions Display */}
-            {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
+            {!isEditing && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
                     if (!users || users.length === 0) return null;

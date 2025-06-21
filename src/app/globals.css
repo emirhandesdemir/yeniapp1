@@ -169,6 +169,35 @@ textarea {
   animation: snake-background-animation 4s ease infinite;
 }
 
+/* Premium Gold Bubble */
+.bubble-premium-gold {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #fde047, #d97706) !important; /* amber-300 to amber-600 */
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid hsl(43 96% 56% / 0.5); /* amber-400 */
+  box-shadow: 0 2px 10px rgba(252, 211, 77, 0.3);
+}
+
+.bubble-premium-gold::before {
+  content: '✨ 💎 👑';
+  position: absolute;
+  top: 100%;
+  left: 20%;
+  font-size: 1.2rem;
+  opacity: 0;
+  animation: float-gold-emojis 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes float-gold-emojis {
+  0% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 0.3; }
+  75% { opacity: 0.3; }
+  100% { transform: translateY(-150px); opacity: 0; }
+}
+
+
 /* Chest animation */
 @keyframes chest-pulse {
   0%, 100% {
@@ -185,7 +214,6 @@ textarea {
   animation: chest-pulse 2.5s ease-in-out infinite;
 }
 
-
 /* Avatar Frame Styles */
 [class^="avatar-frame-"] {
   position: relative;
@@ -197,7 +225,7 @@ textarea {
 .avatar-frame-default {
   padding: 0;
 }
-.avatar-frame-gold, .avatar-frame-silver, .avatar-frame-neon-pink {
+.avatar-frame-gold, .avatar-frame-silver, .avatar-frame-neon-pink, .avatar-frame-premium-gold {
   padding: 2px;
   border-radius: 9999px;
 }
@@ -294,6 +322,24 @@ textarea {
   animation: snake-border-animation 3s linear infinite;
 }
 
+/* New Premium Gold Avatar Frame */
+@keyframes gold-frame-pulse {
+    0%, 100% {
+        box-shadow: 0 0 12px 2px rgba(250, 204, 21, 0.7);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 16px 4px rgba(252, 211, 77, 0.5);
+        transform: scale(1.02);
+    }
+}
+.avatar-frame-premium-gold {
+  padding: 3px;
+  background: linear-gradient(45deg, #facc15, #f59e0b, #d97706); /* yellow-400, amber-500, amber-600 */
+  animation: gold-frame-pulse 4s ease-in-out infinite;
+}
+
+
 /* Game Card Animation */
 @keyframes glowing-border {
   0% { border-color: hsl(var(--primary) / 0.5); box-shadow: 0 0 5px hsl(var(--primary) / 0.2); }
@@ -326,3 +372,24 @@ textarea {
   background-clip: text;
   color: transparent;
 }
+
+
+/* New Premium Join System Message */
+@keyframes gold-text-pulse-glow {
+  0%, 100% {
+    text-shadow: 0 0 4px hsl(43 96% 56% / 0.5);
+    transform: scale(1);
+  }
+  50% {
+    text-shadow: 0 0 12px hsl(43 96% 56% / 0.8);
+    transform: scale(1.01);
+  }
+}
+.system-message-premium-join {
+  font-weight: 600 !important; /* semibold */
+  color: hsl(43 96% 56%) !important; /* amber-400 */
+  border-image: linear-gradient(to right, hsl(43 96% 56% / 0.7), hsl(38 92% 50% / 0.7)) 1;
+  animation: gold-text-pulse-glow 3s ease-in-out infinite;
+  background-image: linear-gradient(to top, hsl(var(--background)), hsl(var(--background)/0.5)) !important;
+}
+
