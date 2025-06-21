@@ -97,6 +97,8 @@ interface ChatRoomDetails {
   currentGameAnswerDeadline?: Timestamp | null;
   image?: string;
   imageAiHint?: string;
+  isActive?: boolean;
+  lastMessageAt?: Timestamp;
 }
 
 export interface ActiveTextParticipant {
@@ -1171,6 +1173,16 @@ export default function ChatRoomPage() {
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
       if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) { setIsRoomFullError(true); toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); setIsProcessingJoinLeave(false); return; }
 
+      // Check and correct stale active status on join
+      if (currentRoomData.isActive && currentRoomData.lastMessageAt) {
+          const threeMinutesAgo = new Date();
+          threeMinutesAgo.setMinutes(threeMinutesAgo.getMinutes() - 3);
+          if (currentRoomData.lastMessageAt.toDate() < threeMinutesAgo) {
+              console.log(`[Activity Check] Room ${roomId} is stale. Deactivating on join.`);
+              await updateDoc(roomRef, { isActive: false, activeSince: null });
+          }
+      }
+
       const batch = writeBatch(db);
       batch.set(participantRef, {
           joinedAt: serverTimestamp(),
@@ -1244,6 +1256,8 @@ export default function ChatRoomPage() {
             currentGameAnswerDeadline: data.currentGameAnswerDeadline,
             image: data.image,
             imageAiHint: data.imageAiHint,
+            isActive: data.isActive || false,
+            lastMessageAt: data.lastMessageAt,
         };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
@@ -1320,9 +1334,10 @@ export default function ChatRoomPage() {
       return;
     }
 
-    setIsSending(true); const tempMessage = newMessage.trim();
+    setIsSending(true);
+    const tempMessage = newMessage.trim();
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
-    updateUserTypingStatus(false); const roomDocRef = doc(db, "chatRooms", roomId);
+    updateUserTypingStatus(false);
     const userIsCurrentlyPremium = isCurrentUserPremium();
 
     const mentionedUserIds: string[] = [];
@@ -1349,6 +1364,7 @@ export default function ChatRoomPage() {
         toast({ title: "Süre Doldu!", description: "Bu soru için cevap süresi doldu.", variant: "destructive" });
         setIsSending(false); return;
       }
+      const roomDocRef = doc(db, "chatRooms", roomId); // Moved here to be available for game logic
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) { toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive" }); setIsSending(false); return; }
         try { await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST); toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 }); await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Ustası", timestamp: serverTimestamp(), isGameMessage: true }); } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive" }); } finally { setNewMessage(""); setIsSending(false); } return;
@@ -1362,7 +1378,23 @@ export default function ChatRoomPage() {
       }
     }
     try {
-        await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+        const batch = writeBatch(db);
+        const roomRef = doc(db, "chatRooms", roomId);
+
+        const roomSnap = await getDoc(roomRef);
+        if (roomSnap.exists()) {
+            const roomData = roomSnap.data();
+            const updates: {[key: string]: any} = {
+                lastMessageAt: serverTimestamp()
+            };
+            if (!roomData.isActive && (roomData.participantCount ?? 0) >= 5) {
+                updates.isActive = true;
+                updates.activeSince = serverTimestamp();
+            }
+            batch.update(roomRef, updates);
+        }
+        
+        batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
             text: tempMessage,
             senderId: currentUser.uid,
             senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
@@ -1374,6 +1406,9 @@ export default function ChatRoomPage() {
             editedAt: null,
             reactions: {},
         });
+        
+        await batch.commit();
+        
         setNewMessage("");
         lastMessageTimesRef.current.push(now);
     } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); }
@@ -1587,180 +1622,190 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <>
-    <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
-      {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
-        console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
-        return (
-          <audio
-            key={uid}
-            autoPlay
-            playsInline
-            controls={process.env.NODE_ENV === 'development'}
-            ref={audioEl => {
-              if (audioEl) {
-                if (audioEl.srcObject !== stream) {
-                    console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
-                    audioEl.srcObject = stream;
-                }
-                if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) {
-                     audioEl.play().catch(error => {
-                        if (error.name !== 'AbortError') {
-                             console.warn(`[WebRTC RENDER REF] Error explicitly playing audio for ${uid}:`, error);
-                        }
-                     });
-                }
-              }
-            }}
-          />
-        )
-      })}
-
-      {showGameQuestionCard && activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled && ( <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} countdown={questionAnswerCountdown} /> )}
-      <header className="flex items-center justify-between gap-2 p-3 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-20">
-        <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
-           <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
-            <Link href="/chat">
-              <>
-                <ArrowLeft className="h-5 w-5" />
-                <span className="sr-only">Geri</span>
-              </>
-            </Link>
-          </Button>
-          <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
-            <AvatarImage src={roomDetails.image || `https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint={roomDetails.imageAiHint || "group chat"} />
-            <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-semibold text-foreground truncate" title={roomDetails.name}>{roomDetails.name}</h2>
-              {isCurrentUserRoomCreator && <Crown className="h-4 w-4 text-yellow-500 flex-shrink-0" title="Oda Sahibi" />}
-              {roomDetails.creatorIsPremium && <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" title="Premium Oda Sahibi" />}
-              {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)}
-            </div>
-            <div className="flex items-center text-xs text-muted-foreground gap-x-2 flex-wrap">
-                {roomDetails.expiresAt && (<div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getPreciseExpiryInfo()}>{getPreciseExpiryInfo()}</span> </div>)}
-                {globalGameSettings?.isGameEnabled && (
-                    <Badge variant="outline" className={cn("flex items-center gap-1 border-none px-1 py-0.5", roomDetails.isGameEnabledInRoom ? 'text-green-600 bg-green-500/10' : 'text-red-600 bg-red-500/10')}>
-                        <Gamepad2 className="h-3 w-3" />
-                        {roomDetails.isGameEnabledInRoom ? 'Oyun Aktif' : 'Oyun Kapalı'}
-                    </Badge>
-                )}
-                {roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && (<div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}><Puzzle className="mr-1 h-3.5 w-3.5 text-primary" /> <span className="text-xs text-muted-foreground font-mono"> {formatCountdown(nextQuestionCountdown)} </span></div>)}
-                {roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && questionAnswerCountdown !== null && activeGameQuestion && (<div className="flex items-center truncate ml-2 border-l pl-2 border-destructive/70" title={`Soruya cevap vermek için kalan süre: ${formatCountdown(questionAnswerCountdown)}`}><Gamepad2 className="mr-1 h-3.5 w-3.5 text-destructive" /> <span className="text-xs text-destructive font-mono"> {formatCountdown(questionAnswerCountdown)} </span></div>)}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1 sm:gap-2">
-          <Popover><PopoverTrigger asChild><Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5"> <UsersRound className="h-4 w-4" /> <span className="text-xs">{activeTextParticipants.length}/{roomDetails.maxParticipants}</span> </Button></PopoverTrigger>
-            <PopoverContent className="w-72 p-0"><div className="p-2.5 border-b"><h3 className="text-xs font-medium text-center text-muted-foreground"> Metin Sohbeti Katılımcıları ({activeTextParticipants.length}/{roomDetails.maxParticipants}) </h3></div>
-              <ScrollArea className="max-h-60"> {activeTextParticipants.length === 0 && !isProcessingJoinLeave && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" /> Odada kimse yok. </div>)} {isProcessingJoinLeave && activeTextParticipants.length === 0 && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" /> Yükleniyor... </div>)}
-                <ul className="divide-y divide-border">
-                  {activeTextParticipants.map(participant => {
-                    const activityStatus = getParticipantActivityStatus(participant);
-                    const isActiveNow = activityStatus === "Aktif";
-                    return (
-                    <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
-                      <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="flex-shrink-0 cursor-pointer relative">
-                          <Avatar className="h-7 w-7">
-                              <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar" />
-                              <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
-                          </Avatar>
-                          {isActiveNow && <Dot className="absolute -bottom-1 -right-1 h-5 w-5 text-green-500 fill-green-500" />}
-                          {participant.isPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="cursor-pointer">
-                            <span className="text-xs font-medium truncate text-muted-foreground block hover:underline">{participant.displayName || "Bilinmeyen"}{participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}</span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground/70 block">
-                            {isActiveNow ? <span className="text-green-600 dark:text-green-400 font-medium">Odada Aktif</span> : activityStatus}
-                        </span>
-                      </div>
-                      {isCurrentUserRoomCreator && participant.id !== currentUser?.uid && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive/70 hover:text-destructive" onClick={() => handleKickParticipantFromTextChat(participant.id, participant.displayName || undefined)} title="Odadan At">
-                              <LogOut className="h-3.5 w-3.5"/>
-                          </Button>
-                      )}
-                    </li>
-                  )})}
-                </ul>
-              </ScrollArea>
-            </PopoverContent>
-          </Popover>
-          {currentUser && roomDetails.creatorId === currentUser.uid && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
-                  <MoreVertical className="h-5 w-5" /><span className="sr-only">Oda Seçenekleri</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setIsEditRoomModalOpen(true)}>
-                    <SettingsIcon className="mr-2 h-4 w-4" /> Oda Ayarları
-                </DropdownMenuItem>
-                {!isRoomExpired && roomDetails.expiresAt && (
-                  <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading || isIncreasingCapacity}>
-                    {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                    Süre Uzat
-                  </DropdownMenuItem>
-                )}
-                {!userIsCurrentlyPremium && roomDetails.maxParticipants < PREMIUM_USER_ROOM_CAPACITY && (
-                   <DropdownMenuItem onClick={handleIncreaseCapacity} disabled={isIncreasingCapacity || isUserLoading || isExtending}>
-                    {isIncreasingCapacity ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                    Katılımcı Artır
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                  <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </header>
-      <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
-      <div className="flex flex-1 overflow-hidden">
-        <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-          {messages.map((msg) => {
-            const senderIsActiveText = activeTextParticipants.some(p => p.id === msg.senderId && differenceInMinutes(new Date(), p.lastSeen?.toDate() || new Date(0)) < ACTIVE_IN_ROOM_THRESHOLD_MINUTES);
-            const senderIsActiveVoice = activeVoiceParticipants.some(p => p.id === msg.senderId);
-            const isActiveInRoom = senderIsActiveText || senderIsActiveVoice;
+    <div className="relative h-screen w-screen">
+       {roomDetails.image && (
+        <Image
+            src={roomDetails.image}
+            alt={`${roomDetails.name} background`}
+            fill
+            priority
+            className="object-cover blur-md brightness-[0.6]"
+            data-ai-hint={roomDetails.imageAiHint || "room background"}
+        />
+      )}
+      <div className="relative z-10 flex flex-col h-screen bg-card/80 backdrop-blur-sm overflow-hidden">
+        {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
+            console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
             return (
-            <ChatMessageItem
-              key={msg.id}
-              msg={msg}
-              currentUserUid={currentUser?.uid}
-              popoverOpenForUserId={popoverOpenForUserId}
-              onOpenUserInfoPopover={handleOpenUserInfoPopover}
-              setPopoverOpenForUserId={setPopoverOpenForUserId}
-              popoverLoading={popoverLoading}
-              popoverTargetUser={popoverTargetUser}
-              friendshipStatus={friendshipStatus}
-              relevantFriendRequest={relevantFriendRequest}
-              onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
-              onSendFriendRequestPopover={handleSendFriendRequestPopover}
-              onDmAction={handleDmAction}
-              onViewProfileAction={handleViewProfileAction}
-              getAvatarFallbackText={getAvatarFallbackText}
-              isCurrentUserRoomCreator={isCurrentUserRoomCreator}
-              onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
-              roomId={roomId}
-              isActiveParticipant={isActiveInRoom}
-              onMessageDeleted={handleMessageDeleted}
-              onMessageEdited={handleMessageEdited}
+            <audio
+                key={uid}
+                autoPlay
+                playsInline
+                controls={process.env.NODE_ENV === 'development'}
+                ref={audioEl => {
+                if (audioEl) {
+                    if (audioEl.srcObject !== stream) {
+                        console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
+                        audioEl.srcObject = stream;
+                    }
+                    if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) {
+                        audioEl.play().catch(error => {
+                            if (error.name !== 'AbortError') {
+                                console.warn(`[WebRTC RENDER REF] Error explicitly playing audio for ${uid}:`, error);
+                            }
+                        });
+                    }
+                }
+                }}
             />
-          )})}
-        </ScrollArea>
-      </div>
-      <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
-        <div className="relative flex items-center gap-2"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button> <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
+            )
+        })}
+
+        {showGameQuestionCard && activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled && ( <GameQuestionCard question={activeGameQuestion} onClose={handleCloseGameQuestionCard} reward={FIXED_GAME_REWARD} countdown={questionAnswerCountdown} /> )}
+        <header className="flex items-center justify-between gap-2 p-3 border-b border-white/10 bg-black/20 sticky top-0 z-20">
+            <div className="flex items-center justify-start gap-3 flex-1 min-w-0">
+            <Button variant="ghost" size="icon" asChild className="flex-shrink-0 h-9 w-9">
+                <Link href="/chat">
+                <>
+                    <ArrowLeft className="h-5 w-5" />
+                    <span className="sr-only">Geri</span>
+                </>
+                </Link>
+            </Button>
+            <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0">
+                <AvatarImage src={roomDetails.image || `https://placehold.co/40x40.png?text=${roomDetails.name.substring(0, 1)}`} data-ai-hint={roomDetails.imageAiHint || "group chat"} />
+                <AvatarFallback>{getAvatarFallbackText(roomDetails.name)}</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-semibold text-foreground truncate" title={roomDetails.name}>{roomDetails.name}</h2>
+                {isCurrentUserRoomCreator && <Crown className="h-4 w-4 text-yellow-500 flex-shrink-0" title="Oda Sahibi" />}
+                {roomDetails.creatorIsPremium && <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" title="Premium Oda Sahibi" />}
+                {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)}
+                </div>
+                <div className="flex items-center text-xs text-muted-foreground gap-x-2 flex-wrap">
+                    {roomDetails.expiresAt && (<div className="flex items-center truncate"> <Clock className="mr-1 h-3 w-3" /> <span className="truncate" title={getPreciseExpiryInfo()}>{getPreciseExpiryInfo()}</span> </div>)}
+                    {globalGameSettings?.isGameEnabled && (
+                        <Badge variant="outline" className={cn("flex items-center gap-1 border-none px-1 py-0.5", roomDetails.isGameEnabledInRoom ? 'text-green-600 bg-green-500/10' : 'text-red-600 bg-red-500/10')}>
+                            <Gamepad2 className="h-3 w-3" />
+                            {roomDetails.isGameEnabledInRoom ? 'Oyun Aktif' : 'Oyun Kapalı'}
+                        </Badge>
+                    )}
+                    {roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && nextQuestionCountdown !== null && !activeGameQuestion && formatCountdown(nextQuestionCountdown) && (<div className="flex items-center truncate ml-2 border-l pl-2 border-muted-foreground/30" title={`Sonraki soruya kalan süre: ${formatCountdown(nextQuestionCountdown)}`}><Puzzle className="mr-1 h-3.5 w-3.5 text-primary" /> <span className="text-xs text-muted-foreground font-mono"> {formatCountdown(nextQuestionCountdown)} </span></div>)}
+                    {roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled && isCurrentUserParticipantRef.current && questionAnswerCountdown !== null && activeGameQuestion && (<div className="flex items-center truncate ml-2 border-l pl-2 border-destructive/70" title={`Soruya cevap vermek için kalan süre: ${formatCountdown(questionAnswerCountdown)}`}><Gamepad2 className="mr-1 h-3.5 w-3.5 text-destructive" /> <span className="text-xs text-destructive font-mono"> {formatCountdown(questionAnswerCountdown)} </span></div>)}
+                </div>
+            </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2">
+            <Popover><PopoverTrigger asChild><Button variant="ghost" size="sm" className="flex items-center gap-1.5 h-9 px-2.5"> <UsersRound className="h-4 w-4" /> <span className="text-xs">{activeTextParticipants.length}/{roomDetails.maxParticipants}</span> </Button></PopoverTrigger>
+                <PopoverContent className="w-72 p-0"><div className="p-2.5 border-b"><h3 className="text-xs font-medium text-center text-muted-foreground"> Metin Sohbeti Katılımcıları ({activeTextParticipants.length}/{roomDetails.maxParticipants}) </h3></div>
+                <ScrollArea className="max-h-60"> {activeTextParticipants.length === 0 && !isProcessingJoinLeave && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Users className="mx-auto h-6 w-6 mb-1 text-muted-foreground/50" /> Odada kimse yok. </div>)} {isProcessingJoinLeave && activeTextParticipants.length === 0 && (<div className="text-center text-xs text-muted-foreground py-3 px-2"> <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary mb-0.5" /> Yükleniyor... </div>)}
+                    <ul className="divide-y divide-border">
+                    {activeTextParticipants.map(participant => {
+                        const activityStatus = getParticipantActivityStatus(participant);
+                        const isActiveNow = activityStatus === "Aktif";
+                        return (
+                        <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
+                        <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="flex-shrink-0 cursor-pointer relative">
+                            <Avatar className="h-7 w-7">
+                                <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar" />
+                                <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
+                            </Avatar>
+                            {isActiveNow && <Dot className="absolute -bottom-1 -right-1 h-5 w-5 text-green-500 fill-green-500" />}
+                            {participant.isPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="cursor-pointer">
+                                <span className="text-xs font-medium truncate text-muted-foreground block hover:underline">{participant.displayName || "Bilinmeyen"}{participant.isTyping && <Pencil className="inline h-3 w-3 ml-1.5 text-primary animate-pulse" />}</span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground/70 block">
+                                {isActiveNow ? <span className="text-green-600 dark:text-green-400 font-medium">Odada Aktif</span> : activityStatus}
+                            </span>
+                        </div>
+                        {isCurrentUserRoomCreator && participant.id !== currentUser?.uid && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive/70 hover:text-destructive" onClick={() => handleKickParticipantFromTextChat(participant.id, participant.displayName || undefined)} title="Odadan At">
+                                <LogOut className="h-3.5 w-3.5"/>
+                            </Button>
+                        )}
+                        </li>
+                    )})}
+                    </ul>
+                </ScrollArea>
+                </PopoverContent>
+            </Popover>
+            {currentUser && roomDetails.creatorId === currentUser.uid && (
+                <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="flex-shrink-0 h-9 w-9">
+                    <MoreVertical className="h-5 w-5" /><span className="sr-only">Oda Seçenekleri</span>
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setIsEditRoomModalOpen(true)}>
+                        <SettingsIcon className="mr-2 h-4 w-4" /> Oda Ayarları
+                    </DropdownMenuItem>
+                    {!isRoomExpired && roomDetails.expiresAt && (
+                    <DropdownMenuItem onClick={handleExtendDuration} disabled={isExtending || isUserLoading || isIncreasingCapacity}>
+                        {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Süre Uzat
+                    </DropdownMenuItem>
+                    )}
+                    {!userIsCurrentlyPremium && roomDetails.maxParticipants < PREMIUM_USER_ROOM_CAPACITY && (
+                    <DropdownMenuItem onClick={handleIncreaseCapacity} disabled={isIncreasingCapacity || isUserLoading || isExtending}>
+                        {isIncreasingCapacity ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                        Katılımcı Artır
+                    </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                    <Trash2 className="mr-2 h-4 w-4" /> Odayı Sil
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+                </DropdownMenu>
+            )}
+            </div>
+        </header>
+        <div className="p-3 border-b border-white/10 bg-black/20"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
+        <div className="flex flex-1 overflow-hidden">
+            <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
+            {messages.map((msg) => {
+                const senderIsActiveText = activeTextParticipants.some(p => p.id === msg.senderId && differenceInMinutes(new Date(), p.lastSeen?.toDate() || new Date(0)) < ACTIVE_IN_ROOM_THRESHOLD_MINUTES);
+                const senderIsActiveVoice = activeVoiceParticipants.some(p => p.id === msg.senderId);
+                const isActiveInRoom = senderIsActiveText || senderIsActiveVoice;
+                return (
+                <ChatMessageItem
+                key={msg.id}
+                msg={msg}
+                currentUserUid={currentUser?.uid}
+                popoverOpenForUserId={popoverOpenForUserId}
+                onOpenUserInfoPopover={handleOpenUserInfoPopover}
+                setPopoverOpenForUserId={setPopoverOpenForUserId}
+                popoverLoading={popoverLoading}
+                popoverTargetUser={popoverTargetUser}
+                friendshipStatus={friendshipStatus}
+                relevantFriendRequest={relevantFriendRequest}
+                onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
+                onSendFriendRequestPopover={handleSendFriendRequestPopover}
+                onDmAction={handleDmAction}
+                onViewProfileAction={handleViewProfileAction}
+                getAvatarFallbackText={getAvatarFallbackText}
+                isCurrentUserRoomCreator={isCurrentUserRoomCreator}
+                onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
+                roomId={roomId}
+                isActiveParticipant={isActiveInRoom}
+                onMessageDeleted={handleMessageDeleted}
+                onMessageEdited={handleMessageEdited}
+                />
+            )})}
+            </ScrollArea>
         </div>
-        {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
-      </form>
-    </div>
+        <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t border-white/10 bg-black/20 sticky bottom-0">
+            <div className="relative flex items-center gap-2"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button> <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
+            </div>
+            {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
+        </form>
+      </div>
       {isEditRoomModalOpen && roomDetails && (
         <EditChatRoomDialog
           isOpen={isEditRoomModalOpen}
@@ -1774,8 +1819,6 @@ export default function ChatRoomPage() {
           initialIsGameEnabledInRoom={roomDetails.isGameEnabledInRoom}
         />
       )}
-    </>
+    </div>
   );
 }
-
-    
