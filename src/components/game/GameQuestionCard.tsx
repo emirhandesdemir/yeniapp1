@@ -47,7 +47,7 @@ const GameQuestionCard: FC<GameQuestionCardProps> = React.memo(({ question, onCl
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -100, scale: 0.8 }}
       transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-      className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-md"
+      className="fixed top-4 left-4 right-4 z-50 mx-auto max-w-md"
     >
       <Card className="shadow-2xl border-primary/50 bg-gradient-to-br from-card via-card to-primary/10 dark:from-card dark:via-card dark:to-primary/20 game-card-glowing">
         <CardHeader className="pb-3 pt-4">
