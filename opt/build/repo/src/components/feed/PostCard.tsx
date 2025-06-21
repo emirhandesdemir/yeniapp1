@@ -18,8 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import CommentForm from "./CommentForm";
-import CommentCard, { type CommentData } from "./CommentCard";
+import CommentForm from "@/components/feed/CommentForm";
+import CommentCard, { type CommentData } from "@/components/feed/CommentCard";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -528,5 +528,3 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post }) => {
 });
 PostCard.displayName = 'PostCard';
 export default PostCard;
-
-    
