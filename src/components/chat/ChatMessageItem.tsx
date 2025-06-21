@@ -4,9 +4,9 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, MoreHorizontal } from "lucide-react";
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, Copy, Smile as SmileIcon } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
-import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc, FieldValue } from 'firebase/firestore';
+import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc } from 'firebase/firestore';
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
@@ -30,14 +30,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 
-
-interface ReactionDetail {
-  count: number;
-  users: string[];
-}
 
 interface Message {
   id: string;
@@ -123,7 +121,8 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const [isProcessingEditOrDelete, setIsProcessingEditOrDelete] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
-  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const pressTimer = useRef<NodeJS.Timeout>();
 
 
   useEffect(() => {
@@ -139,6 +138,26 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       checkIfUserBlocked(msg.senderId).then(setIsTargetUserBlocked);
     }
   }, [popoverOpenForUserId, msg.senderId, popoverTargetUser, currentUserUid, checkIfUserBlocked]);
+
+  const handlePointerDown = () => {
+    pressTimer.current = setTimeout(() => {
+        setIsMenuOpen(true);
+    }, 500); 
+  };
+  
+  const handlePointerUp = () => {
+    clearTimeout(pressTimer.current);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsMenuOpen(true);
+  };
+
+  const handleCopyText = () => {
+    navigator.clipboard.writeText(msg.text);
+    toast({ title: "Kopyalandı", description: "Mesaj panoya kopyalandı." });
+  };
 
 
   const handleReportUserConfirmation = async () => {
@@ -333,7 +352,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
         }}>
             <PopoverTrigger asChild>
                 <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 cursor-pointer">
-                    <div className={cn('relative flex-shrink-0', `avatar-frame-${frameStyle}`)}>
+                    <div className={cn('relative flex-shrink-0', frameStyle)}>
                         <Avatar className="h-7 w-7">
                             <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                             <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
@@ -417,90 +436,78 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
                     <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline">{msg.senderName}</span>
                 </Link>
           )}
-           <div
-            className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble", bubbleClasses)}
-            onMouseEnter={() => setShowReactionPicker(true)}
-            onMouseLeave={() => setShowReactionPicker(false)}
-           >
-                {isEditing ? (
-                    <div className="space-y-2">
-                        <Textarea
-                            ref={editInputRef}
-                            value={editedText}
-                            onChange={(e) => setEditedText(e.target.value)}
-                            className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                            rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                            disabled={isProcessingEditOrDelete}
-                        />
-                        <div className="flex justify-end gap-2">
-                            <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                            <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                                {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                            </Button>
-                        </div>
+           <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+            <DropdownMenuTrigger asChild>
+                <div
+                    onPointerDown={handlePointerDown}
+                    onPointerUp={handlePointerUp}
+                    onContextMenu={handleContextMenu}
+                    className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble cursor-pointer", bubbleClasses)}
+                >
+                        {isEditing ? (
+                            <div className="space-y-2">
+                                <Textarea
+                                    ref={editInputRef}
+                                    value={editedText}
+                                    onChange={(e) => setEditedText(e.target.value)}
+                                    className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
+                                    rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
+                                    disabled={isProcessingEditOrDelete}
+                                />
+                                <div className="flex justify-end gap-2">
+                                    <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
+                                    <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
+                                        {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className={cn(textClasses, "allow-text-selection")}>
+                                {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
+                                {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
+                            </p>
+                        )}
+                </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger><SmileIcon className="mr-2 h-4 w-4" /> Tepki Ver</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="p-1">
+                    <div className="flex gap-1">
+                        {PREDEFINED_REACTIONS.map(reaction => {
+                            const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
+                            return (
+                                <Button
+                                    key={reaction.emoji}
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn("h-7 w-7 rounded-full hover:bg-primary/10", userHasReactedWithThis ? "text-primary" : "text-muted-foreground")}
+                                    onClick={() => { handleReaction(reaction.emoji); setIsMenuOpen(false); }}
+                                    disabled={!currentUser}
+                                    title={reaction.name}
+                                >
+                                    {React.cloneElement(reaction.icon as React.ReactElement, { className: cn("h-5 w-5", userHasReactedWithThis && "fill-primary/20") })}
+                                </Button>
+                            );
+                        })}
                     </div>
-                ) : (
-                    <p className={cn(textClasses, "allow-text-selection")}>
-                        {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
-                        {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
-                    </p>
-                )}
-
-                {/* Reaction Picker - shows on bubble hover/focus */}
-                {showReactionPicker && !isEditing && (
-                  <div className={cn(
-                    "absolute -top-7 flex space-x-0.5 bg-card p-1 rounded-full shadow-lg border border-border/70 transition-opacity duration-150 ease-out",
-                    msg.isOwn ? "right-0" : "left-0"
-                  )}>
-                    {PREDEFINED_REACTIONS.map(reaction => {
-                       const ReactionIcon = reaction.icon;
-                       const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
-                       return (
-                        <Button
-                            key={reaction.emoji}
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                                "h-6 w-6 rounded-full hover:bg-primary/10",
-                                userHasReactedWithThis ? "text-primary" : "text-muted-foreground"
-                            )}
-                            onClick={() => handleReaction(reaction.emoji)}
-                            disabled={!currentUser}
-                            title={reaction.name}
-                        >
-                            {React.cloneElement(ReactionIcon as React.ReactElement, { 
-                                className: cn("h-4 w-4", userHasReactedWithThis && "fill-primary/20")
-                            })}
-                        </Button>
-                       );
-                    })}
-                  </div>
-                )}
-
-                {/* Edit/Delete Menu for own messages - shows on bubble hover/focus */}
-                {msg.isOwn && !isEditing && showReactionPicker && (
-                  <div className={cn(
-                    "absolute flex",
-                     msg.isOwn ? "top-1 left-1 -ml-7" : "top-1 right-1 -mr-7" // Position opposite to reaction picker
-                  )}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className={cn("h-6 w-6 rounded-full", msg.isOwn ? "text-primary-foreground/70 hover:text-primary-foreground/90" : "text-secondary-foreground/70 hover:text-secondary-foreground/90")}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent side={msg.isOwn ? "right" : "left"} align="center">
-                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem onClick={handleCopyText}><Copy className="mr-2 h-4 w-4" /> Metni Kopyala</DropdownMenuItem>
+                {msg.isOwn && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => { setIsEditing(true); setIsMenuOpen(false); }} disabled={isProcessingEditOrDelete}>
                             <Edit2 className="mr-2 h-4 w-4" /> Düzenle
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
                             <Trash2 className="mr-2 h-4 w-4" /> Sil
                         </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                    </>
                 )}
-            </div>
+            </DropdownMenuContent>
+           </DropdownMenu>
+
             {/* Reactions Display */}
             {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
@@ -531,7 +538,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
           </p>
       </div>
       {msg.isOwn && (
-        <div className={cn('relative self-end mb-1 cursor-default', `avatar-frame-${frameStyle}`)}>
+        <div className={cn('relative self-end mb-1 cursor-default', frameStyle)}>
             <Avatar className="h-7 w-7">
                 <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
