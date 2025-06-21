@@ -18,7 +18,7 @@ import { Slider } from '@/components/ui/slider';
 import { Gem, Gift, Users, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, serverTimestamp, writeBatch, type Timestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch, type Timestamp, collection } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
