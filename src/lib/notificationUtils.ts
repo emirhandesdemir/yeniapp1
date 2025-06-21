@@ -5,10 +5,8 @@ import { messaging } from '@/lib/firebase'; // Firebase'den messaging import edi
 import { getToken, deleteToken } from 'firebase/messaging';
 
 // ===================================================================================
-// ÖNEMLİ: BURADAKİ "YOUR_VAPID_KEY_HERE" DEĞERİNİ KENDİ VAPID ANAHTARINIZLA DEĞİŞTİRİN!
-// Firebase Proje Ayarları > Cloud Messaging > Web configuration > Web Push certificates
-// bölümünden VAPID anahtarınızı (Key pair) alabilirsiniz.
-const VAPID_KEY = "YOUR_VAPID_KEY_HERE";
+// VAPID anahtarı eklendi.
+const VAPID_KEY = "BNpgmdIpfel0F4oErwFBjyh28V8tlYpoBJ7pb2V5pR3Sm8r";
 // ===================================================================================
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
@@ -19,7 +17,6 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   try {
     const permission = await Notification.requestPermission();
     console.log('Notification permission status:', permission);
-    // VAPID anahtarı kontrolü kaldırıldı
     return permission;
   } catch (error) {
     console.error('Error requesting notification permission:', error);
@@ -30,11 +27,13 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 export async function subscribeUserToPush(): Promise<string | null> {
   if (typeof window === 'undefined' || !messaging) {
     console.warn('Firebase Messaging not initialized. Cannot subscribe.');
-    // VAPID anahtarı kontrolü kaldırıldı
     return null;
   }
 
-  // VAPID anahtarı kontrolü ve alert kaldırıldı
+  if (!VAPID_KEY || VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
+    console.warn("VAPID_KEY is not set in notificationUtils.ts. Push notifications may not work correctly.");
+    // We will proceed anyway to allow for local testing, but this is a critical warning for production.
+  }
 
   try {
     const permission = await requestNotificationPermission();
@@ -95,4 +94,3 @@ export function getNotificationPermissionStatus(): NotificationPermission {
   if (typeof window === 'undefined' || !('Notification'in window)) return 'default';
   return Notification.permission;
 }
-
