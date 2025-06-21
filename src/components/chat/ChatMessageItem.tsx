@@ -36,7 +36,7 @@ import {
 
 interface ReactionDetail {
   count: number;
-  users: string[]; 
+  users: string[];
 }
 
 interface Message {
@@ -46,10 +46,13 @@ interface Message {
   senderName: string;
   senderAvatar: string | null;
   senderIsPremium?: boolean;
+  senderBubbleStyle?: string;
+  senderAvatarFrameStyle?: string;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  isChestMessage?: boolean;
   mentionedUserIds?: string[];
   editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
@@ -70,7 +73,6 @@ interface ChatMessageItemProps {
   onDmAction: (targetUserId: string | undefined | null) => void;
   onViewProfileAction: (targetUserId: string | undefined | null) => void;
   getAvatarFallbackText: (name?: string | null) => string;
-  currentUserIsPremium?: boolean;
   isCurrentUserRoomCreator: boolean;
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
   roomId: string;
@@ -115,12 +117,14 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState(msg.text);
   const [isProcessingEditOrDelete, setIsProcessingEditOrDelete] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -212,7 +216,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     if (!currentUser || !roomId || !msg.id) return;
 
     const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
-    const currentReactions = { ...(msg.reactions || {}) }; 
+    const currentReactions = { ...(msg.reactions || {}) };
     let userPreviousReactionEmoji: string | null = null;
 
     for (const e in currentReactions) {
@@ -236,7 +240,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         }
         currentReactions[emoji] = [...(currentReactions[emoji] || []), currentUser.uid];
     }
-    
+
     try {
       await updateDoc(messageRef, { reactions: currentReactions });
     } catch (error) {
@@ -261,20 +265,29 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   }, []);
 
 
-  if (msg.isGameMessage && msg.senderId === "system") {
+  const getSystemMessageContent = (message: Message) => {
     let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
-    if (msg.text.toLowerCase().includes("tebrikler")) {
+    if (message.text.toLowerCase().includes("tebrikler")) {
         icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
-    } else if (msg.text.toLowerCase().includes("ipucu")) {
+    } else if (message.text.toLowerCase().includes("ipucu")) {
         icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
+    } else if (message.isChestMessage) {
+        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
     }
+    return (
+        <>
+            {icon}
+            <span className="font-medium text-foreground/80">{message.senderName}: </span>
+            {message.text}
+        </>
+    );
+};
 
+if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
-           {icon}
-           <span className="font-medium text-foreground/80">{msg.senderName}: </span>
-           {msg.text}
+           {getSystemMessageContent(msg)}
         </div>
       </div>
     );
@@ -283,21 +296,28 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const currentUsersActualPhoto = currentUserData?.photoURL;
   const currentUsersActualDisplayName = currentUserData?.displayName;
   const currentUsersActualIsPremium = checkUserPremium(currentUserData);
+  const currentUsersBubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
+  const currentUsersFrameStyle = msg.isOwn ? (currentUserData?.avatarFrameStyle || 'default') : (msg.senderAvatarFrameStyle || 'default');
 
   const isMentioned = msg.mentionedUserIds && msg.mentionedUserIds.includes(currentUserUid || '');
 
-  let bubbleClasses = msg.isOwn
+  let baseBubbleClasses = msg.isOwn
     ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
     : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl";
-
+  
+  let bubbleClasses = cn(baseBubbleClasses, `bubble-${currentUsersBubbleStyle}`);
+  
   let textClasses = "text-sm whitespace-pre-wrap break-words";
 
   if (isMentioned) {
     if (msg.isOwn) {
-      bubbleClasses = "bg-primary/90 text-primary-foreground rounded-t-2xl rounded-l-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform";
+      bubbleClasses = cn(baseBubbleClasses, `bubble-${currentUsersBubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform");
       textClasses = "text-sm font-medium whitespace-pre-wrap break-words";
     } else {
-      bubbleClasses = "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950 rounded-t-2xl rounded-r-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out";
+      bubbleClasses = cn(baseBubbleClasses, `bubble-${currentUsersBubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out");
+      if(currentUsersBubbleStyle === 'default'){
+        bubbleClasses = cn(bubbleClasses, "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950");
+      }
       textClasses = "text-sm font-semibold whitespace-pre-wrap break-words";
     }
   }
@@ -311,13 +331,15 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             else if (msg.senderId !== currentUserUid) onOpenUserInfoPopover(msg.senderId);
         }}>
             <PopoverTrigger asChild>
-                <Link href={`/profile/${msg.senderId}`} className="relative self-end mb-1 cursor-pointer">
-                    <Avatar className="h-7 w-7">
-                        <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-                        <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
-                         {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
-                    </Avatar>
-                    {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 cursor-pointer">
+                    <div className={cn('relative flex-shrink-0', `avatar-frame-${msg.senderAvatarFrameStyle || 'default'}`)}>
+                        <Avatar className="h-7 w-7">
+                            <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
+                            <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
+                        </Avatar>
+                        {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
+                        {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                    </div>
                 </Link>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3" side="top" align="start">
@@ -394,7 +416,11 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline">{msg.senderName}</span>
                 </Link>
           )}
-           <div className={cn("relative p-2.5 sm:p-3 shadow-md group", bubbleClasses)}>
+           <div
+            className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble", bubbleClasses)}
+            onMouseEnter={() => setShowReactionPicker(true)}
+            onMouseLeave={() => setShowReactionPicker(false)}
+           >
                 {isEditing ? (
                     <div className="space-y-2">
                         <Textarea
@@ -418,52 +444,67 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
                     </p>
                 )}
-                {!isEditing && (
-                    <div className={cn("absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex", msg.isOwn ? "right-0" : "left-0")}>
-                         <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className={cn("h-6 w-6", msg.isOwn ? "text-primary-foreground/60 hover:text-primary-foreground/90" : "text-secondary-foreground/60 hover:text-secondary-foreground/90")}>
-                                    <MoreHorizontal className="h-3.5 w-3.5" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent side={msg.isOwn ? "left" : "right"} align={msg.isOwn ? "end" : "start"}>
-                                {msg.isOwn && (
-                                    <>
-                                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
-                                            <Edit2 className="mr-2 h-4 w-4" /> Düzenle
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
-                                            <Trash2 className="mr-2 h-4 w-4" /> Sil
-                                        </DropdownMenuItem>
-                                    </>
-                                )}
-                                {!msg.isOwn && PREDEFINED_REACTIONS.map(reaction => (
-                                     <DropdownMenuItem key={reaction.emoji} onClick={() => handleReaction(reaction.emoji)} disabled={!currentUser}>
-                                        {React.cloneElement(reaction.icon as React.ReactElement, { 
-                                            className: cn("mr-2 h-4 w-4", (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "") ? "text-primary fill-primary/20" : "")
-                                        })}
-                                        {reaction.name}
-                                    </DropdownMenuItem>
-                                ))}
-                                {msg.isOwn && PREDEFINED_REACTIONS.length > 0 && <DropdownMenuSeparator />}
-                                {msg.isOwn && PREDEFINED_REACTIONS.map(reaction => (
-                                     <DropdownMenuItem key={`my-${reaction.emoji}`} onClick={() => handleReaction(reaction.emoji)} disabled={!currentUser}>
-                                        {React.cloneElement(reaction.icon as React.ReactElement, { 
-                                            className: cn("mr-2 h-4 w-4", (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "") ? "text-primary fill-primary/20" : "")
-                                        })}
-                                        Tepki Ver: {reaction.name}
-                                    </DropdownMenuItem>
-                                ))}
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
+
+                {/* Reaction Picker - shows on bubble hover/focus */}
+                {showReactionPicker && !isEditing && (
+                  <div className={cn(
+                    "absolute -top-7 flex space-x-0.5 bg-card p-1 rounded-full shadow-lg border border-border/70 transition-opacity duration-150 ease-out",
+                    msg.isOwn ? "right-0" : "left-0"
+                  )}>
+                    {PREDEFINED_REACTIONS.map(reaction => {
+                       const ReactionIcon = reaction.icon;
+                       const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
+                       return (
+                        <Button
+                            key={reaction.emoji}
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                                "h-6 w-6 rounded-full hover:bg-primary/10",
+                                userHasReactedWithThis ? "text-primary" : "text-muted-foreground"
+                            )}
+                            onClick={() => handleReaction(reaction.emoji)}
+                            disabled={!currentUser}
+                            title={reaction.name}
+                        >
+                            {React.cloneElement(ReactionIcon as React.ReactElement, { 
+                                className: cn("h-4 w-4", userHasReactedWithThis && "fill-primary/20")
+                            })}
+                        </Button>
+                       );
+                    })}
+                  </div>
+                )}
+
+                {/* Edit/Delete Menu for own messages - shows on bubble hover/focus */}
+                {msg.isOwn && !isEditing && showReactionPicker && (
+                  <div className={cn(
+                    "absolute flex",
+                     msg.isOwn ? "top-1 left-1 -ml-7" : "top-1 right-1 -mr-7" // Position opposite to reaction picker
+                  )}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className={cn("h-6 w-6 rounded-full", msg.isOwn ? "text-primary-foreground/70 hover:text-primary-foreground/90" : "text-secondary-foreground/70 hover:text-secondary-foreground/90")}>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side={msg.isOwn ? "right" : "left"} align="center">
+                          <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                              <Edit2 className="mr-2 h-4 w-4" /> Düzenle
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
+                              <Trash2 className="mr-2 h-4 w-4" /> Sil
+                          </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
             </div>
             {/* Reactions Display */}
             {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
-                    if (users.length === 0) return null;
+                    if (!users || users.length === 0) return null;
                     const userHasReacted = users.includes(currentUser?.uid || "");
                     return (
                     <Button
@@ -471,7 +512,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         variant="outline"
                         size="xs"
                         className={cn(
-                            "h-6 px-1.5 py-0.5 text-xs rounded-full border-border/50 hover:border-primary/50 cursor-default",
+                            "h-6 px-1.5 py-0.5 text-xs rounded-full border-border/50 hover:border-primary/50",
                             userHasReacted && "bg-primary/10 border-primary/60 text-primary"
                         )}
                         onClick={() => handleReaction(emoji)}
@@ -489,12 +530,12 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
           </p>
       </div>
       {msg.isOwn && (
-        <div className="relative self-end mb-1 cursor-default">
+        <div className={cn('relative self-end mb-1 cursor-default', `avatar-frame-${currentUsersFrameStyle}`)}>
             <Avatar className="h-7 w-7">
                 <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
-                 {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
             </Avatar>
+            {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
             {currentUsersActualIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
         </div>
       )}
@@ -544,5 +585,3 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
-
-    
