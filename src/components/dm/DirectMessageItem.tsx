@@ -94,13 +94,13 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       editInputRef.current.select();
     }
   }, [isEditing]);
-
+  
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
         setIsMenuOpen(true);
     }, 500);
   };
-
+  
   const handlePointerUp = () => {
     clearTimeout(pressTimer.current);
   };
@@ -115,7 +115,6 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     toast({ title: "Kopyalandı", description: "Mesaj panoya kopyalandı." });
   };
 
-
   const bubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
   const frameStyle = msg.isOwn ? (currentUserData?.avatarFrameStyle || 'default') : (msg.senderAvatarFrameStyle || 'default');
   const displayAvatarSrc = msg.isOwn ? currentUserData?.photoURL : msg.senderAvatar;
@@ -129,8 +128,8 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     try {
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
+      // onMessageDeleted is removed to let onSnapshot handle UI update
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
-      onMessageDeleted(msg.id);
     } catch (error) {
       console.error("Error deleting direct message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
@@ -142,6 +141,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   const handleEditMessage = () => {
     setEditedText(msg.text);
     setIsEditing(true);
+    setIsMenuOpen(false);
   };
 
   const handleSaveEdit = async () => {
@@ -152,12 +152,11 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     setIsProcessingEditOrDelete(true);
     try {
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
-      const newEditedAt = Timestamp.now();
       await updateDoc(messageRef, {
         text: editedText.trim(),
-        editedAt: newEditedAt,
+        editedAt: Timestamp.now(),
       });
-      onMessageEdited(msg.id, editedText.trim(), newEditedAt);
+      // onMessageEdited is removed to let onSnapshot handle UI update
       toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
     } catch (error) {
       console.error("Error editing message:", error);
@@ -165,12 +164,14 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     } finally {
       setIsProcessingEditOrDelete(false);
       setIsEditing(false);
+      setIsMenuOpen(false);
     }
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditedText(msg.text);
+    setIsMenuOpen(false);
   };
 
   const handleReaction = async (emoji: string) => {
@@ -237,85 +238,85 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       )}>
         <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
           <DropdownMenuTrigger asChild>
-            <div
-                onPointerDown={handlePointerDown}
-                onPointerUp={handlePointerUp}
-                onContextMenu={handleContextMenu}
-                className={cn(
-                "relative p-2.5 sm:p-3 shadow-md break-words group/bubble cursor-pointer",
-                `bubble-${bubbleStyle}`,
-                msg.isOwn
-                ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
-                : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
-                )}
-            >
-                {isEditing ? (
-                    <div className="space-y-2">
-                        <Textarea
-                            ref={editInputRef}
-                            value={editedText}
-                            onChange={(e) => setEditedText(e.target.value)}
-                            className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                            rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                            disabled={isProcessingEditOrDelete}
-                        />
-                        <div className="flex justify-end gap-2">
-                            <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                            <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                                {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                            </Button>
-                        </div>
+          <div
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onContextMenu={handleContextMenu}
+            className={cn(
+              "relative p-2.5 sm:p-3 shadow-md break-words group/bubble cursor-pointer",
+              `bubble-${bubbleStyle}`,
+              msg.isOwn
+              ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
+              : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
+            )}
+          >
+            {isEditing ? (
+                <div className="space-y-2 w-full">
+                    <Textarea
+                        ref={editInputRef}
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="w-full text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
+                        rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
+                        disabled={isProcessingEditOrDelete}
+                    />
+                    <div className="flex justify-end gap-2">
+                        <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
+                        <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
+                            {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
+                        </Button>
                     </div>
-                ) : (
-                <div className="allow-text-selection">
-                    <p className="text-sm">{msg.text}</p>
-                    {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
                 </div>
-                )}
-            </div>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
-                {!isMatchSession && (
-                    <DropdownMenuSub>
-                        <DropdownMenuSubTrigger><SmileIcon className="mr-2 h-4 w-4" /> Tepki Ver</DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="p-1">
-                            <div className="flex gap-1">
-                            {PREDEFINED_REACTIONS.map(reaction => {
-                                const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
-                                return (
-                                    <Button
-                                        key={reaction.emoji}
-                                        variant="ghost"
-                                        size="icon"
-                                        className={cn("h-7 w-7 rounded-full hover:bg-primary/10", userHasReactedWithThis ? "text-primary" : "text-muted-foreground")}
-                                        onClick={() => { handleReaction(reaction.emoji); setIsMenuOpen(false); }}
-                                        disabled={!currentUser}
-                                        title={reaction.name}
-                                    >
-                                        {React.cloneElement(reaction.icon as React.ReactElement, { className: cn("h-5 w-5", userHasReactedWithThis && "fill-primary/20") })}
-                                    </Button>
-                                );
-                            })}
-                            </div>
-                        </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                )}
-                <DropdownMenuItem onClick={handleCopyText}><Copy className="mr-2 h-4 w-4" /> Metni Kopyala</DropdownMenuItem>
-                {msg.isOwn && !isMatchSession && (
-                    <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => { setIsEditing(true); setIsMenuOpen(false); }} disabled={isProcessingEditOrDelete}>
-                            <Edit2 className="mr-2 h-4 w-4" /> Düzenle
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
-                            <Trash2 className="mr-2 h-4 w-4" /> Sil
-                        </DropdownMenuItem>
-                    </>
-                )}
-            </DropdownMenuContent>
+            ) : (
+              <div className="allow-text-selection">
+                  <p className="text-sm">{msg.text}</p>
+                  {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
+              </div>
+            )}
+          </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
+              {!isMatchSession && (
+                  <DropdownMenuSub>
+                      <DropdownMenuSubTrigger><SmileIcon className="mr-2 h-4 w-4" /> Tepki Ver</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="p-1">
+                          <div className="flex gap-1">
+                          {PREDEFINED_REACTIONS.map(reaction => {
+                              const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
+                              return (
+                                  <Button
+                                      key={reaction.emoji}
+                                      variant="ghost"
+                                      size="icon"
+                                      className={cn("h-7 w-7 rounded-full hover:bg-primary/10", userHasReactedWithThis ? "text-primary" : "text-muted-foreground")}
+                                      onClick={() => { handleReaction(reaction.emoji); setIsMenuOpen(false); }}
+                                      disabled={!currentUser}
+                                      title={reaction.name}
+                                  >
+                                      {React.cloneElement(reaction.icon as React.ReactElement, { className: cn("h-5 w-5", userHasReactedWithThis && "fill-primary/20") })}
+                                  </Button>
+                              );
+                          })}
+                          </div>
+                      </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+              )}
+              <DropdownMenuItem onClick={handleCopyText}><Copy className="mr-2 h-4 w-4" /> Metni Kopyala</DropdownMenuItem>
+              {msg.isOwn && !isMatchSession && (
+                  <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                          <Edit2 className="mr-2 h-4 w-4" /> Düzenle
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
+                          <Trash2 className="mr-2 h-4 w-4" /> Sil
+                      </DropdownMenuItem>
+                  </>
+              )}
+          </DropdownMenuContent>
         </DropdownMenu>
            {/* Reactions Display */}
-            {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
+            {!isEditing && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
                     if (!users || users.length === 0) return null;

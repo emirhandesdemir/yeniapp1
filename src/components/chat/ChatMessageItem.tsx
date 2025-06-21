@@ -187,8 +187,8 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     try {
       const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
+      // Parent's onSnapshot will handle UI update
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
-      onMessageDeleted(msg.id);
     } catch (error) {
       console.error("Error deleting chat message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
@@ -200,6 +200,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const handleEditMessage = () => {
     setEditedText(msg.text);
     setIsEditing(true);
+    setIsMenuOpen(false); // Close menu when editing starts
   };
 
   const handleSaveEdit = async () => {
@@ -210,12 +211,11 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     setIsProcessingEditOrDelete(true);
     try {
       const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
-      const newEditedAt = Timestamp.now();
       await updateDoc(messageRef, {
         text: editedText.trim(),
-        editedAt: newEditedAt,
+        editedAt: Timestamp.now(),
       });
-      onMessageEdited(msg.id, editedText.trim(), newEditedAt);
+      // onMessageEdited is removed to let onSnapshot handle the update
       toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
     } catch (error) {
       console.error("Error editing message:", error);
@@ -223,12 +223,14 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     } finally {
       setIsProcessingEditOrDelete(false);
       setIsEditing(false);
+      setIsMenuOpen(false);
     }
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditedText(msg.text);
+    setIsMenuOpen(false);
   };
 
   const handleReaction = async (emoji: string) => {
@@ -444,29 +446,29 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
                     onContextMenu={handleContextMenu}
                     className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble cursor-pointer", bubbleClasses)}
                 >
-                        {isEditing ? (
-                            <div className="space-y-2">
-                                <Textarea
-                                    ref={editInputRef}
-                                    value={editedText}
-                                    onChange={(e) => setEditedText(e.target.value)}
-                                    className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                                    rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                                    disabled={isProcessingEditOrDelete}
-                                />
-                                <div className="flex justify-end gap-2">
-                                    <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                                    <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                                        {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                                    </Button>
-                                </div>
+                    {isEditing ? (
+                        <div className="space-y-2 w-full">
+                            <Textarea
+                                ref={editInputRef}
+                                value={editedText}
+                                onChange={(e) => setEditedText(e.target.value)}
+                                className="w-full text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
+                                rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
+                                disabled={isProcessingEditOrDelete}
+                            />
+                            <div className="flex justify-end gap-2">
+                                <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
+                                <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
+                                    {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
+                                </Button>
                             </div>
-                        ) : (
-                            <p className={cn(textClasses, "allow-text-selection")}>
-                                {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
-                                {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
-                            </p>
-                        )}
+                        </div>
+                    ) : (
+                        <p className={cn(textClasses, "allow-text-selection")}>
+                            {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
+                            {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
+                        </p>
+                    )}
                 </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
@@ -497,7 +499,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
                 {msg.isOwn && (
                     <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => { setIsEditing(true); setIsMenuOpen(false); }} disabled={isProcessingEditOrDelete}>
+                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
                             <Edit2 className="mr-2 h-4 w-4" /> Düzenle
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
