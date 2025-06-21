@@ -29,6 +29,8 @@ Kullanıcı profil bilgilerini saklar.
   - `isBanned`: (Boolean) Kullanıcının banlanıp banlanmadığı. (Varsayılan: `false`)
   - `profileViewCount`: (Number) Profilin kaç kez görüntülendiği. (Varsayılan: 0)
   - `lastSeen`: (Timestamp, nullable) Kullanıcının son aktif olduğu zaman.
+  - `bubbleStyle`: (String, nullable) Kullanıcının seçtiği sohbet baloncuk stili (örn: 'default', 'sparkle'). (Varsayılan: 'default')
+  - `avatarFrameStyle`: (String, nullable) Kullanıcının seçtiği avatar çerçeve stili (örn: 'default', 'gold'). (Varsayılan: 'default')
 - **Alt Koleksiyonlar:**
   - `confirmedFriends`: Onaylanmış arkadaş bağlantılarını saklar.
     - **Yol:** `/users/{userId}/confirmedFriends/{friendId}`
@@ -55,8 +57,9 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `creatorName`: (String) Oluşturanın görünen adı
   - `creatorIsPremium`: (Boolean, isteğe bağlı) Odayı oluşturan kullanıcının premium olup olmadığı. (Varsayılan: `false`)
   - `isPremiumRoom`: (Boolean, isteğe bağlı) Odanın bir premium kullanıcı tarafından oluşturulup oluşturulmadığı veya premium özelliklere sahip olup olmadığı. (Varsayılan: `false`)
-  - `isActive`: (Boolean, isteğe bağlı) Odanın o an çok aktif olup olmadığını belirtir (örn: ≥5 kullanıcı ve son 1dk'da ≥3 mesaj). Bu alan bir backend süreci (örn: Cloud Function) tarafından güncellenmelidir. (Varsayılan: `false`)
+  - `isActive`: (Boolean, isteğe bağlı) Odanın o an "canlı" olup olmadığını belirtir. Bu durum, genellikle kullanıcı sayısı ve mesajlaşma aktivitesine göre belirlenir. (Varsayılan: `false`)
   - `activeSince`: (Timestamp, nullable) `isActive` durumunun `true` olarak ayarlandığı zaman.
+  - `lastMessageAt`: (Timestamp, nullable) Odadaki son mesajın gönderildiği zamanı gösteren ve odanın kendisinde tutulan bir zaman damgası. Bu, odaların aktiflik durumunu istemci tarafında kontrol etmek için kullanılır.
   - `createdAt`: (Timestamp) Odanın oluşturulduğu zaman
   - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman (Varsayılan: Oluşturulma + 20 dakika)
   - `image`: (String, nullable) Oda için bir resim URL'si. Başlangıçta `placehold.co` URL'si ile ayarlanabilir. Daha sonra kullanıcı tarafından özel bir resimle (Firebase Storage'a yüklenmiş) güncellenebilir.
@@ -69,6 +72,7 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `currentGameQuestionId`: (String, nullable) Odada o anda aktif olan oyun sorusunun ID'si.
   - `nextGameQuestionTimestamp`: (Timestamp, nullable) Bir sonraki oyun sorusunun sorulması planlanan zaman damgası.
   - `currentGameAnswerDeadline`: (Timestamp, nullable) Mevcut oyun sorusu için son cevap verme zamanı.
+  - `activeChestId`: (String, nullable) Eğer odada aktif bir sandık varsa, sandık belgesinin ID'sini tutar (genellikle "current").
 - **Not:** Normal kullanıcılar için oda oluşturma maliyeti varsayılan olarak **1 elmas**tır. Premium kullanıcılar ücretsiz oluşturabilir.
 - **Alt Koleksiyonlar:**
   - `messages`: Odada gönderilen mesajları saklar.
@@ -79,8 +83,11 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `senderName`: (String) Gönderenin görünen adı.
       - `senderAvatar`: (String, nullable) Gönderenin avatar URL'si.
       - `senderIsPremium`: (Boolean, isteğe bağlı) Gönderenin premium olup olmadığı.
+      - `senderBubbleStyle`: (String, nullable) Gönderenin o anki seçili baloncuk stili.
+      - `senderAvatarFrameStyle`: (String, nullable) Gönderenin o anki seçili avatar çerçevesi stili.
       - `timestamp`: (Timestamp) Mesajın gönderildiği zaman.
       - `isGameMessage`: (Boolean, isteğe bağlı) Sistemsel bir oyun mesajı olup olmadığı.
+      - `isChestMessage`: (Boolean, isteğe bağlı) Sistemsel bir sandık mesajı olup olmadığı.
       - `mentionedUserIds`: (Array<String>, isteğe bağlı) Mesajda etiketlenen kullanıcıların UID'leri.
       - `editedAt`: (Timestamp, nullable) Mesajın son düzenlenme zamanı.
       - `reactions`: (Map<String, Array<String>>, nullable) Mesaja verilen tepkiler. Anahtar emoji (örn: "👍"), değer tepkiyi veren kullanıcı UID'lerinin listesi. Örnek: `{ "👍": ["uid1", "uid2"], "❤️": ["uid3"] }`
@@ -107,6 +114,17 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
       - `sdp`: (String, isteğe bağlı) Offer veya Answer için SDP.
       - `candidate`: (Object, isteğe bağlı) ICE adayı nesnesi.
       - `signalTimestamp`: (Timestamp) Sinyalin Firestore'a yazıldığı zaman.
+  - `activeChest`: Odada o anda aktif olan hediye sandığını saklar. Genellikle sadece 'current' ID'li tek bir belge bulunur.
+    - **Yol:** `/chatRooms/{roomId}/activeChest/current`
+    - **Alanlar:**
+      - `creatorId`: (String) Sandığı oluşturanın UID'si.
+      - `creatorName`: (String) Sandığı oluşturanın adı.
+      - `totalDiamonds`: (Number) Sandığa konulan toplam elmas miktarı.
+      - `remainingDiamonds`: (Number) Sandıkta kalan elmas miktarı.
+      - `maxWinners`: (Number) Sandıktan en fazla kaç kişinin ödül alabileceği.
+      - `winners`: (Map<String, Number>) Ödül kazananların UID'lerini ve kazandıkları miktarı saklar. `{ userId1: 10, userId2: 5 }`
+      - `createdAt`: (Timestamp) Sandığın oluşturulma zamanı.
+      - `expiresAt`: (Timestamp) Sandığın sona ereceği zaman (genellikle odanın bitiş zamanı ile aynı).
 - **Gerekli İndeksler (Firestore Console üzerinden manuel oluşturulmalı):**
   - **Aktif Odaları Listeleme ve Sıralama (Ana Sayfa ve Chat Sayfası):**
     - Koleksiyon: `chatRooms`
@@ -154,6 +172,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
         - `senderName`: (String) Gönderenin görünen adı.
         - `senderAvatar`: (String, nullable) Gönderenin avatar URL'si.
         - `senderIsPremium`: (Boolean, isteğe bağlı) Gönderenin premium olup olmadığı.
+        - `senderBubbleStyle`: (String, nullable) Gönderenin o anki seçili baloncuk stili.
+        - `senderAvatarFrameStyle`: (String, nullable) Gönderenin o anki seçili avatar çerçevesi stili.
         - `timestamp`: (Timestamp) Mesajın gönderildiği zaman.
         - `editedAt`: (Timestamp, nullable) Mesajın son düzenlenme zamanı.
         - `reactions`: (Map<String, Array<String>>, nullable) Mesaja verilen tepkiler.
@@ -370,7 +390,9 @@ service cloud.firestore {
                       request.resource.data.nextGameQuestionTimestamp != resource.data.nextGameQuestionTimestamp ||
                       request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline ||
                       request.resource.data.expiresAt != resource.data.expiresAt ||
-                      request.resource.data.isActive != resource.data.isActive
+                      request.resource.data.isActive != resource.data.isActive ||
+                      request.resource.data.lastMessageAt != resource.data.lastMessageAt ||
+                      request.resource.data.activeChestId != resource.data.activeChestId
                     );
       allow delete: if request.auth.uid != null && (request.auth.uid == resource.data.creatorId || isUserAdmin(request.auth.uid));
 
@@ -391,6 +413,12 @@ service cloud.firestore {
       }
       match /webrtcSignals/{userId}/{subcollection=**} {
         allow read, write: if request.auth.uid == userId;
+      }
+      match /activeChest/{chestId} {
+        allow read: if request.auth.uid != null;
+        allow create: if request.auth.uid != null;
+        allow update: if request.auth.uid != null; // Client-side transaction handles logic
+        allow delete: if request.auth.uid != null; // Can be deleted by anyone when expired/empty
       }
     }
 
@@ -457,5 +485,6 @@ service cloud.firestore {
   }
 }
 \`\`\`
+
 
 

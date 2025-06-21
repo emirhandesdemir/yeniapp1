@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot, Gift } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
@@ -28,11 +28,11 @@ import {
   increment,
   setDoc,
   Unsubscribe,
-  deleteField,
+  runTransaction,
 } from "firebase/firestore";
 import { useAuth, type UserData, type FriendRequest, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast, addSeconds, format, differenceInMinutes, formatDistanceToNowStrict } from 'date-fns';
+import { addMinutes, formatDistanceToNow, isPast, addSeconds, format, differenceInMinutes, formatDistanceToNowStrict, differenceInSeconds } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -61,6 +61,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import CreateChestDialog from "@/components/chat/CreateChestDialog";
+import ActiveChestDisplay from "@/components/chat/ActiveChestDisplay";
+
+export interface ActiveChest {
+  id: string;
+  creatorId: string;
+  creatorName: string;
+  totalDiamonds: number;
+  remainingDiamonds: number;
+  maxWinners: number;
+  winners: { [key: string]: number }; // userId: amountWon
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
+}
 
 
 interface Message {
@@ -76,8 +90,9 @@ interface Message {
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  isChestMessage?: boolean;
   mentionedUserIds?: string[];
-  editedAt?: Timestamp | null; 
+  editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
 }
 
@@ -101,6 +116,7 @@ interface ChatRoomDetails {
   imageAiHint?: string;
   isActive?: boolean;
   lastMessageAt?: Timestamp;
+  activeChestId?: string | null;
 }
 
 export interface ActiveTextParticipant {
@@ -110,7 +126,7 @@ export interface ActiveTextParticipant {
   isPremium?: boolean;
   joinedAt?: Timestamp;
   isTyping?: boolean;
-  lastSeen?: Timestamp | null; 
+  lastSeen?: Timestamp | null;
   avatarFrameStyle?: string;
 }
 
@@ -169,7 +185,7 @@ const PREMIUM_USER_ROOM_CAPACITY = 50;
 
 const SPEAKING_THRESHOLD = 5;
 const SILENCE_DELAY_MS = 1000;
-const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2; 
+const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2;
 
 
 export default function ChatRoomPage() {
@@ -240,7 +256,10 @@ export default function ChatRoomPage() {
   const localIsSpeakingRef = useRef(localIsSpeaking);
 
   const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false);
-
+  
+  const [isChestCreateOpen, setIsChestCreateOpen] = useState(false);
+  const [activeChest, setActiveChest] = useState<ActiveChest | null>(null);
+  const [isOpeningChest, setIsOpeningChest] = useState(false);
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
@@ -252,7 +271,7 @@ export default function ChatRoomPage() {
   }, []);
 
   const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
-    setMessages(prevMessages => prevMessages.map(msg => 
+    setMessages(prevMessages => prevMessages.map(msg =>
         msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
     ));
   }, []);
@@ -1196,7 +1215,7 @@ export default function ChatRoomPage() {
           uid: currentUser.uid,
           isTyping: false,
           isPremium: userIsCurrentlyPremium,
-          lastSeen: serverTimestamp(), 
+          lastSeen: serverTimestamp(),
           avatarFrameStyle: userData.avatarFrameStyle || 'default',
        });
       batch.update(roomRef, { participantCount: increment(1) });
@@ -1264,6 +1283,7 @@ export default function ChatRoomPage() {
             imageAiHint: data.imageAiHint,
             isActive: data.isActive || false,
             lastMessageAt: data.lastMessageAt,
+            activeChestId: data.activeChestId || null,
         };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
@@ -1290,7 +1310,7 @@ export default function ChatRoomPage() {
     const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
       const fetchedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
+      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, isChestMessage: data.isChestMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
       setLoadingMessages(false); setTimeout(() => scrollToBottom(), 0);
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
@@ -1410,6 +1430,7 @@ export default function ChatRoomPage() {
             senderAvatarFrameStyle: userData?.avatarFrameStyle || 'default',
             timestamp: serverTimestamp(),
             isGameMessage: false,
+            isChestMessage: false,
             mentionedUserIds: mentionedUserIds,
             editedAt: null,
             reactions: {},
@@ -1623,6 +1644,93 @@ export default function ChatRoomPage() {
     if (diffMins < ACTIVE_IN_ROOM_THRESHOLD_MINUTES) return "Aktif";
     return formatDistanceToNowStrict(lastSeenDate, { addSuffix: true, locale: tr });
   }, []);
+  
+  useEffect(() => {
+    if (!roomId) return;
+    const chestRef = doc(db, `chatRooms/${roomId}/activeChest/current`);
+    const unsubscribe = onSnapshot(chestRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const chestData = { id: docSnap.id, ...docSnap.data() } as ActiveChest;
+        if (isPast(chestData.expiresAt.toDate())) {
+            setActiveChest(null);
+            deleteDoc(chestRef).catch(e => console.warn("Could not delete expired chest", e));
+        } else {
+            setActiveChest(chestData);
+        }
+      } else {
+        setActiveChest(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId]);
+  
+  const handleOpenChest = useCallback(async () => {
+    if (!currentUser || !userData || !activeChest || isOpeningChest) return;
+
+    setIsOpeningChest(true);
+    const chestRef = doc(db, "chatRooms", roomId, "activeChest", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const chestDoc = await transaction.get(chestRef);
+        if (!chestDoc.exists()) throw new Error("Sandık artık mevcut değil.");
+        
+        const chestData = chestDoc.data() as ActiveChest;
+        
+        if (chestData.winners[currentUser.uid]) throw new Error("Bu sandıktan zaten ödül aldınız!");
+        if (chestData.remainingDiamonds <= 0) throw new Error("Sandıktaki tüm ödüller dağıtıldı.");
+        if (Object.keys(chestData.winners).length >= chestData.maxWinners) throw new Error("Maksimum kazanan sayısına ulaşıldı.");
+
+        const winnerCount = Object.keys(chestData.winners).length;
+        const remainingWinners = chestData.maxWinners - winnerCount;
+        const avgAmount = Math.max(1, Math.floor(chestData.remainingDiamonds / remainingWinners));
+        const randomAmount = Math.floor(Math.random() * (avgAmount * 1.5)) + 1;
+        const amountWon = Math.min(chestData.remainingDiamonds, randomAmount);
+
+        const newRemainingDiamonds = chestData.remainingDiamonds - amountWon;
+        const newWinners = { ...chestData.winners, [currentUser.uid]: amountWon };
+
+        transaction.update(chestRef, {
+            remainingDiamonds: newRemainingDiamonds,
+            winners: newWinners,
+        });
+
+        const userRef = doc(db, 'users', currentUser.uid);
+        transaction.update(userRef, { diamonds: increment(amountWon) });
+
+        const systemMessageRef = doc(collection(db, 'chatRooms', roomId, 'messages'));
+        transaction.set(systemMessageRef, {
+            text: `${userData.displayName} sandıktan ${amountWon} elmas kazandı! 💎`,
+            senderId: "system",
+            senderName: "Hazine Avcısı",
+            timestamp: serverTimestamp(),
+            isChestMessage: true,
+        });
+        
+        if (newRemainingDiamonds <= 0 || Object.keys(newWinners).length >= chestData.maxWinners) {
+            transaction.delete(chestRef);
+            transaction.update(doc(db, "chatRooms", roomId), { activeChestId: null });
+            const finalMessageRef = doc(collection(db, 'chatRooms', roomId, 'messages'));
+            transaction.set(finalMessageRef, {
+                text: `${chestData.creatorName} tarafından oluşturulan hazine sandığı tükendi!`,
+                senderId: "system",
+                senderName: "Hazine Avcısı",
+                timestamp: serverTimestamp(),
+                isChestMessage: true,
+            });
+        }
+      });
+
+      toast({ title: "Tebrikler!", description: `Sandıktan elmas kazandınız! Detaylar için sohbeti kontrol edin.`, className: 'bg-yellow-500 text-black dark:bg-yellow-400 dark:text-black'});
+
+    } catch (error: any) {
+        console.error("Error opening chest:", error);
+        toast({ title: "Sandık Hatası", description: error.message, variant: "destructive" });
+    } finally {
+        setIsOpeningChest(false);
+    }
+}, [currentUser, userData, activeChest, roomId, toast, isOpeningChest]);
 
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current) || loadingGameAssets) {
@@ -1631,7 +1739,15 @@ export default function ChatRoomPage() {
 
   return (
     <>
-      <div className="flex flex-col h-screen bg-card overflow-hidden">
+      <div className="relative flex flex-col h-screen bg-card overflow-hidden">
+        {activeChest && roomDetails?.expiresAt && (
+            <ActiveChestDisplay
+                chest={activeChest}
+                roomExpiresAt={roomDetails.expiresAt}
+                onOpenChest={handleOpenChest}
+                isOpening={isOpeningChest}
+            />
+        )}
         {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
             console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
             return (
@@ -1798,7 +1914,12 @@ export default function ChatRoomPage() {
             </ScrollArea>
         </div>
         <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
-            <div className="relative flex items-center gap-2"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button> <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
+            <div className="relative flex items-center gap-2"> 
+                <Button variant="ghost" size="icon" type="button" onClick={() => setIsChestCreateOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
+                    <Gift className="h-5 w-5" />
+                    <span className="sr-only">Hediye Sandığı Gönder</span>
+                </Button>
+                <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
             </div>
             {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
@@ -1815,6 +1936,15 @@ export default function ChatRoomPage() {
           initialDescription={roomDetails.description || ""}
           initialImage={roomDetails.image}
           initialIsGameEnabledInRoom={roomDetails.isGameEnabledInRoom}
+        />
+      )}
+      {roomDetails && userData && (
+        <CreateChestDialog
+          isOpen={isChestCreateOpen}
+          onClose={() => setIsChestCreateOpen(false)}
+          roomId={roomId}
+          roomExpiresAt={roomDetails.expiresAt}
+          userDiamonds={userData.diamonds}
         />
       )}
     </>
