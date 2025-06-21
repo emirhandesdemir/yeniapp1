@@ -1,5 +1,4 @@
-t ou
-Bu uygulamanin lisansi ve hakları gizlidir.
+t Bu uygulamanin lisansi ve hakları gizlidir.
 
 ---
 
