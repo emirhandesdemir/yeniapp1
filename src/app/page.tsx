@@ -112,6 +112,16 @@ export default function HomePage() {
   const [showRefreshButton, setShowRefreshButton] = useState(false);
   const refreshButtonTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Refs to hold the latest state for callbacks to avoid dependency loops
+  const isLoadingPostsRef = useRef(isLoadingPosts);
+  const isLoadingRoomsRef = useRef(isLoadingRooms);
+  const isRefreshingFeedRef = useRef(isRefreshingFeed);
+  useEffect(() => {
+    isLoadingPostsRef.current = isLoadingPosts;
+    isLoadingRoomsRef.current = isLoadingRooms;
+    isRefreshingFeedRef.current = isRefreshingFeed;
+  });
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedPreference = sessionStorage.getItem(WELCOME_CARD_SESSION_KEY);
@@ -145,11 +155,11 @@ export default function HomePage() {
       clearTimeout(refreshButtonTimerRef.current);
     }
     refreshButtonTimerRef.current = setTimeout(() => {
-      if (!isLoadingPosts && !isLoadingRooms && !isRefreshingFeed) {
+      if (!isLoadingPostsRef.current && !isLoadingRoomsRef.current && !isRefreshingFeedRef.current) {
         setShowRefreshButton(true);
       }
     }, REFRESH_BUTTON_TIMER_MS);
-  }, [isLoadingPosts, isLoadingRooms, isRefreshingFeed]);
+  }, []); // Empty dependency array makes it stable
 
   const fetchActiveRooms = useCallback(async (isManualRefresh = false) => {
     if (!currentUser) {
@@ -196,6 +206,8 @@ export default function HomePage() {
             creatorIsPremium: roomData.creatorIsPremium || false,
             isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (roomData.gameInitialized ?? false),
             isActive: roomData.isActive || false,
+            image: roomData.image,
+            imageAiHint: roomData.imageAiHint,
           } as RoomInFeedCardData);
         }
       });
@@ -210,13 +222,13 @@ export default function HomePage() {
         startRefreshButtonTimer();
       }
     }
-  }, [currentUser, startRefreshButtonTimer]);
+  }, [currentUser, startRefreshButtonTimer]); // startRefreshButtonTimer is now stable
 
   const fetchPosts = useCallback(async (isManualRefresh = false) => {
     if (!currentUser) {
       setAllPosts([]);
       setIsLoadingPosts(false);
-      if (isManualRefresh && isRefreshingFeed) setIsRefreshingFeed(false);
+      if (isManualRefresh) setIsRefreshingFeed(false);
       return;
     }
 
@@ -247,7 +259,7 @@ export default function HomePage() {
         startRefreshButtonTimer();
       }
     }
-  }, [currentUser, isRefreshingFeed, startRefreshButtonTimer]);
+  }, [currentUser, startRefreshButtonTimer]);
 
 
   useEffect(() => {
@@ -352,10 +364,10 @@ export default function HomePage() {
   }, []);
 
   const handleRefreshClick = useCallback(() => {
-    if (isRefreshingFeed) return;
+    if (isRefreshingFeedRef.current) return; // use ref here
     fetchActiveRooms(true);
     fetchPosts(true);
-  }, [isRefreshingFeed, fetchActiveRooms, fetchPosts]);
+  }, [fetchActiveRooms, fetchPosts]);
 
   const getAvatarFallbackText = (name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
