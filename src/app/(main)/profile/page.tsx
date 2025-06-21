@@ -1,11 +1,11 @@
 
 "use client";
 
-import { useState, useEffect, type ChangeEvent, useRef } from "react";
+import { useState, useEffect, type ChangeEvent, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2, Settings, Edit3, LogOutIcon, LayoutDashboard, Save, ExternalLink } from "lucide-react";
+import { Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2, Settings, Edit3, LogOutIcon, LayoutDashboard, Save, ExternalLink, Brush, Framer, MessageSquare } from "lucide-react";
 import { useAuth, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -17,17 +17,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import Link from "next/link";
 import { Switch } from "@/components/ui/switch";
 import { format, isPast } from "date-fns";
 import { tr } from "date-fns/locale";
 import { motion } from "framer-motion";
-
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 
 const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'system', label: 'Sistem Varsayılanı' },
   { value: 'light', label: 'Açık Tema' },
   { value: 'dark', label: 'Koyu Tema' },
+];
+
+const bubbleStyles = [
+  { id: 'default', name: 'Varsayılan' },
+  { id: 'sparkle', name: 'Parıltı' },
+  { id: 'neon-green', name: 'Neon Yeşil' },
+  { id: 'gradient-blue', name: 'Mavi Gradient' },
+  { id: 'gradient-purple', name: 'Mor Gradient' },
+  { id: 'striped', name: 'Çizgili' },
+];
+
+const avatarFrameStyles = [
+  { id: 'default', name: 'Yok' },
+  { id: 'gold', name: 'Altın' },
+  { id: 'silver', name: 'Gümüş' },
+  { id: 'neon-pink', name: 'Neon Pembe' },
+  { id: 'angel-wings', name: 'Melek Kanatları' },
+  { id: 'tech-ring', name: 'Teknoloji Halkası' },
 ];
 
 const sectionVariants = {
@@ -54,11 +74,13 @@ export default function SettingsPage() {
     feedShowsEveryone: true,
   });
   const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
-
   const [isTestingMic, setIsTestingMic] = useState(false);
   const [micTestStream, setMicTestStream] = useState<MediaStream | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
   const audioPlaybackRef = useRef<HTMLAudioElement>(null);
+  
+  const [selectedBubbleStyle, setSelectedBubbleStyle] = useState('default');
+  const [selectedFrameStyle, setSelectedFrameStyle] = useState('default');
 
   useEffect(() => {
     document.title = 'Ayarlar - HiweWalk';
@@ -68,6 +90,8 @@ export default function SettingsPage() {
         activeRoomsVisibleToFriendsOnly: userData.privacySettings?.activeRoomsVisibleToFriendsOnly ?? false,
         feedShowsEveryone: userData.privacySettings?.feedShowsEveryone ?? true,
       });
+      setSelectedBubbleStyle(userData.bubbleStyle || 'default');
+      setSelectedFrameStyle(userData.avatarFrameStyle || 'default');
     }
   }, [userData]);
 
@@ -93,6 +117,18 @@ export default function SettingsPage() {
     setIsSavingPrivacy(false);
   };
   
+  const handleAppearanceChange = useCallback(async (type: 'bubble' | 'frame', style: string) => {
+    if (type === 'bubble') {
+        setSelectedBubbleStyle(style);
+        await updateUserProfile({ bubbleStyle: style });
+    } else {
+        setSelectedFrameStyle(style);
+        await updateUserProfile({ avatarFrameStyle: style });
+    }
+    toast({ title: 'Kaydedildi!', description: `${type === 'bubble' ? 'Baloncuk stilin' : 'Avatar çerçeven'} güncellendi.` });
+  }, [updateUserProfile, toast]);
+  
+
   const startMicTest = async () => {
     setMicError(null);
     if (micTestStream) {
@@ -188,8 +224,70 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </motion.div>
-      
+
       <motion.div custom={2} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card className="shadow-lg rounded-xl border-border/30">
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <Brush className="h-5 w-5 text-primary"/>
+                    <CardTitle className="text-xl font-semibold">Sohbet Görünümü</CardTitle>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="bubble-style">
+                        <AccordionTrigger>Baloncuk Stili</AccordionTrigger>
+                        <AccordionContent>
+                            <div className="p-4 bg-muted/30 rounded-md mb-3">
+                                <div className="flex items-end gap-2.5">
+                                    <div className={cn("relative flex-shrink-0", `avatar-frame-${selectedFrameStyle}`)}>
+                                        <Avatar className="h-7 w-7">
+                                            <AvatarImage src={userData?.photoURL || `https://placehold.co/32x32.png`} />
+                                            <AvatarFallback>{userData?.displayName?.substring(0,2)}</AvatarFallback>
+                                        </Avatar>
+                                    </div>
+                                    <div className="flex flex-col max-w-[70%]">
+                                        <div className={cn("relative p-2.5 shadow-md", `bubble-${selectedBubbleStyle}`)}>
+                                            <p className="text-sm whitespace-pre-wrap break-words">Bu bir önizleme mesajıdır.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {bubbleStyles.map(style => (
+                                    <Button key={style.id} variant={selectedBubbleStyle === style.id ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange('bubble', style.id)}>
+                                        {selectedBubbleStyle === style.id && <CheckCircle className="mr-2 h-4 w-4"/>} {style.name}
+                                    </Button>
+                                ))}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                    <AccordionItem value="frame-style">
+                        <AccordionTrigger>Avatar Çerçevesi</AccordionTrigger>
+                        <AccordionContent>
+                            <div className="flex justify-center p-4 bg-muted/30 rounded-md mb-3">
+                                <div className={cn("relative p-2", `avatar-frame-${selectedFrameStyle}`)}>
+                                    <Avatar className="h-16 w-16">
+                                        <AvatarImage src={userData?.photoURL || `https://placehold.co/64x64.png`} />
+                                        <AvatarFallback>{userData?.displayName?.substring(0,2)}</AvatarFallback>
+                                    </Avatar>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {avatarFrameStyles.map(style => (
+                                    <Button key={style.id} variant={selectedFrameStyle === style.id ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange('frame', style.id)}>
+                                       {selectedFrameStyle === style.id && <CheckCircle className="mr-2 h-4 w-4"/>} {style.name}
+                                    </Button>
+                                ))}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
+            </CardContent>
+        </Card>
+      </motion.div>
+      
+      <motion.div custom={3} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="shadow-lg rounded-xl border-border/30">
           <CardHeader>
               <div className="flex items-center gap-2">
@@ -241,7 +339,7 @@ export default function SettingsPage() {
         </Card>
       </motion.div>
 
-      <motion.div custom={3} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={4} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="shadow-lg rounded-xl border-border/30">
           <CardHeader>
               <div className="flex items-center gap-2">
@@ -275,7 +373,7 @@ export default function SettingsPage() {
         </Card>
       </motion.div>
 
-      <motion.div custom={4} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="shadow-lg rounded-xl border-border/30">
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -296,7 +394,7 @@ export default function SettingsPage() {
         </Card>
       </motion.div>
 
-      <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="shadow-lg rounded-xl border-border/30">
           <CardHeader>
               <div className="flex items-center gap-2">
@@ -315,7 +413,7 @@ export default function SettingsPage() {
         </Card>
       </motion.div>
 
-      <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={7} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="shadow-lg rounded-xl border-border/30">
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -344,7 +442,7 @@ export default function SettingsPage() {
         </Card>
       </motion.div>
 
-      <motion.div custom={7} variants={sectionVariants} initial="hidden" animate="visible" className="pt-2">
+      <motion.div custom={8} variants={sectionVariants} initial="hidden" animate="visible" className="pt-2">
           {userData?.role === 'admin' && (
               <Button
               variant="outline"
@@ -369,4 +467,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

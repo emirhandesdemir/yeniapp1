@@ -52,6 +52,7 @@ export interface UserData {
   profileViewCount?: number;
   lastSeen?: Timestamp | null;
   bubbleStyle?: string;
+  avatarFrameStyle?: string;
 }
 
 export interface BlockedUserData {
@@ -71,7 +72,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -148,6 +149,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isBanned: false,
         profileViewCount: 0,
         bubbleStyle: 'default',
+        avatarFrameStyle: 'default',
     };
 
     try {
@@ -198,6 +200,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             profileViewCount: existingFirestoreData.profileViewCount ?? 0,
             lastSeen: existingFirestoreData.lastSeen ?? Timestamp.now(),
             bubbleStyle: existingFirestoreData.bubbleStyle ?? 'default',
+            avatarFrameStyle: existingFirestoreData.avatarFrameStyle ?? 'default',
             isPremium: false,
         };
     } else {
@@ -226,6 +229,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             profileViewCount: snapData.profileViewCount ?? 0,
             lastSeen: snapData.lastSeen ?? Timestamp.now(),
             bubbleStyle: snapData.bubbleStyle ?? 'default',
+            avatarFrameStyle: snapData.avatarFrameStyle ?? 'default',
             isPremium: false, // Aşağıda hesaplanacak
         };
     }
@@ -245,6 +249,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (finalUserData.bubbleStyle === undefined) {
         finalUserData.bubbleStyle = 'default';
         firestoreUpdates.bubbleStyle = 'default';
+    }
+    if (finalUserData.avatarFrameStyle === undefined) {
+        finalUserData.avatarFrameStyle = 'default';
+        firestoreUpdates.avatarFrameStyle = 'default';
     }
 
 
@@ -380,7 +388,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [currentUser, userData, router, toast]);
 
-  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       setIsUserLoading(false);
@@ -464,6 +472,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (updates.bubbleStyle) {
         firestoreUpdates.bubbleStyle = updates.bubbleStyle;
       }
+      
+      if (updates.avatarFrameStyle) {
+        firestoreUpdates.avatarFrameStyle = updates.avatarFrameStyle;
+      }
 
       if (updates.lastSeen !== undefined) {
         firestoreUpdates.lastSeen = updates.lastSeen;
@@ -474,7 +486,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
       if (!hasAuthUpdates && !hasFirestoreUpdates && updates.lastSeen === undefined) {
-        toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
+        // This case is now used for instant saving on style changes
+        // toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         setIsUserLoading(false);
         return true;
       }
@@ -499,13 +512,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (firestoreUpdates.bio !== undefined) newLocalData.bio = firestoreUpdates.bio;
         if (firestoreUpdates.privacySettings !== undefined) newLocalData.privacySettings = firestoreUpdates.privacySettings;
         if (firestoreUpdates.bubbleStyle !== undefined) newLocalData.bubbleStyle = firestoreUpdates.bubbleStyle;
+        if (firestoreUpdates.avatarFrameStyle !== undefined) newLocalData.avatarFrameStyle = firestoreUpdates.avatarFrameStyle;
         if (updates.lastSeen !== undefined) newLocalData.lastSeen = updates.lastSeen;
 
         newLocalData.isPremium = checkUserPremium(newLocalData);
         return newLocalData;
       });
 
-      toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+      // Avoid showing toast for every style change
+      if (hasAuthUpdates || updates.bio !== undefined || updates.privacySettings !== undefined) {
+        toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+      }
       return true;
 
     } catch (error: any) {
