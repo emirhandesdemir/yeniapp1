@@ -1,4 +1,4 @@
-
+t ou
 Bu uygulamanin lisansi ve hakları gizlidir.
 
 ---
