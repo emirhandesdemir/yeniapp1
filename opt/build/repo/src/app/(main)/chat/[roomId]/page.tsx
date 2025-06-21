@@ -202,7 +202,7 @@ export default function ChatRoomPage() {
   const [loadingRoom, setLoadingRoom] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
-  const [isExtending, setIsExtending] = useState(false);
+  const [isExtending, setIsExtending] = useState(isExtending);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
@@ -2010,3 +2010,5 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
+    
