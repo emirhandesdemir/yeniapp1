@@ -63,6 +63,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import CreateChestDialog from "@/components/chat/CreateChestDialog";
 import ActiveChestDisplay from "@/components/chat/ActiveChestDisplay";
+import { useMinimizedChat } from '@/contexts/MinimizedChatContext';
+
 
 export interface ActiveChest {
   id: string;
@@ -192,6 +194,8 @@ export default function ChatRoomPage() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.roomId as string;
+  const { minimizedRoom, minimizeRoom, closeMinimizedRoom } = useMinimizedChat();
+
   const [roomDetails, setRoomDetails] = useState<ChatRoomDetails | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -260,6 +264,9 @@ export default function ChatRoomPage() {
   const [isChestCreateOpen, setIsChestCreateOpen] = useState(false);
   const [activeChest, setActiveChest] = useState<ActiveChest | null>(null);
   const [isOpeningChest, setIsOpeningChest] = useState(false);
+
+  const roomDetailsRef = useRef(roomDetails);
+  useEffect(() => { roomDetailsRef.current = roomDetails }, [roomDetails]);
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
@@ -1165,13 +1172,29 @@ export default function ChatRoomPage() {
   }, [currentUser, roomId]);
 
   const handleLeaveRoom = useCallback(async (isPageUnload = false) => {
-    if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return Promise.resolve();
+    if (!currentUser || !roomId) return Promise.resolve();
+    if (!isCurrentUserParticipantRef.current) return Promise.resolve(); // Zaten ayrılmışsa bir şey yapma
+    
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     await updateUserTypingStatus(false);
+    
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
     const userDisplayNameForLeave = userData?.displayName || currentUser?.displayName;
-    if (userDisplayNameForLeave && !isPageUnload) { try { await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[SİSTEM] ${userDisplayNameForLeave} odadan ayrıldı.`, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true }); } catch (msgError) { /* console.warn("Error sending leave message (minor):", msgError); */ } }
+    
+    if (userDisplayNameForLeave && !isPageUnload) {
+      try { 
+        await addDoc(collection(db, `chatRooms/${roomId}/messages`), { 
+          text: `[SİSTEM] ${userDisplayNameForLeave} odadan ayrıldı.`, 
+          senderId: "system", 
+          senderName: "Sistem", 
+          senderAvatar: null, 
+          timestamp: serverTimestamp(), 
+          isGameMessage: true 
+        }); 
+      } catch (msgError) { /* console.warn("Error sending leave message (minor):", msgError); */ }
+    }
+    
     try {
         const batch = writeBatch(db);
         batch.delete(participantRef);
@@ -1197,7 +1220,6 @@ export default function ChatRoomPage() {
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
       if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) { setIsRoomFullError(true); toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); setIsProcessingJoinLeave(false); return; }
 
-      // Check and correct stale active status on join
       if (currentRoomData.isActive && currentRoomData.lastMessageAt) {
           const threeMinutesAgo = new Date();
           threeMinutesAgo.setMinutes(threeMinutesAgo.getMinutes() - 3);
@@ -1316,24 +1338,54 @@ export default function ChatRoomPage() {
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
     return () => unsubscribeMessages();
   }, [roomId, currentUser?.uid, toast]);
-
+  
+  const leaveRoomFully = useCallback(async (isPageUnload = false) => {
+    if (!isCurrentUserParticipantRef.current) return;
+    
+    setIsCurrentUserParticipant(false); 
+    
+    const leaveVoicePromise = handleLeaveVoiceChat(isPageUnload);
+    const leaveTextPromise = handleLeaveRoom(isPageUnload);
+    await Promise.all([leaveVoicePromise, leaveTextPromise]);
+    
+    closeMinimizedRoom();
+  }, [handleLeaveVoiceChat, handleLeaveRoom, closeMinimizedRoom]);
+  
+  const leaveRoomFullyRef = useRef(leaveRoomFully);
+  useEffect(() => { leaveRoomFullyRef.current = leaveRoomFully }, [leaveRoomFully]);
+  
   useEffect(() => {
-    const handleBeforeUnloadInternal = () => { handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true); };
-    window.addEventListener('beforeunload', handleBeforeUnloadInternal);
-    const currentTypingTimeout = typingTimeoutRef.current;
-    const currentGameQuestionIntervalTimer = gameQuestionIntervalTimerRef.current;
-    const currentCountdownDisplayTimer = countdownDisplayTimerRef.current;
-    const currentGameAnswerDeadlineTimer = gameAnswerDeadlineTimerRef.current;
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
-      handleLeaveRoom(true);
-      if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true);
-      if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
-      if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
-      if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
-      if (currentGameAnswerDeadlineTimer) clearInterval(currentGameAnswerDeadlineTimer);
+    if (minimizedRoom?.id === roomId) {
+        closeMinimizedRoom();
+    }
+    const handleBeforeUnload = () => {
+      if (isCurrentUserParticipantRef.current) {
+        leaveRoomFullyRef.current(true);
+      }
     };
-  }, [handleLeaveRoom, handleLeaveVoiceChat]);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+
+      if (isCurrentUserParticipantRef.current && roomDetailsRef.current) {
+        minimizeRoom({
+          id: roomId,
+          name: roomDetailsRef.current.name,
+          image: roomDetailsRef.current.image,
+          imageAiHint: roomDetailsRef.current.imageAiHint,
+          leaveRoom: () => leaveRoomFullyRef.current(false),
+        });
+      }
+      
+      // Clear timers on unmount
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current);
+      if (countdownDisplayTimerRef.current) clearInterval(countdownDisplayTimerRef.current);
+      if (gameAnswerDeadlineTimerRef.current) clearInterval(gameAnswerDeadlineTimerRef.current);
+    };
+  }, [roomId, minimizeRoom, closeMinimizedRoom, minimizedRoom]);
+
 
   const scrollToBottom = useCallback(() => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } }, []);
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
@@ -1390,7 +1442,7 @@ export default function ChatRoomPage() {
         toast({ title: "Süre Doldu!", description: "Bu soru için cevap süresi doldu.", variant: "destructive" });
         setIsSending(false); return;
       }
-      const roomDocRef = doc(db, "chatRooms", roomId); // Moved here to be available for game logic
+      const roomDocRef = doc(db, "chatRooms", roomId);
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) { toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive" }); setIsSending(false); return; }
         try { await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST); toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 }); await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Ustası", timestamp: serverTimestamp(), isGameMessage: true }); } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive" }); } finally { setNewMessage(""); setIsSending(false); } return;
@@ -1738,16 +1790,16 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <>
-      <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
-        {activeChest && roomDetails?.expiresAt && (
+    <div className="relative h-screen">
+      {activeChest && roomDetails?.expiresAt && (
             <ActiveChestDisplay
                 chest={activeChest}
                 roomExpiresAt={roomDetails.expiresAt}
                 onOpenChest={handleOpenChest}
-                isOpening={isOpening}
+                isOpening={isOpeningChest}
             />
-        )}
+      )}
+      <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
         {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
             console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
             return (
@@ -1879,7 +1931,7 @@ export default function ChatRoomPage() {
             )}
             </div>
         </header>
-        <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
+        <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => leaveRoomFully(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
         <div className="flex flex-1 overflow-hidden">
             <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
             {messages.map((msg) => {
@@ -1947,6 +1999,6 @@ export default function ChatRoomPage() {
           userDiamonds={userData.diamonds}
         />
       )}
-    </>
+    </div>
   );
 }

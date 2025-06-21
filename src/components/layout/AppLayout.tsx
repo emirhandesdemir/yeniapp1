@@ -17,7 +17,7 @@ import {
   MessageCircle,
   Compass,
   Users, 
-  Shuffle, // Shuffle ikonu eklendi
+  Shuffle,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -50,6 +50,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { requestNotificationPermission, subscribeUserToPush } from '@/lib/notificationUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { generateDmChatId } from '@/lib/utils';
+import MinimizedChatWidget from '@/components/chat/MinimizedChatWidget'; // Eklendi
 
 interface FriendRequestForPopover {
   id: string;
@@ -79,7 +80,7 @@ const bottomNavItems: BottomNavItemType[] = [
   { href: () => '/', label: 'Akış', icon: Home, activeIcon: Home },
   { href: () => '/chat', label: 'Odalar', icon: Compass, activeIcon: Compass },
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
-  { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle }, // Yeni Eşleşme sekmesi
+  { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle },
   { href: () => '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: UserPlus },
   { href: (uid) => uid ? `/profile/${uid}` : '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
@@ -390,7 +391,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </Button>
             <Popover>
               <PopoverTrigger asChild>
-                <div role="button" tabIndex={0} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full relative text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:w-9 cursor-pointer flex items-center justify-center")} aria-label="Arkadaşlık İstekleri">
+                <div role="button" tabIndex={0} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full relative text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:h-9 cursor-pointer flex items-center justify-center")} aria-label="Arkadaşlık İstekleri">
                   <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
                   {incomingRequests.length > 0 && (<span className="absolute top-1 right-1 flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span></span>)}
                 </div>
@@ -429,6 +430,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {isClient ? (<AnimatePresence mode="wait"><motion.main key={pathname} className={cn(mainContentClasses, "flex flex-col")} variants={pageVariants} initial="initial" animate="in" exit="out" transition={pageTransition}>{children}</motion.main></AnimatePresence>) : (<main className={cn(mainContentClasses, "flex flex-col")}>{children}</main>)}
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
       {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
+      {isClient && <MinimizedChatWidget />}
       {isClient && activeIncomingCall && (
         <Dialog open={isCallModalOpen} onOpenChange={(isOpen) => { if (!isOpen && activeIncomingCall) handleRejectCall(); setIsCallModalOpen(isOpen); if (!isOpen) setActiveIncomingCall(null); }}>
           <DialogContent className="sm:max-w-md p-0 overflow-hidden shadow-2xl border-primary rounded-xl" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>

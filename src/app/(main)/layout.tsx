@@ -2,6 +2,7 @@
 "use client"; // Add "use client" here as AppLayout uses client-side hooks
 
 import AppLayout from "@/components/layout/AppLayout";
+import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import type { ReactNode } from 'react';
 // Metadata should be defined in page.tsx or layout.tsx if it's a server component.
 // Since this layout now effectively becomes a client component due to AppLayout,
@@ -14,5 +15,9 @@ import type { ReactNode } from 'react';
 // };
 
 export default function MainAppPagesLayout({ children }: { children: ReactNode }) {
-  return <AppLayout>{children}</AppLayout>;
+  return (
+    <MinimizedChatProvider>
+        <AppLayout>{children}</AppLayout>
+    </MinimizedChatProvider>
+  );
 }

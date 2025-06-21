@@ -162,7 +162,7 @@ textarea {
 }
 
 .bubble-snake {
-  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)), hsl(var(--primary))) !important;
+  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)), hsl(140, 70%, 60%)) !important;
   background-size: 200% 200%;
   color: white !important;
   animation: snake-background-animation 4s ease infinite;
@@ -291,4 +291,15 @@ textarea {
   border-radius: 9999px;
   border: 2px solid;
   animation: snake-border-animation 3s linear infinite;
+}
+
+/* Game Card Animation */
+@keyframes glowing-border {
+  0% { border-color: hsl(var(--primary) / 0.5); box-shadow: 0 0 5px hsl(var(--primary) / 0.2); }
+  50% { border-color: hsl(var(--primary) / 1); box-shadow: 0 0 20px 5px hsl(var(--primary) / 0.4); }
+  100% { border-color: hsl(var(--primary) / 0.5); box-shadow: 0 0 5px hsl(var(--primary) / 0.2); }
+}
+
+.game-card-glowing {
+  animation: glowing-border 2.5s ease-in-out infinite;
 }
