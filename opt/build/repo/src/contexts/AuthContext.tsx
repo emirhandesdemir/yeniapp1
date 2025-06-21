@@ -14,10 +14,10 @@ import {
   signInWithPopup,
 } from 'firebase/auth';
 import { auth, db, storage } from '@/lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction, deleteDoc, query, orderBy, getDocs } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { isPast } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
@@ -213,8 +213,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateFirebaseProfile(userCredential.user, { displayName: username });
       await createUserDocument(userCredential.user, username, gender, false);
-      // onAuthStateChanged will handle the rest (setting user state and redirecting)
-      toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu. Yönlendiriliyorsunuz..." });
+      router.push('/');
+      toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
       let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') message = "Bu e-posta adresi zaten kullanımda.";
@@ -224,14 +224,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast, createUserDocument]);
+  }, [toast, createUserDocument, router]);
 
   const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle state updates and the LoginPage will handle redirection.
-      toast({ title: "Başarılı!", description: "Giriş yapıldı. Yönlendiriliyorsunuz..." });
+      router.push('/');
+      toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
       let message = `Giriş sırasında bir hata oluştu.`;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
@@ -241,14 +241,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast]);
+  }, [toast, router]);
 
   const signInWithGoogle = useCallback(async () => {
     setIsUserLoading(true);
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // onAuthStateChanged will handle state updates and the LoginPage will handle redirection.
+      router.push('/');
     } catch (error: any) {
       let message = "Google ile giriş sırasında bir hata oluştu.";
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
@@ -260,7 +260,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast]);
+  }, [toast, router]);
 
   const logOut = useCallback(async () => {
     setIsUserLoading(true);
@@ -269,14 +269,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(doc(db, "users", currentUser.uid), { lastSeen: serverTimestamp() });
       }
       await signOut(auth);
-      // LoginPage will now handle the view after logout
+      router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
       toast({ title: "Çıkış Hatası", description: "Çıkış yapılırken bir hata oluştu.", variant: "destructive" });
     } finally {
       setIsUserLoading(false);
     }
-  }, [currentUser, toast]);
+  }, [currentUser, toast, router]);
 
   const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }): Promise<boolean> => {
     if (!auth.currentUser) {
@@ -468,3 +468,5 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
+
+    
