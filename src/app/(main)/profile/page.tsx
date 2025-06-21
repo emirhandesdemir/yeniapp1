@@ -5,7 +5,7 @@ import { useState, useEffect, type ChangeEvent, useRef, useCallback } from "reac
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2, Settings, Edit3, LogOutIcon, LayoutDashboard, Save, ExternalLink, Brush, Framer, MessageSquare } from "lucide-react";
+import { Loader2, Palette, Users, LockKeyhole, ShieldCheck, Eye, UsersRound, ImagePlus, ShoppingBag, Mic as MicIcon, PauseCircle, PlayCircle, Star, Trash2, Settings, Edit3, LogOutIcon, LayoutDashboard, Save, ExternalLink, Brush, Framer, MessageSquare, CheckCircle } from "lucide-react";
 import { useAuth, type PrivacySettings, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/ThemeContext";
