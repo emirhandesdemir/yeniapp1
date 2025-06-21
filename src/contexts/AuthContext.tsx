@@ -316,8 +316,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
-
+      // Firestore dokümanını oluştur
+      await createUserDocument(userCredential.user, username, gender, false, null);
+      // Firebase Auth profilini güncelle
+      await updateFirebaseProfile(userCredential.user, { displayName: username });
+      
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
@@ -333,12 +336,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [router, toast]);
+  }, [router, toast, createUserDocument]);
 
   const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      router.push('/');
+      toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
       let message = `Giriş sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.`;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
@@ -348,13 +353,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast]);
+  }, [toast, router]);
 
   const signInWithGoogle = useCallback(async () => {
     setIsUserLoading(true);
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
+      router.push('/');
     } catch (error: any) {
       let message = "Google ile giriş sırasında bir hata oluştu.";
       if (error.code === 'auth/popup-closed-by-user') {
@@ -368,7 +374,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast]);
+  }, [toast, router]);
 
   const logOut = useCallback(async () => {
     setIsUserLoading(true);
@@ -772,3 +778,5 @@ export const checkUserPremium = (user: UserData | Partial<UserData> | null): boo
   return !!(user.premiumStatus && user.premiumStatus !== 'none' &&
          (!user.premiumExpiryDate || !isPast(user.premiumExpiryDate.toDate())));
 };
+
+    
