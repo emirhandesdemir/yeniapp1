@@ -73,7 +73,7 @@ interface AppearanceConfig {
 }
 
 export default function SettingsPage() {
-  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen, isCurrentUserPremium } = useAuth();
+  const { currentUser, userData, updateUserProfile, isUserLoading, logOut, isCurrentUserPremium } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
 
@@ -504,12 +504,14 @@ export default function SettingsPage() {
       <motion.div custom={8} variants={sectionVariants} initial="hidden" animate="visible" className="pt-2">
           {userData?.role === 'admin' && (
               <Button
-              variant="outline"
-              className="w-full border-purple-500/70 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 hover:border-purple-600 rounded-md mb-3 transition-all"
-              onClick={() => setIsAdminPanelOpen(true)}
-              disabled={isUserLoading}
+                asChild
+                variant="outline"
+                className="w-full border-purple-500/70 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 hover:border-purple-600 rounded-md mb-3 transition-all"
+                disabled={isUserLoading}
               >
-              <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
+                <Link href="/admin/dashboard">
+                    <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Paneli
+                </Link>
               </Button>
           )}
           <Button

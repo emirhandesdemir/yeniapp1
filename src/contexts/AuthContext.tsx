@@ -176,7 +176,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
               setUserData({ uid: user.uid, ...fetchedData });
             }
           } else {
-            // This is a critical recovery path for users that exist in Auth but not Firestore.
             await createUserDocument(user, user.displayName || undefined, "belirtilmemiş", true);
             const newSnap = await getDoc(userDocRef);
             if (newSnap.exists()) {
@@ -212,7 +211,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateFirebaseProfile(userCredential.user, { displayName: username });
       await createUserDocument(userCredential.user, username, gender, false);
-      toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
       let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') message = "Bu e-posta adresi zaten kullanımda.";
@@ -228,7 +226,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsUserLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
       let message = `Giriş sırasında bir hata oluştu.`;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
@@ -245,9 +242,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // The onAuthStateChanged listener will handle the rest, including document creation and state updates.
     } catch (error: any) {
-      let message = "Google ile giriş sırasında bir hata oluştu.";
+      console.error("Google Sign-In Error:", error);
+      let message = `Google ile giriş sırasında bir hata oluştu. (Kod: ${error.code})`;
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
         message = "Giriş penceresi kapatıldı veya istek iptal edildi.";
       } else if (error.code === 'auth/account-exists-with-different-credential') {
@@ -266,8 +263,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(doc(db, "users", currentUser.uid), { lastSeen: serverTimestamp() });
       }
       await signOut(auth);
-      // router.push is handled by page components reacting to currentUser being null
-      toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
       toast({ title: "Çıkış Hatası", description: "Çıkış yapılırken bir hata oluştu.", variant: "destructive" });
     } finally {
@@ -465,5 +460,3 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
-
-    

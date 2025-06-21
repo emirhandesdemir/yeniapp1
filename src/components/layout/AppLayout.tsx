@@ -8,7 +8,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Bell,
   Loader2,
-  Home,
+  Globe,
   UserRound,
   Phone,
   PhoneOff as PhoneOffIcon,
@@ -44,13 +44,12 @@ import {
 } from "firebase/firestore";
 import { UserCheck, UserX, Star } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
-import AdminOverlayPanel from '@/components/admin/AdminOverlayPanel';
 import { useInAppNotification, type InAppNotificationData } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { requestNotificationPermission, subscribeUserToPush } from '@/lib/notificationUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { generateDmChatId } from '@/lib/utils';
-import MinimizedChatWidget from '@/components/chat/MinimizedChatWidget'; // Eklendi
+import MinimizedChatWidget from '@/components/chat/MinimizedChatWidget';
 
 interface FriendRequestForPopover {
   id: string;
@@ -77,7 +76,7 @@ interface IncomingCallInfo {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: () => '/', label: 'Akış', icon: Home, activeIcon: Home },
+  { href: () => '/', label: 'Akış', icon: Globe, activeIcon: Globe },
   { href: () => '/chat', label: 'Odalar', icon: Compass, activeIcon: Compass },
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
   { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle },
@@ -112,7 +111,7 @@ const pageTransition = { type: "tween", ease: "anticipate", duration: 0.3 };
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading, isAdminPanelOpen } = useAuth();
+  const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
   const { showNotification: showInAppNotification } = useInAppNotification();
 
@@ -377,7 +376,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const getAvatarFallback = useCallback((name?: string | null) => (name ? name.substring(0, 2).toUpperCase() : currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "HW"), [currentUser?.email]);
 
-  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/');
+  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/') || pathname.startsWith('/match/');
   const mainContentClasses = cn("flex-1 overflow-auto bg-background", isChatPage ? "p-0" : "px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-[calc(theme(spacing.16)+theme(spacing.3))] sm:pb-[calc(theme(spacing.16)+theme(spacing.4))]");
 
   return (
@@ -429,7 +428,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
       {isClient ? (<AnimatePresence mode="wait"><motion.main key={pathname} className={cn(mainContentClasses, "flex flex-col")} variants={pageVariants} initial="initial" animate="in" exit="out" transition={pageTransition}>{children}</motion.main></AnimatePresence>) : (<main className={cn(mainContentClasses, "flex flex-col")}>{children}</main>)}
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
-      {isClient && userData?.role === 'admin' && isAdminPanelOpen && <AdminOverlayPanel />}
       {isClient && <MinimizedChatWidget />}
       {isClient && activeIncomingCall && (
         <Dialog open={isCallModalOpen} onOpenChange={(isOpen) => { if (!isOpen && activeIncomingCall) handleRejectCall(); setIsCallModalOpen(isOpen); if (!isOpen) setActiveIncomingCall(null); }}>
