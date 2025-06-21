@@ -4,9 +4,9 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, MoreHorizontal } from "lucide-react";
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, Copy, Smile as SmileIcon } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
-import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc, FieldValue } from 'firebase/firestore';
+import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc } from 'firebase/firestore';
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
@@ -30,13 +30,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 
-
-interface ReactionDetail {
-  count: number;
-  users: string[];
-}
 
 interface Message {
   id: string;
@@ -45,10 +44,13 @@ interface Message {
   senderName: string;
   senderAvatar: string | null;
   senderIsPremium?: boolean;
+  senderBubbleStyle?: string;
+  senderAvatarFrameStyle?: string;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  isChestMessage?: boolean;
   mentionedUserIds?: string[];
   editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
@@ -73,16 +75,15 @@ interface ChatMessageItemProps {
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
   roomId: string;
   isActiveParticipant: boolean;
-  onMessageDeleted: (messageId: string) => void;
-  onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
+  onStartEdit: (messageId: string, currentText: string) => void;
 }
 
 const PREDEFINED_REACTIONS = [
-    { emoji: "👍", name: "Beğen", icon: ThumbsUp },
-    { emoji: "❤️", name: "Sevgi", icon: Heart },
-    { emoji: "😂", name: "Gülme", icon: Laugh },
-    { emoji: "🎉", name: "Kutlama", icon: PartyPopper },
-    { emoji: "🤔", name: "Düşünme", icon: HelpCircle },
+    { emoji: "👍", name: "Beğen", icon: <ThumbsUp className="h-4 w-4" /> },
+    { emoji: "❤️", name: "Sevgi", icon: <Heart className="h-4 w-4" /> },
+    { emoji: "😂", name: "Gülme", icon: <Laugh className="h-4 w-4" /> },
+    { emoji: "🎉", name: "Kutlama", icon: <PartyPopper className="h-4 w-4" /> },
+    { emoji: "🤔", name: "Düşünme", icon: <HelpCircle className="h-4 w-4" /> },
 ];
 
 const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
@@ -104,8 +105,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   onKickParticipantFromTextChat,
   roomId,
   isActiveParticipant,
-  onMessageDeleted,
-  onMessageEdited,
+  onStartEdit
 }) => {
   const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
@@ -114,20 +114,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const [reportReason, setReportReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedText, setEditedText] = useState(msg.text);
-  const [isProcessingEditOrDelete, setIsProcessingEditOrDelete] = useState(false);
+  const [isProcessingDelete, setIsProcessingDelete] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const editInputRef = useRef<HTMLTextAreaElement>(null);
-  const [showReactionPicker, setShowReactionPicker] = useState(false);
-
-
-  useEffect(() => {
-    if (isEditing && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
-    }
-  }, [isEditing]);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const pressTimer = useRef<NodeJS.Timeout>();
 
 
   useEffect(() => {
@@ -135,7 +125,32 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       checkIfUserBlocked(msg.senderId).then(setIsTargetUserBlocked);
     }
   }, [popoverOpenForUserId, msg.senderId, popoverTargetUser, currentUserUid, checkIfUserBlocked]);
+  
+  const handlePointerDown = () => {
+    pressTimer.current = setTimeout(() => {
+        setIsMenuOpen(true);
+    }, 500); 
+  };
+  
+  const handlePointerUp = () => {
+    clearTimeout(pressTimer.current);
+  };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsMenuOpen(true);
+  };
+
+  const handleCopyText = () => {
+    navigator.clipboard.writeText(msg.text);
+    toast({ title: "Kopyalandı", description: "Mesaj panoya kopyalandı." });
+    setIsMenuOpen(false);
+  };
+
+  const handleEditMessage = () => {
+    onStartEdit(msg.id, msg.text);
+    setIsMenuOpen(false);
+  };
 
   const handleReportUserConfirmation = async () => {
     if (!popoverTargetUser) return;
@@ -159,53 +174,18 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
   const handleDeleteMessage = async () => {
     if (!msg.isOwn || !roomId || !msg.id) return;
-    setIsProcessingEditOrDelete(true);
+    setIsProcessingDelete(true);
     setShowDeleteConfirm(false);
     try {
       const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
-      onMessageDeleted(msg.id);
     } catch (error) {
       console.error("Error deleting chat message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
     } finally {
-      setIsProcessingEditOrDelete(false);
+      setIsProcessingDelete(false);
     }
-  };
-
-  const handleEditMessage = () => {
-    setEditedText(msg.text);
-    setIsEditing(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!msg.isOwn || !roomId || !msg.id || !editedText.trim() || editedText.trim() === msg.text) {
-      setIsEditing(false);
-      return;
-    }
-    setIsProcessingEditOrDelete(true);
-    try {
-      const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
-      const newEditedAt = Timestamp.now();
-      await updateDoc(messageRef, {
-        text: editedText.trim(),
-        editedAt: newEditedAt,
-      });
-      onMessageEdited(msg.id, editedText.trim(), newEditedAt);
-      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Error editing message:", error);
-      toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
-    } finally {
-      setIsProcessingEditOrDelete(false);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditedText(msg.text);
   };
 
   const handleReaction = async (emoji: string) => {
@@ -261,20 +241,29 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   }, []);
 
 
-  if (msg.isGameMessage && msg.senderId === "system") {
+  const getSystemMessageContent = (message: Message) => {
     let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
-    if (msg.text.toLowerCase().includes("tebrikler")) {
+    if (message.text.toLowerCase().includes("tebrikler")) {
         icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
-    } else if (msg.text.toLowerCase().includes("ipucu")) {
+    } else if (message.text.toLowerCase().includes("ipucu")) {
         icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
+    } else if (message.isChestMessage) {
+        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
     }
+    return (
+        <>
+            {icon}
+            <span className="font-medium text-foreground/80">{message.senderName}: </span>
+            {message.text}
+        </>
+    );
+};
 
+if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
         <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
-           {icon}
-           <span className="font-medium text-foreground/80">{msg.senderName}: </span>
-           {msg.text}
+           {getSystemMessageContent(msg)}
         </div>
       </div>
     );
@@ -283,21 +272,29 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const currentUsersActualPhoto = currentUserData?.photoURL;
   const currentUsersActualDisplayName = currentUserData?.displayName;
   const currentUsersActualIsPremium = checkUserPremium(currentUserData);
-
+  
+  const bubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
+  const frameStyle = msg.isOwn ? (currentUserData?.avatarFrameStyle || 'default') : (msg.senderAvatarFrameStyle || 'default');
+  
   const isMentioned = msg.mentionedUserIds && msg.mentionedUserIds.includes(currentUserUid || '');
 
-  let bubbleClasses = msg.isOwn
+  let baseBubbleClasses = msg.isOwn
     ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
     : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl";
-
+  
+  let bubbleClasses = cn(baseBubbleClasses, `bubble-${bubbleStyle}`);
+  
   let textClasses = "text-sm whitespace-pre-wrap break-words";
 
   if (isMentioned) {
     if (msg.isOwn) {
-      bubbleClasses = "bg-primary/90 text-primary-foreground rounded-t-2xl rounded-l-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform";
+      bubbleClasses = cn(baseBubbleClasses, `bubble-${bubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform");
       textClasses = "text-sm font-medium whitespace-pre-wrap break-words";
     } else {
-      bubbleClasses = "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950 rounded-t-2xl rounded-r-2xl ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out";
+      bubbleClasses = cn(baseBubbleClasses, `bubble-${bubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out");
+      if(bubbleStyle === 'default'){
+        bubbleClasses = cn(bubbleClasses, "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950");
+      }
       textClasses = "text-sm font-semibold whitespace-pre-wrap break-words";
     }
   }
@@ -311,13 +308,15 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             else if (msg.senderId !== currentUserUid) onOpenUserInfoPopover(msg.senderId);
         }}>
             <PopoverTrigger asChild>
-                <Link href={`/profile/${msg.senderId}`} className="relative self-end mb-1 cursor-pointer">
-                    <Avatar className="h-7 w-7">
-                        <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
-                        <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
-                         {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
-                    </Avatar>
-                    {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 cursor-pointer">
+                    <div className={cn('relative flex-shrink-0', `avatar-frame-${frameStyle}`)}>
+                        <Avatar className="h-7 w-7">
+                            <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
+                            <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
+                        </Avatar>
+                        {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
+                        {msg.senderIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
+                    </div>
                 </Link>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3" side="top" align="start">
@@ -394,90 +393,61 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     <span className="text-xs text-muted-foreground mb-0.5 px-2 cursor-pointer hover:underline">{msg.senderName}</span>
                 </Link>
           )}
-           <div
-            className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble", bubbleClasses)}
-            onMouseEnter={() => setShowReactionPicker(true)}
-            onMouseLeave={() => setShowReactionPicker(false)}
-           >
-                {isEditing ? (
-                    <div className="space-y-2">
-                        <Textarea
-                            ref={editInputRef}
-                            value={editedText}
-                            onChange={(e) => setEditedText(e.target.value)}
-                            className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                            rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                            disabled={isProcessingEditOrDelete}
-                        />
-                        <div className="flex justify-end gap-2">
-                            <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                            <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                                {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                            </Button>
-                        </div>
-                    </div>
-                ) : (
+           <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+            <DropdownMenuTrigger asChild>
+                <div
+                    onPointerDown={handlePointerDown}
+                    onPointerUp={handlePointerUp}
+                    onContextMenu={handleContextMenu}
+                    className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble cursor-pointer", bubbleClasses)}
+                >
                     <p className={cn(textClasses, "allow-text-selection")}>
                         {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
                         {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
                     </p>
+                </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger><SmileIcon className="mr-2 h-4 w-4" /> Tepki Ver</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="p-1">
+                    <div className="flex gap-1">
+                        {PREDEFINED_REACTIONS.map(reaction => {
+                            const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
+                            return (
+                                <Button
+                                    key={reaction.emoji}
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn("h-7 w-7 rounded-full hover:bg-primary/10", userHasReactedWithThis ? "text-primary" : "text-muted-foreground")}
+                                    onClick={() => { handleReaction(reaction.emoji); setIsMenuOpen(false); }}
+                                    disabled={!currentUser}
+                                    title={reaction.name}
+                                >
+                                    {React.cloneElement(reaction.icon as React.ReactElement, { className: cn("h-5 w-5", userHasReactedWithThis && "fill-primary/20") })}
+                                </Button>
+                            );
+                        })}
+                    </div>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem onClick={handleCopyText}><Copy className="mr-2 h-4 w-4" /> Metni Kopyala</DropdownMenuItem>
+                {msg.isOwn && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingDelete}>
+                            <Edit2 className="mr-2 h-4 w-4" /> Düzenle
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingDelete}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Sil
+                        </DropdownMenuItem>
+                    </>
                 )}
+            </DropdownMenuContent>
+           </DropdownMenu>
 
-                {/* Reaction Picker - shows on bubble hover/focus */}
-                {showReactionPicker && !isEditing && (
-                  <div className={cn(
-                    "absolute -top-7 flex space-x-0.5 bg-card p-1 rounded-full shadow-lg border border-border/70 transition-opacity duration-150 ease-out",
-                    msg.isOwn ? "right-0" : "left-0"
-                  )}>
-                    {PREDEFINED_REACTIONS.map(reaction => {
-                       const ReactionIcon = reaction.icon;
-                       const userHasReactedWithThis = (msg.reactions?.[reaction.emoji] || []).includes(currentUser?.uid || "");
-                       return (
-                        <Button
-                            key={reaction.emoji}
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                                "h-6 w-6 rounded-full hover:bg-primary/10",
-                                userHasReactedWithThis ? "text-primary" : "text-muted-foreground"
-                            )}
-                            onClick={() => handleReaction(reaction.emoji)}
-                            disabled={!currentUser}
-                            title={reaction.name}
-                        >
-                            <ReactionIcon className={cn("h-4 w-4", userHasReactedWithThis && "fill-primary/20")} />
-                        </Button>
-                       );
-                    })}
-                  </div>
-                )}
-
-                {/* Edit/Delete Menu for own messages - shows on bubble hover/focus */}
-                {msg.isOwn && !isEditing && showReactionPicker && (
-                  <div className={cn(
-                    "absolute flex",
-                     msg.isOwn ? "top-1 left-1 -ml-7" : "top-1 right-1 -mr-7" // Position opposite to reaction picker
-                  )}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className={cn("h-6 w-6 rounded-full", msg.isOwn ? "text-primary-foreground/70 hover:text-primary-foreground/90" : "text-secondary-foreground/70 hover:text-secondary-foreground/90")}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent side={msg.isOwn ? "right" : "left"} align="center">
-                          <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
-                              <Edit2 className="mr-2 h-4 w-4" /> Düzenle
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
-                              <Trash2 className="mr-2 h-4 w-4" /> Sil
-                          </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
-            </div>
             {/* Reactions Display */}
-            {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
                     if (!users || users.length === 0) return null;
@@ -506,12 +476,12 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
           </p>
       </div>
       {msg.isOwn && (
-        <div className="relative self-end mb-1 cursor-default">
+        <div className={cn('relative self-end mb-1 cursor-default', `avatar-frame-${frameStyle}`)}>
             <Avatar className="h-7 w-7">
                 <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
-                 {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
             </Avatar>
+            {isActiveParticipant && <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card shadow" title="Odada Aktif"></div>}
             {currentUsersActualIsPremium && <Star className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
         </div>
       )}
@@ -544,13 +514,13 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                   </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingEditOrDelete}>İptal</AlertDialogCancel>
+                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingDelete}>İptal</AlertDialogCancel>
                   <AlertDialogAction
                       onClick={handleDeleteMessage}
                       className="bg-destructive hover:bg-destructive/90"
-                      disabled={isProcessingEditOrDelete}
+                      disabled={isProcessingDelete}
                   >
-                      {isProcessingEditOrDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isProcessingDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Sil
                   </AlertDialogAction>
               </AlertDialogFooter>
@@ -561,5 +531,3 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 });
 ChatMessageItem.displayName = 'ChatMessageItem';
 export default ChatMessageItem;
-
-    

@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut, Edit2 } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut, Edit2, X } from "lucide-react"; 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent, useLayoutEffect } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -25,10 +25,10 @@ import {
   setDoc,
   updateDoc,
   writeBatch,
-  deleteDoc as deleteFirestoreDoc,
+  deleteDoc as deleteFirestoreDoc, 
   FieldValue
 } from "firebase/firestore";
-import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext";
+import { useAuth, type UserData, checkUserPremium } from "@/contexts/AuthContext"; 
 import { useToast } from "@/hooks/use-toast";
 import { generateDmChatId, cn } from "@/lib/utils";
 import DirectMessageItem from "@/components/dm/DirectMessageItem";
@@ -50,7 +50,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { isPast, formatDistanceToNowStrict, differenceInMinutes, formatDistanceToNow } from 'date-fns';
+import { isPast, formatDistanceToNowStrict, differenceInMinutes, formatDistanceToNow } from 'date-fns'; 
 import { tr } from 'date-fns/locale';
 
 interface DirectMessage {
@@ -60,10 +60,12 @@ interface DirectMessage {
   senderName: string;
   senderAvatar: string | null;
   senderIsPremium?: boolean;
+  senderBubbleStyle?: string;
+  senderAvatarFrameStyle?: string;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
-  editedAt?: Timestamp | null;
+  editedAt?: Timestamp | null; 
   reactions?: { [key: string]: string[] };
 }
 
@@ -72,9 +74,10 @@ interface DmPartnerDetails {
   displayName: string | null;
   photoURL: string | null;
   email?: string | null;
-  isPremium?: boolean;
+  isPremium?: boolean; 
   isBanned?: boolean;
-  lastSeen?: Timestamp | null;
+  lastSeen?: Timestamp | null; 
+  avatarFrameStyle?: string;
 }
 
 interface DmDocumentData {
@@ -91,13 +94,13 @@ interface DmDocumentData {
     matchSessionUser1Decision?: 'pending' | 'yes' | 'no';
     matchSessionUser2Decision?: 'pending' | 'yes' | 'no';
     matchSessionEnded?: boolean;
-    matchSessionEndedReason?: string;
-    matchSessionEndedBy?: string;
+    matchSessionEndedReason?: string; 
+    matchSessionEndedBy?: string; 
 }
 
 const TYPING_DEBOUNCE_DELAY = 1500;
 const MATCH_SESSION_DURATION_SECONDS = 4 * 60;
-const ACTIVE_THRESHOLD_MINUTES_DM = 2;
+const ACTIVE_THRESHOLD_MINUTES_DM = 2; 
 
 const messageVariants = {
   hidden: { opacity: 0, y: 10 },
@@ -126,7 +129,7 @@ export default function DirectMessagePage() {
   const [reportReason, setReportReason] = useState("");
 
   const [dmDocData, setDmDocData] = useState<DmDocumentData | null>(null);
-  const dmDocDataRef = useRef<DmDocumentData | null>(null);
+  const dmDocDataRef = useRef<DmDocumentData | null>(null); 
   const [isMatchSessionChat, setIsMatchSessionChat] = useState(false);
   const [sessionTimeLeft, setSessionTimeLeft] = useState<number | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
@@ -136,35 +139,60 @@ export default function DirectMessagePage() {
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const partnerLastSeenUnsubscribeRef = useRef<() => void | null>(null);
   const [showLeaveMatchConfirm, setShowLeaveMatchConfirm] = useState(false);
-
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   const getAvatarFallbackText = useCallback((name?: string | null) => {
     if (name) return name.substring(0, 2).toUpperCase();
     return "PN";
   }, []);
 
-  const handleMessageDeleted = useCallback((deletedMessageId: string) => {
-    setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
+  const handleStartEdit = useCallback((messageId: string, currentText: string) => {
+    setEditingMessage({ id: messageId, text: currentText });
+    setNewMessage(currentText);
+    messageInputRef.current?.focus();
   }, []);
+  
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessage(null);
+    setNewMessage("");
+  }, []);
+  
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingMessage || !newMessage.trim() || newMessage.trim() === editingMessage.text) {
+      handleCancelEdit();
+      return;
+    }
+    setIsSending(true);
+    const messageRef = doc(db, `directMessages/${chatId}/messages`, editingMessage.id);
+    try {
+      await updateDoc(messageRef, {
+        text: newMessage.trim(),
+        editedAt: serverTimestamp(),
+      });
+      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
+    } catch (error) {
+      console.error("Error saving edited DM:", error);
+      toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsSending(false);
+      handleCancelEdit();
+    }
+  }, [editingMessage, newMessage, chatId, toast, handleCancelEdit]);
 
-  const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
-    setMessages(prevMessages => prevMessages.map(msg =>
-        msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
-    ));
-  }, []);
 
   const handleLeaveMatchSession = useCallback(async (reason: 'user_left' | 'user_left_page' = 'user_left') => {
     if (!currentUser || !chatId || !dmDocDataRef.current || !dmDocDataRef.current.isMatchSession || dmDocDataRef.current.matchSessionEnded) return;
-
+    
     const updates: Partial<DmDocumentData> = {
         matchSessionEnded: true,
         matchSessionEndedReason: reason,
         matchSessionEndedBy: currentUser.uid,
     };
 
-
-    const myCurrentDecision = currentUser.uid === dmDocDataRef.current.matchSessionUser1Id
-        ? dmDocDataRef.current.matchSessionUser1Decision
+    
+    const myCurrentDecision = currentUser.uid === dmDocDataRef.current.matchSessionUser1Id 
+        ? dmDocDataRef.current.matchSessionUser1Decision 
         : dmDocDataRef.current.matchSessionUser2Decision;
     if (myCurrentDecision === 'pending') {
         if (currentUser.uid === dmDocDataRef.current.matchSessionUser1Id) {
@@ -176,7 +204,7 @@ export default function DirectMessagePage() {
 
     try {
         await updateDoc(doc(db, "directMessages", chatId), updates);
-        if(reason !== 'user_left_page') {
+        if(reason !== 'user_left_page') { 
             router.push('/match');
             toast({ title: "Eşleşme Sonlandırıldı", description: "Yeni bir eşleşme arayabilirsiniz." });
         }
@@ -207,7 +235,7 @@ export default function DirectMessagePage() {
                 toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
                 router.push("/friends"); return;
             }
-
+            
             let partnerInfo: Partial<DmPartnerDetails> = { uid: partnerUid };
 
             if (data.participantInfo && data.participantInfo[partnerUid]) {
@@ -218,7 +246,7 @@ export default function DirectMessagePage() {
                     isPremium: data.participantInfo[partnerUid].isPremium || false,
                  };
             }
-
+            
             if (partnerLastSeenUnsubscribeRef.current) {
                 partnerLastSeenUnsubscribeRef.current();
             }
@@ -227,7 +255,7 @@ export default function DirectMessagePage() {
                 if (userSnap.exists()) {
                     const partnerData = userSnap.data() as UserData;
                     setDmPartnerDetails(prev => ({
-                        ...(prev || partnerInfo),
+                        ...(prev || partnerInfo), 
                         uid: partnerUid,
                         displayName: partnerData.displayName || partnerInfo.displayName,
                         photoURL: partnerData.photoURL || partnerInfo.photoURL,
@@ -235,18 +263,19 @@ export default function DirectMessagePage() {
                         isPremium: checkUserPremium(partnerData),
                         isBanned: partnerData.isBanned || false,
                         lastSeen: partnerData.lastSeen || null,
+                        avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
                     }));
                     if (!data.isMatchSession || data.matchSessionEnded) {
                          document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
                     } else {
                          document.title = `Eşleşme: ${partnerData.displayName || 'Kullanıcı'}`;
                     }
-
+                   
                 } else {
                     setDmPartnerDetails(prev => ({
                         ...(prev || partnerInfo),
                         uid: partnerUid,
-                        lastSeen: null,
+                        lastSeen: null, 
                     }));
                      document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
                 }
@@ -268,7 +297,7 @@ export default function DirectMessagePage() {
 
             if (data.isMatchSession && !data.matchSessionEnded) {
                 const myId = currentUser.uid;
-
+                
                 setMyDecision(myId === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
                 setPartnerDecision(partnerUid === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
 
@@ -282,7 +311,7 @@ export default function DirectMessagePage() {
                     }
                 }
             } else if (data.isMatchSession && data.matchSessionEnded && data.matchSessionEndedBy !== currentUser.uid && (data.matchSessionEndedReason?.startsWith('partner_left') || data.matchSessionEndedReason === 'user_left')) {
-
+                
                 toast({ title: "Partner Ayrıldı", description: "Sohbet partneriniz eşleşmeden ayrıldı. Yeni bir eşleşme arayabilirsiniz.", duration: 7000 });
                 router.push('/match');
             }
@@ -340,7 +369,7 @@ export default function DirectMessagePage() {
     user2Id: string
   ) => {
     if (decisionProcessing || !currentUser || !userData || !dmPartnerDetails || !dmDocDataRef.current) return;
-    if (dmDocDataRef.current.matchSessionEnded) return;
+    if (dmDocDataRef.current.matchSessionEnded) return; 
     setDecisionProcessing(true);
     const dmDocRef = doc(db, "directMessages", chatId);
 
@@ -349,7 +378,7 @@ export default function DirectMessagePage() {
             const batch = writeBatch(db);
             const user1DocRef = doc(db, "users", user1Id);
             const user2DocRef = doc(db, "users", user2Id);
-
+            
             const user1DataSnap = await getDoc(user1DocRef);
             const user2DataSnap = await getDoc(user2DocRef);
 
@@ -357,22 +386,22 @@ export default function DirectMessagePage() {
                 const user1Data = user1DataSnap.data() as UserData;
                 const user2Data = user2DataSnap.data() as UserData;
 
-                batch.set(doc(user1DocRef, "confirmedFriends", user2Id), {
-                    displayName: user2Data.displayName, photoURL: user2Data.photoURL,
-                    isPremium: checkUserPremium(user2Data), addedAt: serverTimestamp()
+                batch.set(doc(user1DocRef, "confirmedFriends", user2Id), { 
+                    displayName: user2Data.displayName, photoURL: user2Data.photoURL, 
+                    isPremium: checkUserPremium(user2Data), addedAt: serverTimestamp() 
                 });
-                batch.set(doc(user2DocRef, "confirmedFriends", user1Id), {
-                    displayName: user1Data.displayName, photoURL: user1Data.photoURL,
-                    isPremium: checkUserPremium(user1Data), addedAt: serverTimestamp()
+                batch.set(doc(user2DocRef, "confirmedFriends", user1Id), { 
+                    displayName: user1Data.displayName, photoURL: user1Data.photoURL, 
+                    isPremium: checkUserPremium(user1Data), addedAt: serverTimestamp() 
                 });
             }
 
             batch.update(dmDocRef, {
-                isMatchSession: false,
+                isMatchSession: false, 
                 matchSessionEnded: true,
                 matchSessionEndedReason: 'both_yes',
                 matchSessionExpiresAt: null,
-                matchSessionUser1Decision: null,
+                matchSessionUser1Decision: null, 
                 matchSessionUser2Decision: null,
                 matchSessionEndedBy: null,
             });
@@ -389,12 +418,12 @@ export default function DirectMessagePage() {
             await updateDoc(dmDocRef, {
                 matchSessionEnded: true,
                 matchSessionEndedReason: endedReason,
-                matchSessionEndedBy: decision1 === 'no' ? user1Id : (decision2 === 'no' ? user2Id : null),
+                matchSessionEndedBy: decision1 === 'no' ? user1Id : (decision2 === 'no' ? user2Id : null), 
                 matchSessionExpiresAt: null,
             });
             toast({ title: "Eşleşme Sonlandı", description: "Sohbet devam etmeyecek.", variant: "default" });
             setShowDecisionModal(false);
-            if(!dmDocDataRef.current?.matchSessionEnded) router.push('/match');
+            if(!dmDocDataRef.current?.matchSessionEnded) router.push('/match'); 
         } catch (error) {
             console.error("Error ending match session:", error);
         }
@@ -406,14 +435,14 @@ export default function DirectMessagePage() {
     if (!dmDocData || dmDocData.matchSessionEnded || !isMatchSessionChat) return;
 
     const { matchSessionUser1Decision, matchSessionUser2Decision, matchSessionUser1Id, matchSessionUser2Id, matchSessionExpiresAt } = dmDocData;
-
+    
     const decisionsMade = matchSessionUser1Decision !== 'pending' && matchSessionUser2Decision !== 'pending';
     const timerExpired = matchSessionExpiresAt && isPast(matchSessionExpiresAt.toDate());
 
     if (decisionsMade) {
       processMatchDecisions(matchSessionUser1Decision!, matchSessionUser2Decision!, matchSessionUser1Id!, matchSessionUser2Id!);
     } else if (timerExpired) {
-
+      
       const finalUser1Decision = matchSessionUser1Decision === 'pending' ? 'no' : matchSessionUser1Decision!;
       const finalUser2Decision = matchSessionUser2Decision === 'pending' ? 'no' : matchSessionUser2Decision!;
       processMatchDecisions(finalUser1Decision, finalUser2Decision, matchSessionUser1Id!, matchSessionUser2Id!);
@@ -424,16 +453,16 @@ export default function DirectMessagePage() {
   const handleDecisionSubmit = async (decision: 'yes' | 'no') => {
     if (!currentUser || !dmDocData || !dmDocData.isMatchSession || dmDocData.matchSessionEnded || decisionProcessing) return;
     setDecisionProcessing(true);
-
+    
     const myId = currentUser.uid;
     const updateField = myId === dmDocData.matchSessionUser1Id ? 'matchSessionUser1Decision' : 'matchSessionUser2Decision';
-
+    
     try {
       await updateDoc(doc(db, "directMessages", chatId), {
         [updateField]: decision
       });
       setMyDecision(decision);
-
+      
     } catch (error) {
       console.error("Error submitting decision:", error);
       toast({ title: "Hata", description: "Kararınız kaydedilemedi.", variant: "destructive" });
@@ -458,8 +487,10 @@ export default function DirectMessagePage() {
           senderName: data.senderName,
           senderAvatar: data.senderAvatar,
           senderIsPremium: data.senderIsPremium || false,
+          senderBubbleStyle: data.senderBubbleStyle || 'default',
+          senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default',
           timestamp: data.timestamp,
-          editedAt: data.editedAt,
+          editedAt: data.editedAt, 
           reactions: data.reactions,
         });
       });
@@ -469,7 +500,6 @@ export default function DirectMessagePage() {
         userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking"
       })));
       setLoadingMessages(false);
-      setTimeout(() => scrollToBottom(), 0);
     }, (error) => {
       console.error("Error fetching DM messages:", error);
       toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
@@ -480,7 +510,7 @@ export default function DirectMessagePage() {
 
 
   useEffect(() => {
-    const currentDmDocData = dmDocDataRef.current;
+    const currentDmDocData = dmDocDataRef.current; 
     return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -504,9 +534,11 @@ export default function DirectMessagePage() {
     }
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+  useLayoutEffect(() => {
+    if (!loadingMessages) {
+        scrollToBottom();
+    }
+  }, [messages, loadingMessages, scrollToBottom]);
 
 
   const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -514,8 +546,7 @@ export default function DirectMessagePage() {
     setNewMessage(currentMessage);
   };
 
-  const handleSendMessage = useCallback(async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = useCallback(async () => {
     if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) {
         return;
     }
@@ -541,7 +572,7 @@ export default function DirectMessagePage() {
 
     try {
       const dmChatDocRef = doc(db, "directMessages", chatId);
-
+      
       const messageDataForParentDoc = {
         lastMessageTimestamp: serverTimestamp(),
         lastMessageText: tempMessage.substring(0, 50),
@@ -571,8 +602,10 @@ export default function DirectMessagePage() {
         senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         senderIsPremium: userIsCurrentlyPremium,
+        senderBubbleStyle: userData?.bubbleStyle || 'default',
+        senderAvatarFrameStyle: userData?.avatarFrameStyle || 'default',
         timestamp: serverTimestamp(),
-        editedAt: null,
+        editedAt: null, 
         reactions: {},
       });
       setNewMessage("");
@@ -583,6 +616,15 @@ export default function DirectMessagePage() {
       setIsSending(false);
     }
   },[currentUser, newMessage, chatId, userData, dmPartnerDetails, isUserLoading, isSending, toast, isCurrentUserPremium, isPartnerBlockedByCurrentUser, isCurrentUserBlockedByPartner, isMatchSessionChat, dmDocData]);
+  
+  const handleFormSubmit = useCallback((e: FormEvent) => {
+    e.preventDefault();
+    if (editingMessage) {
+        handleSaveEdit();
+    } else {
+        handleSendMessage();
+    }
+  }, [editingMessage, handleSaveEdit, handleSendMessage]);
 
   const handleVoiceCall = useCallback(async () => {
     if (!currentUser || !userData || !dmPartnerDetails) {
@@ -608,11 +650,11 @@ export default function DirectMessagePage() {
         callerId: currentUser.uid,
         callerName: userData.displayName,
         callerAvatar: userData.photoURL,
-        callerIsPremium: currentUserIsCurrentlyPremium,
+        callerIsPremium: currentUserIsCurrentlyPremium, 
         calleeId: dmPartnerDetails.uid,
         calleeName: dmPartnerDetails.displayName,
         calleeAvatar: dmPartnerDetails.photoURL,
-        calleeIsPremium: dmPartnerDetails.isPremium,
+        calleeIsPremium: dmPartnerDetails.isPremium, 
         status: "initiating",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -641,7 +683,7 @@ export default function DirectMessagePage() {
 
   const handleBlockOrUnblockUser = async () => {
     if (!currentUser || !dmPartnerDetails) return;
-    setIsSending(true);
+    setIsSending(true); 
     if (isPartnerBlockedByCurrentUser) {
         await unblockUser(dmPartnerDetails.uid);
         setIsPartnerBlockedByCurrentUser(false);
@@ -678,7 +720,7 @@ export default function DirectMessagePage() {
       </div>
     );
   }
-
+  
   if (isCurrentUserBlockedByPartner) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center h-screen bg-card p-6 text-center rounded-xl shadow-lg">
@@ -715,20 +757,19 @@ export default function DirectMessagePage() {
                 <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className={cn(
-                "flex items-center gap-2 min-w-0 relative",
-                !isMatchSessionActive && "cursor-pointer group"
+                "flex items-center gap-2 min-w-0 relative group",
+                !isMatchSessionActive && "cursor-pointer"
                 )}
                  onClick={!isMatchSessionActive ? () => router.push(`/profile/${dmPartnerDetails.uid}`) : undefined}
             >
-                <Avatar className={cn(
-                    "h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent rounded-full",
-                    !isMatchSessionActive && "group-hover:border-primary/50 transition-colors duration-200"
-                    )}>
-                    <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
-                    <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                <div className={cn('relative flex-shrink-0', `avatar-frame-${dmPartnerDetails.avatarFrameStyle || 'default'}`)}>
+                    <Avatar className="h-9 w-9 sm:h-10 sm:w-10 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
+                        <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
+                        <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                    </Avatar>
                     {isPartnerCurrentlyActive && !isMatchSessionActive && <Dot className="absolute -bottom-1 -right-1 h-6 w-6 text-green-500 fill-green-500" />}
-                </Avatar>
-                {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
+                    {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
+                </div>
                 <div className="flex-1 min-w-0">
                     <h2 className={cn(
                         "text-sm sm:text-base font-semibold text-foreground truncate transition-colors",
@@ -792,7 +833,7 @@ export default function DirectMessagePage() {
       <ScrollArea className="flex-1 p-3 sm:p-4" ref={scrollAreaRef}>
         <AnimatePresence initial={false}>
             {loadingMessages && messages.length === 0 && (
-                <motion.div
+                <motion.div 
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                     className="flex flex-1 items-center justify-center py-10"
                 >
@@ -801,7 +842,7 @@ export default function DirectMessagePage() {
                 </motion.div>
             )}
             {!loadingMessages && messages.length === 0 && (
-                <motion.div
+                <motion.div 
                     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                     className="text-center text-muted-foreground py-10 px-4"
                 >
@@ -823,8 +864,7 @@ export default function DirectMessagePage() {
                   msg={msg}
                   getAvatarFallbackText={getAvatarFallbackText}
                   chatId={chatId}
-                  onMessageDeleted={handleMessageDeleted}
-                  onMessageEdited={handleMessageEdited}
+                  onStartEdit={handleStartEdit}
                   isMatchSession={isMatchSessionActive}
                 />
               </motion.div>
@@ -833,14 +873,37 @@ export default function DirectMessagePage() {
         </ScrollArea>
     </div>
 
-      <form onSubmit={handleSendMessage} className="p-2.5 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
+      <form onSubmit={handleFormSubmit} className="p-2.5 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
+        <AnimatePresence>
+          {editingMessage && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: 'auto', marginBottom: '8px' }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="bg-secondary/50 rounded-lg px-3 py-2 border-l-4 border-primary"
+            >
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-semibold text-sm text-primary">Mesajı Düzenle</p>
+                  <p className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md">{editingMessage.text}</p>
+                </div>
+                <Button variant="ghost" size="icon" type="button" onClick={handleCancelEdit}>
+                  <X className="h-4 w-4"/>
+                  <span className="sr-only">Düzenlemeyi İptal Et</span>
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="relative flex items-center gap-2">
           <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || (isMatchSessionChat && dmDocData?.matchSessionEnded)} className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 text-muted-foreground hover:text-primary">
             <Smile className="h-5 w-5" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
           <Input
-            placeholder={isPartnerBlockedByCurrentUser ? "Bu kullanıcıyı engellediniz" : isCurrentUserBlockedByPartner ? "Bu kullanıcı tarafından engellendiniz" : (isMatchSessionChat && dmDocData?.matchSessionEnded) ? "Eşleşme sohbeti sonlandı" : "Mesajınızı yazın..."}
+            ref={messageInputRef}
+            placeholder={isPartnerBlockedByCurrentUser ? "Bu kullanıcıyı engellediniz" : isCurrentUserBlockedByPartner ? "Bu kullanıcı tarafından engellendiniz" : (isMatchSessionChat && dmDocData?.matchSessionEnded) ? "Eşleşme sohbeti sonlandı" : editingMessage ? "Mesajı düzenle..." : "Mesajınızı yazın..."}
             value={newMessage}
             onChange={handleNewMessageInputChange}
             className="flex-1 pr-[calc(2.5rem+0.5rem+2.25rem)] sm:pr-[calc(2.5rem+0.5rem+2.5rem)] rounded-full h-10 sm:h-11 text-sm bg-muted/50 dark:bg-muted/30 focus:bg-background focus-visible:ring-primary/80"
@@ -853,8 +916,8 @@ export default function DirectMessagePage() {
               <span className="sr-only">Dosya Ekle</span>
             </Button>
             <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9 shadow-md hover:shadow-lg transition-shadow" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || (isMatchSessionChat && dmDocData?.matchSessionEnded)}>
-              {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              <span className="sr-only">Gönder</span>
+              {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : editingMessage ? <Check className="h-4 w-4"/> : <Send className="h-4 w-4" />}
+              <span className="sr-only">{editingMessage ? 'Kaydet' : 'Gönder'}</span>
             </Button>
           </div>
         </div>
@@ -925,5 +988,4 @@ export default function DirectMessagePage() {
     </div>
   );
 }
-
 

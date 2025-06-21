@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot, Gift } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent, useLayoutEffect } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -28,11 +28,11 @@ import {
   increment,
   setDoc,
   Unsubscribe,
-  deleteField,
+  runTransaction,
 } from "firebase/firestore";
 import { useAuth, type UserData, type FriendRequest, checkUserPremium } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { addMinutes, formatDistanceToNow, isPast, addSeconds, format, differenceInMinutes, formatDistanceToNowStrict } from 'date-fns';
+import { addMinutes, formatDistanceToNow, isPast, addSeconds, format, differenceInMinutes, formatDistanceToNowStrict, differenceInSeconds } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -61,6 +61,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import CreateChestDialog from "@/components/chat/CreateChestDialog";
+import ActiveChestDisplay from "@/components/chat/ActiveChestDisplay";
+import { useMinimizedChat } from '@/contexts/MinimizedChatContext';
+import { motion, AnimatePresence } from 'framer-motion';
+
+
+export interface ActiveChest {
+  id: string;
+  creatorId: string;
+  creatorName: string;
+  totalDiamonds: number;
+  remainingDiamonds: number;
+  maxWinners: number;
+  winners: { [key: string]: number }; // userId: amountWon
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
+}
 
 
 interface Message {
@@ -70,12 +87,15 @@ interface Message {
   senderName: string;
   senderAvatar: string | null;
   senderIsPremium?: boolean;
+  senderBubbleStyle?: string;
+  senderAvatarFrameStyle?: string;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
   isGameMessage?: boolean;
+  isChestMessage?: boolean;
   mentionedUserIds?: string[];
-  editedAt?: Timestamp | null; 
+  editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
 }
 
@@ -99,6 +119,7 @@ interface ChatRoomDetails {
   imageAiHint?: string;
   isActive?: boolean;
   lastMessageAt?: Timestamp;
+  activeChestId?: string | null;
 }
 
 export interface ActiveTextParticipant {
@@ -108,7 +129,8 @@ export interface ActiveTextParticipant {
   isPremium?: boolean;
   joinedAt?: Timestamp;
   isTyping?: boolean;
-  lastSeen?: Timestamp | null; 
+  lastSeen?: Timestamp | null;
+  avatarFrameStyle?: string;
 }
 
 export interface ActiveVoiceParticipantData {
@@ -120,6 +142,7 @@ export interface ActiveVoiceParticipantData {
   isMuted?: boolean;
   isMutedByAdmin?: boolean;
   isSpeaking?: boolean;
+  avatarFrameStyle?: string;
 }
 
 interface WebRTCSignal {
@@ -165,13 +188,15 @@ const PREMIUM_USER_ROOM_CAPACITY = 50;
 
 const SPEAKING_THRESHOLD = 5;
 const SILENCE_DELAY_MS = 1000;
-const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2; 
+const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2;
 
 
 export default function ChatRoomPage() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.roomId as string;
+  const { minimizedRoom, minimizeRoom, closeMinimizedRoom } = useMinimizedChat();
+
   const [roomDetails, setRoomDetails] = useState<ChatRoomDetails | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -236,22 +261,54 @@ export default function ChatRoomPage() {
   const localIsSpeakingRef = useRef(localIsSpeaking);
 
   const [isEditRoomModalOpen, setIsEditRoomModalOpen] = useState(false);
+  
+  const [isChestCreateOpen, setIsChestCreateOpen] = useState(false);
+  const [activeChest, setActiveChest] = useState<ActiveChest | null>(null);
+  const [isOpeningChest, setIsOpeningChest] = useState(false);
+  
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
+  const roomDetailsRef = useRef(roomDetails);
+  useEffect(() => { roomDetailsRef.current = roomDetails }, [roomDetails]);
 
   useEffect(() => { isCurrentUserParticipantRef.current = isCurrentUserParticipant; }, [isCurrentUserParticipant]);
   useEffect(() => { const timerId = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timerId); }, []);
   useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
   useEffect(() => { localIsSpeakingRef.current = localIsSpeaking; }, [localIsSpeaking]);
 
-  const handleMessageDeleted = useCallback((deletedMessageId: string) => {
-    setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
+  const handleStartEdit = useCallback((messageId: string, currentText: string) => {
+    setEditingMessage({ id: messageId, text: currentText });
+    setNewMessage(currentText);
+    messageInputRef.current?.focus();
   }, []);
 
-  const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
-    setMessages(prevMessages => prevMessages.map(msg => 
-        msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
-    ));
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessage(null);
+    setNewMessage("");
   }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingMessage || !newMessage.trim() || newMessage.trim() === editingMessage.text) {
+      handleCancelEdit();
+      return;
+    }
+    setIsSending(true);
+    const messageRef = doc(db, `chatRooms/${roomId}/messages`, editingMessage.id);
+    try {
+      await updateDoc(messageRef, {
+        text: newMessage.trim(),
+        editedAt: serverTimestamp(),
+      });
+      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
+    } catch (error) {
+      console.error("Error saving edited message:", error);
+      toast({ title: "Hata", description: "Mesaj düzenlenirken bir hata oluştu.", variant: "destructive" });
+    } finally {
+      setIsSending(false);
+      handleCancelEdit();
+    }
+  }, [editingMessage, newMessage, roomId, toast, handleCancelEdit]);
 
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
@@ -731,6 +788,7 @@ export default function ChatRoomPage() {
         displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
         photoURL: userData.photoURL || currentUser.photoURL || null,
         isPremium: userIsCurrentlyPremium,
+        avatarFrameStyle: userData.avatarFrameStyle || 'default',
         joinedAt: serverTimestamp(),
         isMuted: selfIsAdminMuted,
         isMutedByAdmin: selfIsAdminMuted,
@@ -1141,13 +1199,29 @@ export default function ChatRoomPage() {
   }, [currentUser, roomId]);
 
   const handleLeaveRoom = useCallback(async (isPageUnload = false) => {
-    if (!currentUser || !roomId || !isCurrentUserParticipantRef.current) return Promise.resolve();
+    if (!currentUser || !roomId) return Promise.resolve();
+    if (!isCurrentUserParticipantRef.current) return Promise.resolve(); // Zaten ayrılmışsa bir şey yapma
+    
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
     await updateUserTypingStatus(false);
+    
     const participantRef = doc(db, `chatRooms/${roomId}/participants`, currentUser.uid);
     const roomRef = doc(db, "chatRooms", roomId);
     const userDisplayNameForLeave = userData?.displayName || currentUser?.displayName;
-    if (userDisplayNameForLeave && !isPageUnload) { try { await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[SİSTEM] ${userDisplayNameForLeave} odadan ayrıldı.`, senderId: "system", senderName: "Sistem", senderAvatar: null, timestamp: serverTimestamp(), isGameMessage: true }); } catch (msgError) { /* console.warn("Error sending leave message (minor):", msgError); */ } }
+    
+    if (userDisplayNameForLeave && !isPageUnload) {
+      try { 
+        await addDoc(collection(db, `chatRooms/${roomId}/messages`), { 
+          text: `[SİSTEM] ${userDisplayNameForLeave} odadan ayrıldı.`, 
+          senderId: "system", 
+          senderName: "Sistem", 
+          senderAvatar: null, 
+          timestamp: serverTimestamp(), 
+          isGameMessage: true 
+        }); 
+      } catch (msgError) { /* console.warn("Error sending leave message (minor):", msgError); */ }
+    }
+    
     try {
         const batch = writeBatch(db);
         batch.delete(participantRef);
@@ -1173,7 +1247,6 @@ export default function ChatRoomPage() {
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
       if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) { setIsRoomFullError(true); toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); setIsProcessingJoinLeave(false); return; }
 
-      // Check and correct stale active status on join
       if (currentRoomData.isActive && currentRoomData.lastMessageAt) {
           const threeMinutesAgo = new Date();
           threeMinutesAgo.setMinutes(threeMinutesAgo.getMinutes() - 3);
@@ -1191,7 +1264,8 @@ export default function ChatRoomPage() {
           uid: currentUser.uid,
           isTyping: false,
           isPremium: userIsCurrentlyPremium,
-          lastSeen: serverTimestamp(), 
+          lastSeen: serverTimestamp(),
+          avatarFrameStyle: userData.avatarFrameStyle || 'default',
        });
       batch.update(roomRef, { participantCount: increment(1) });
 
@@ -1258,6 +1332,7 @@ export default function ChatRoomPage() {
             imageAiHint: data.imageAiHint,
             isActive: data.isActive || false,
             lastMessageAt: data.lastMessageAt,
+            activeChestId: data.activeChestId || null,
         };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
@@ -1272,7 +1347,7 @@ export default function ChatRoomPage() {
     const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`), orderBy("joinedAt", "asc"));
     const unsubscribeParticipants = onSnapshot(participantsQuery, (snapshot) => {
       const fetchedParticipants: ActiveTextParticipant[] = []; let currentUserIsFoundInSnapshot = false;
-      snapshot.forEach((doc) => { const participantData = doc.data(); fetchedParticipants.push({ id: doc.id, displayName: participantData.displayName, photoURL: participantData.photoURL, isPremium: participantData.isPremium || false, joinedAt: participantData.joinedAt, isTyping: participantData.isTyping, lastSeen: participantData.lastSeen } as ActiveTextParticipant); if (doc.id === currentUser.uid) currentUserIsFoundInSnapshot = true; });
+      snapshot.forEach((doc) => { const participantData = doc.data(); fetchedParticipants.push({ id: doc.id, displayName: participantData.displayName, photoURL: participantData.photoURL, isPremium: participantData.isPremium || false, joinedAt: participantData.joinedAt, isTyping: participantData.isTyping, lastSeen: participantData.lastSeen, avatarFrameStyle: participantData.avatarFrameStyle || 'default' } as ActiveTextParticipant); if (doc.id === currentUser.uid) currentUserIsFoundInSnapshot = true; });
       setActiveTextParticipants(fetchedParticipants);
       if (isCurrentUserParticipantRef.current !== currentUserIsFoundInSnapshot) { if (isCurrentUserParticipantRef.current && !currentUserIsFoundInSnapshot && !isProcessingJoinLeave) { toast({ title: "Bilgi", description: "Odadan çıkarıldınız veya bağlantınız kesildi.", variant: "default" }); } setIsCurrentUserParticipant(currentUserIsFoundInSnapshot); }
     });
@@ -1284,33 +1359,68 @@ export default function ChatRoomPage() {
     const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
       const fetchedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
+      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, isChestMessage: data.isChestMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
-      setLoadingMessages(false); setTimeout(() => scrollToBottom(), 0);
+      setLoadingMessages(false);
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
     return () => unsubscribeMessages();
   }, [roomId, currentUser?.uid, toast]);
-
+  
+  const leaveRoomFully = useCallback(async (isPageUnload = false) => {
+    if (!isCurrentUserParticipantRef.current) return;
+    
+    setIsCurrentUserParticipant(false); 
+    
+    const leaveVoicePromise = handleLeaveVoiceChat(isPageUnload);
+    const leaveTextPromise = handleLeaveRoom(isPageUnload);
+    await Promise.all([leaveVoicePromise, leaveTextPromise]);
+    
+    closeMinimizedRoom();
+  }, [handleLeaveVoiceChat, handleLeaveRoom, closeMinimizedRoom]);
+  
+  const leaveRoomFullyRef = useRef(leaveRoomFully);
+  useEffect(() => { leaveRoomFullyRef.current = leaveRoomFully }, [leaveRoomFully]);
+  
   useEffect(() => {
-    const handleBeforeUnloadInternal = () => { handleLeaveRoom(true); if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true); };
-    window.addEventListener('beforeunload', handleBeforeUnloadInternal);
-    const currentTypingTimeout = typingTimeoutRef.current;
-    const currentGameQuestionIntervalTimer = gameQuestionIntervalTimerRef.current;
-    const currentCountdownDisplayTimer = countdownDisplayTimerRef.current;
-    const currentGameAnswerDeadlineTimer = gameAnswerDeadlineTimerRef.current;
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnloadInternal);
-      handleLeaveRoom(true);
-      if (isCurrentUserInVoiceChatRef.current) handleLeaveVoiceChat(true);
-      if (currentTypingTimeout) clearTimeout(currentTypingTimeout);
-      if (currentGameQuestionIntervalTimer) clearInterval(currentGameQuestionIntervalTimer);
-      if (currentCountdownDisplayTimer) clearInterval(currentCountdownDisplayTimer);
-      if (currentGameAnswerDeadlineTimer) clearInterval(currentGameAnswerDeadlineTimer);
+    if (minimizedRoom?.id === roomId) {
+        closeMinimizedRoom();
+    }
+    const handleBeforeUnload = () => {
+      if (isCurrentUserParticipantRef.current) {
+        leaveRoomFullyRef.current(true);
+      }
     };
-  }, [handleLeaveRoom, handleLeaveVoiceChat]);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+
+      if (isCurrentUserParticipantRef.current && roomDetailsRef.current) {
+        minimizeRoom({
+          id: roomId,
+          name: roomDetailsRef.current.name,
+          image: roomDetailsRef.current.image,
+          imageAiHint: roomDetailsRef.current.imageAiHint,
+          leaveRoom: () => leaveRoomFullyRef.current(false),
+        });
+      }
+      
+      // Clear timers on unmount
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (gameQuestionIntervalTimerRef.current) clearInterval(gameQuestionIntervalTimerRef.current);
+      if (countdownDisplayTimerRef.current) clearInterval(countdownDisplayTimerRef.current);
+      if (gameAnswerDeadlineTimerRef.current) clearInterval(gameAnswerDeadlineTimerRef.current);
+    };
+  }, [roomId, minimizeRoom, closeMinimizedRoom, minimizedRoom]);
+
 
   const scrollToBottom = useCallback(() => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } }, []);
-  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+  useLayoutEffect(() => {
+    if (!loadingMessages) {
+        scrollToBottom();
+    }
+  }, [messages, loadingMessages, scrollToBottom]);
+
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
   const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current;
 
@@ -1323,8 +1433,7 @@ export default function ChatRoomPage() {
     else { typingTimeoutRef.current = setTimeout(() => { updateUserTypingStatus(false); typingTimeoutRef.current = null; }, TYPING_DEBOUNCE_DELAY); }
   }, [canSendMessage, updateUserTypingStatus]);
 
-  const handleSendMessage = useCallback(async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = useCallback(async () => {
     if (isSending || isUserLoading || !currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData || loadingGameAssets) return;
 
     const now = Date.now();
@@ -1364,7 +1473,7 @@ export default function ChatRoomPage() {
         toast({ title: "Süre Doldu!", description: "Bu soru için cevap süresi doldu.", variant: "destructive" });
         setIsSending(false); return;
       }
-      const roomDocRef = doc(db, "chatRooms", roomId); // Moved here to be available for game logic
+      const roomDocRef = doc(db, "chatRooms", roomId);
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) { toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive" }); setIsSending(false); return; }
         try { await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST); toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 }); await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Ustası", timestamp: serverTimestamp(), isGameMessage: true }); } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive" }); } finally { setNewMessage(""); setIsSending(false); } return;
@@ -1400,8 +1509,11 @@ export default function ChatRoomPage() {
             senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
             senderAvatar: userData?.photoURL || currentUser.photoURL,
             senderIsPremium: userIsCurrentlyPremium,
+            senderBubbleStyle: userData?.bubbleStyle || 'default',
+            senderAvatarFrameStyle: userData?.avatarFrameStyle || 'default',
             timestamp: serverTimestamp(),
             isGameMessage: false,
+            isChestMessage: false,
             mentionedUserIds: mentionedUserIds,
             editedAt: null,
             reactions: {},
@@ -1414,6 +1526,15 @@ export default function ChatRoomPage() {
     } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); }
     finally { setIsSending(false); }
   },[isSending, isUserLoading, currentUser, newMessage, roomId, canSendMessage, userData, loadingGameAssets, activeGameQuestion, globalGameSettings, roomDetails, toast, updateUserDiamonds, activeTextParticipants, updateUserTypingStatus, isCurrentUserPremium]);
+  
+  const handleFormSubmit = useCallback((e: FormEvent) => {
+    e.preventDefault();
+    if (editingMessage) {
+        handleSaveEdit();
+    } else {
+        handleSendMessage();
+    }
+  }, [editingMessage, handleSaveEdit, handleSendMessage]);
 
   const handleDeleteRoom = useCallback(async () => {
     if (!roomDetails || !currentUser || roomDetails.creatorId !== currentUser.uid) { toast({ title: "Hata", description: "Bu odayı silme yetkiniz yok.", variant: "destructive" }); return; }
@@ -1615,6 +1736,93 @@ export default function ChatRoomPage() {
     if (diffMins < ACTIVE_IN_ROOM_THRESHOLD_MINUTES) return "Aktif";
     return formatDistanceToNowStrict(lastSeenDate, { addSuffix: true, locale: tr });
   }, []);
+  
+  useEffect(() => {
+    if (!roomId) return;
+    const chestRef = doc(db, `chatRooms/${roomId}/activeChest/current`);
+    const unsubscribe = onSnapshot(chestRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const chestData = { id: docSnap.id, ...docSnap.data() } as ActiveChest;
+        if (isPast(chestData.expiresAt.toDate())) {
+            setActiveChest(null);
+            deleteDoc(chestRef).catch(e => console.warn("Could not delete expired chest", e));
+        } else {
+            setActiveChest(chestData);
+        }
+      } else {
+        setActiveChest(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId]);
+  
+  const handleOpenChest = useCallback(async () => {
+    if (!currentUser || !userData || !activeChest || isOpeningChest) return;
+
+    setIsOpeningChest(true);
+    const chestRef = doc(db, "chatRooms", roomId, "activeChest", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const chestDoc = await transaction.get(chestRef);
+        if (!chestDoc.exists()) throw new Error("Sandık artık mevcut değil.");
+        
+        const chestData = chestDoc.data() as ActiveChest;
+        
+        if (chestData.winners[currentUser.uid]) throw new Error("Bu sandıktan zaten ödül aldınız!");
+        if (chestData.remainingDiamonds <= 0) throw new Error("Sandıktaki tüm ödüller dağıtıldı.");
+        if (Object.keys(chestData.winners).length >= chestData.maxWinners) throw new Error("Maksimum kazanan sayısına ulaşıldı.");
+
+        const winnerCount = Object.keys(chestData.winners).length;
+        const remainingWinners = chestData.maxWinners - winnerCount;
+        const avgAmount = Math.max(1, Math.floor(chestData.remainingDiamonds / remainingWinners));
+        const randomAmount = Math.floor(Math.random() * (avgAmount * 1.5)) + 1;
+        const amountWon = Math.min(chestData.remainingDiamonds, randomAmount);
+
+        const newRemainingDiamonds = chestData.remainingDiamonds - amountWon;
+        const newWinners = { ...chestData.winners, [currentUser.uid]: amountWon };
+
+        transaction.update(chestRef, {
+            remainingDiamonds: newRemainingDiamonds,
+            winners: newWinners,
+        });
+
+        const userRef = doc(db, 'users', currentUser.uid);
+        transaction.update(userRef, { diamonds: increment(amountWon) });
+
+        const systemMessageRef = doc(collection(db, 'chatRooms', roomId, 'messages'));
+        transaction.set(systemMessageRef, {
+            text: `${userData.displayName} sandıktan ${amountWon} elmas kazandı! 💎`,
+            senderId: "system",
+            senderName: "Hazine Avcısı",
+            timestamp: serverTimestamp(),
+            isChestMessage: true,
+        });
+        
+        if (newRemainingDiamonds <= 0 || Object.keys(newWinners).length >= chestData.maxWinners) {
+            transaction.delete(chestRef);
+            transaction.update(doc(db, "chatRooms", roomId), { activeChestId: null });
+            const finalMessageRef = doc(collection(db, 'chatRooms', roomId, 'messages'));
+            transaction.set(finalMessageRef, {
+                text: `${chestData.creatorName} tarafından oluşturulan hazine sandığı tükendi!`,
+                senderId: "system",
+                senderName: "Hazine Avcısı",
+                timestamp: serverTimestamp(),
+                isChestMessage: true,
+            });
+        }
+      });
+
+      toast({ title: "Tebrikler!", description: `Sandıktan elmas kazandınız! Detaylar için sohbeti kontrol edin.`, className: 'bg-yellow-500 text-black dark:bg-yellow-400 dark:text-black'});
+
+    } catch (error: any) {
+        console.error("Error opening chest:", error);
+        toast({ title: "Sandık Hatası", description: error.message, variant: "destructive" });
+    } finally {
+        setIsOpeningChest(false);
+    }
+}, [currentUser, userData, activeChest, roomId, toast, isOpeningChest]);
 
 
   if (loadingRoom || !roomDetails || (isProcessingJoinLeave && !isRoomFullError && !isCurrentUserParticipantRef.current) || loadingGameAssets) {
@@ -1622,17 +1830,16 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <>
-      {roomDetails.image && (
-        <Image
-            src={roomDetails.image}
-            alt={`${roomDetails.name} background`}
-            fill
-            className="object-cover -z-10 blur-md brightness-[0.6]"
-            data-ai-hint={roomDetails.imageAiHint || "room background"}
-        />
+    <div className="relative h-screen">
+      {activeChest && roomDetails?.expiresAt && (
+            <ActiveChestDisplay
+                chest={activeChest}
+                roomExpiresAt={roomDetails.expiresAt}
+                onOpenChest={handleOpenChest}
+                isOpening={isOpeningChest}
+            />
       )}
-      <div className="flex flex-col h-screen bg-card/75 rounded-xl shadow-lg overflow-hidden relative">
+      <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
         {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
             console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
             return (
@@ -1705,7 +1912,7 @@ export default function ChatRoomPage() {
                         const isActiveNow = activityStatus === "Aktif";
                         return (
                         <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
-                        <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="flex-shrink-0 cursor-pointer relative">
+                        <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className={cn('relative flex-shrink-0 cursor-pointer', `avatar-frame-${participant.avatarFrameStyle || 'default'}`)}>
                             <Avatar className="h-7 w-7">
                                 <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar" />
                                 <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>
@@ -1764,7 +1971,7 @@ export default function ChatRoomPage() {
             )}
             </div>
         </header>
-        <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => handleLeaveVoiceChat(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
+        <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => leaveRoomFully(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
         <div className="flex flex-1 overflow-hidden">
             <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
             {messages.map((msg) => {
@@ -1773,33 +1980,66 @@ export default function ChatRoomPage() {
                 const isActiveInRoom = senderIsActiveText || senderIsActiveVoice;
                 return (
                 <ChatMessageItem
-                key={msg.id}
-                msg={msg}
-                currentUserUid={currentUser?.uid}
-                popoverOpenForUserId={popoverOpenForUserId}
-                onOpenUserInfoPopover={handleOpenUserInfoPopover}
-                setPopoverOpenForUserId={setPopoverOpenForUserId}
-                popoverLoading={popoverLoading}
-                popoverTargetUser={popoverTargetUser}
-                friendshipStatus={friendshipStatus}
-                relevantFriendRequest={relevantFriendRequest}
-                onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
-                onSendFriendRequestPopover={handleSendFriendRequestPopover}
-                onDmAction={handleDmAction}
-                onViewProfileAction={handleViewProfileAction}
-                getAvatarFallbackText={getAvatarFallbackText}
-                isCurrentUserRoomCreator={isCurrentUserRoomCreator}
-                onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
-                roomId={roomId}
-                isActiveParticipant={isActiveInRoom}
-                onMessageDeleted={handleMessageDeleted}
-                onMessageEdited={handleMessageEdited}
+                  key={msg.id}
+                  msg={msg}
+                  currentUserUid={currentUser?.uid}
+                  popoverOpenForUserId={popoverOpenForUserId}
+                  onOpenUserInfoPopover={handleOpenUserInfoPopover}
+                  setPopoverOpenForUserId={setPopoverOpenForUserId}
+                  popoverLoading={popoverLoading}
+                  popoverTargetUser={popoverTargetUser}
+                  friendshipStatus={friendshipStatus}
+                  relevantFriendRequest={relevantFriendRequest}
+                  onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
+                  onSendFriendRequestPopover={handleSendFriendRequestPopover}
+                  onDmAction={handleDmAction}
+                  onViewProfileAction={handleViewProfileAction}
+                  getAvatarFallbackText={getAvatarFallbackText}
+                  isCurrentUserRoomCreator={isCurrentUserRoomCreator}
+                  onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
+                  roomId={roomId}
+                  isActiveParticipant={isActiveInRoom}
+                  onStartEdit={handleStartEdit}
                 />
             )})}
             </ScrollArea>
         </div>
-        <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
-            <div className="relative flex items-center gap-2"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"> <Smile className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Emoji Ekle</span> </Button> <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
+        <form onSubmit={handleFormSubmit} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
+            <AnimatePresence>
+              {editingMessage && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginBottom: '8px' }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  className="bg-secondary/50 rounded-lg px-3 py-2 border-l-4 border-primary"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-semibold text-sm text-primary">Mesajı Düzenle</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md">{editingMessage.text}</p>
+                    </div>
+                    <Button variant="ghost" size="icon" type="button" onClick={handleCancelEdit}>
+                      <X className="h-4 w-4"/>
+                      <span className="sr-only">Düzenlemeyi İptal Et</span>
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="relative flex items-center gap-2"> 
+                <Button variant="ghost" size="icon" type="button" onClick={() => setIsChestCreateOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
+                    <Gift className="h-5 w-5" />
+                    <span className="sr-only">Hediye Sandığı Gönder</span>
+                </Button>
+                <Input
+                  ref={messageInputRef}
+                  placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."}
+                  value={newMessage}
+                  onChange={handleNewMessageInputChange}
+                  className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
+                  autoComplete="off"
+                  disabled={!canSendMessage || isSending || isUserLoading} />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
             </div>
             {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
@@ -1818,6 +2058,15 @@ export default function ChatRoomPage() {
           initialIsGameEnabledInRoom={roomDetails.isGameEnabledInRoom}
         />
       )}
-    </>
+      {roomDetails && userData && (
+        <CreateChestDialog
+          isOpen={isChestCreateOpen}
+          onClose={() => setIsChestCreateOpen(false)}
+          roomId={roomId}
+          roomExpiresAt={roomDetails.expiresAt}
+          userDiamonds={userData.diamonds}
+        />
+      )}
+    </div>
   );
 }
