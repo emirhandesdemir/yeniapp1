@@ -31,83 +31,62 @@ textarea {
 
 @layer base {
   :root {
-    --background: 0 0% 98%; /* Slightly off-white */
-    --foreground: 240 10% 3.9%; /* Standard dark gray */
-    --card: 0 0% 100%; /* White cards */
-    --card-foreground: 240 10% 3.9%;
+    --background: 210 20% 98%; /* Very light cool gray */
+    --foreground: 224 71% 4%; /* Dark blue-black */
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 4%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 215 80% 50%; /* Vibrant Blue */
-    --primary-foreground: 0 0% 100%; /* White for high contrast */
-    --secondary: 220 25% 92%; /* Lighter, subtly saturated blue-gray */
-    --secondary-foreground: 220 25% 25%; /* Darker blue-gray text */
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 0 75% 55%; /* Vibrant Red */
-    --accent-foreground: 0 0% 100%; /* White for high contrast on Red */
-    --destructive: 0 80% 60%; /* Vibrant Red */
+    --popover-foreground: 224 71% 4%;
+    --primary: 217 91% 60%; /* Vibrant Blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%; /* Light gray */
+    --secondary-foreground: 220 9% 38%; /* Mid-gray */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 45%;
+    --accent: 347 91% 60%; /* Vibrant Pink/Red */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%; /* Strong Red */
     --destructive-foreground: 0 0% 98%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 215 80% 55%; /* Matches new primary */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+    --radius: 0.75rem;
 
-    --radius: 1rem;
-
-    /* Vibrant Chart colors for light theme */
+    /* Chart colors for light theme */
     --chart-1: hsl(var(--primary));
-    --chart-2: hsl(var(--accent));  /* Uses new accent: Vibrant Red */
-    --chart-3: 330 75% 60%; /* Vibrant Pink */
-    --chart-4: 190 70% 50%;  /* Vibrant Cyan/Teal */
-    --chart-5: 270 75% 60%; /* Vibrant Purple */
-
-    --sidebar-background: hsl(var(--background));
-    --sidebar-foreground: hsl(var(--foreground));
-    --sidebar-primary: hsl(var(--primary));
-    --sidebar-primary-foreground: hsl(var(--primary-foreground));
-    --sidebar-accent: hsl(var(--accent));
-    --sidebar-accent-foreground: hsl(var(--accent-foreground));
-    --sidebar-border: hsl(var(--border));
-    --sidebar-ring: hsl(var(--ring));
+    --chart-2: hsl(var(--accent));
+    --chart-3: 160 84% 40%; /* Teal */
+    --chart-4: 40 91% 60%; /* Orange */
+    --chart-5: 270 91% 65%; /* Purple */
   }
 
   .dark {
-    --background: 240 6% 14%; /* Brighter Dark Background */
-    --foreground: 0 0% 98%;
-    --card: 240 5% 18%; /* Brighter Dark Card */
-    --card-foreground: 0 0% 98%;
-    --popover: 240 5% 18%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 215 85% 60%; /* Vibrant Blue (darker theme variant) */
-    --primary-foreground: 215 20% 10%; /* Darker blue for text on bright blue button */
-    --secondary: 220 15% 25%;
-    --secondary-foreground: 220 15% 85%;
-    --muted: 240 4% 19%; /* Brighter Dark Muted */
-    --muted-foreground: 240 5% 65%;
-    --accent: 0 80% 60%; /* Brighter Vibrant Red */
-    --accent-foreground: 0 0% 100%; /* White for high contrast on Red */
-    --destructive: 0 75% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 22%; /* Slightly more visible border */
-    --input: 240 4% 22%;  /* Slightly more visible input */
-    --ring: 215 85% 65%; /* Matches new primary */
+    --background: 224 71% 4%; /* Dark blue-black */
+    --foreground: 210 20% 98%;
+    --card: 220 13% 9%; /* Darker card */
+    --card-foreground: 210 20% 98%;
+    --popover: 220 13% 9%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 220 13% 18%; /* Dark gray */
+    --secondary-foreground: 210 20% 98%;
+    --muted: 220 13% 18%;
+    --muted-foreground: 210 20% 65%;
+    --accent: 347 91% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 18%;
+    --input: 220 13% 18%;
+    --ring: 217 91% 60%;
 
-    --radius: 1rem;
-
-    /* Vibrant Chart colors for dark theme */
+    /* Chart colors for dark theme */
     --chart-1: hsl(var(--primary));
-    --chart-2: hsl(var(--accent));  /* Uses new accent: Vibrant Red */
-    --chart-3: 330 80% 65%; /* Brighter Vibrant Pink */
-    --chart-4: 190 75% 55%;  /* Brighter Vibrant Cyan/Teal */
-    --chart-5: 270 80% 65%; /* Brighter Vibrant Purple */
-
-    --sidebar-background: hsl(var(--background));
-    --sidebar-foreground: hsl(var(--foreground));
-    --sidebar-primary: hsl(var(--primary));
-    --sidebar-primary-foreground: hsl(var(--primary-foreground));
-    --sidebar-accent: hsl(var(--accent));
-    --sidebar-accent-foreground: hsl(var(--accent-foreground));
-    --sidebar-border: hsl(var(--border));
-    --sidebar-ring: hsl(var(--ring));
+    --chart-2: hsl(var(--accent));
+    --chart-3: 160 74% 45%;
+    --chart-4: 40 81% 65%;
+    --chart-5: 270 81% 70%;
   }
 }
 
@@ -120,51 +99,18 @@ textarea {
   }
 }
 
-
-/* Custom scrollbar for modern look - adjusted for new theme */
+/* Custom scrollbar for modern look */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: hsl(var(--background) / 0.1);
-  border-radius: 10px;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.6);
+  background: hsl(var(--border));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.8);
-}
-
-.dark ::-webkit-scrollbar-track {
-  background: hsl(var(--background) / 0.2);
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.7);
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.9);
-}
-
-
-/* Page transition animations (example) */
-.page-enter {
-  opacity: 0;
-  transform: translateY(20px);
-}
-.page-enter-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 300ms, transform 300ms;
-}
-.page-exit {
-  opacity: 1;
-  transform: translateY(0);
-}
-.page-exit-active {
-  opacity: 0;
-  transform: translateY(-20px);
-  transition: opacity 300ms, transform 300ms;
+  background: hsl(var(--muted-foreground));
 }

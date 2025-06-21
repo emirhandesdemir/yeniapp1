@@ -773,4 +773,3 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
-

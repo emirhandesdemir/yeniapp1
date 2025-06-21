@@ -30,7 +30,7 @@ export default function AuthLayout({
           <div className="inline-block p-3 bg-primary/20 rounded-full mb-4">
             <Flame className="h-10 w-10 text-primary" />
           </div>
-          <h1 className="text-4xl font-headline font-bold text-primary-foreground tracking-tight">
+          <h1 className="text-4xl font-headline font-bold text-foreground tracking-tight">
             HiweWalk
           </h1>
           <p className="mt-2 text-lg text-muted-foreground">

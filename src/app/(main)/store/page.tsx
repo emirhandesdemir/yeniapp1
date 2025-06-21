@@ -135,8 +135,8 @@ export default function StorePage() {
         <Card className="shadow-xl bg-gradient-to-br from-primary/10 via-card to-accent/10 dark:from-primary/15 dark:via-card dark:to-accent/15 border-primary/20 rounded-xl">
           <CardHeader className="text-center pb-4 pt-6">
             <ShoppingBag className="h-16 w-16 mx-auto text-primary mb-3 animate-pulse" />
-            <CardTitle className="text-3xl sm:text-4xl font-headline text-primary-foreground/95">Mağaza</CardTitle>
-            <CardDescription className="text-base sm:text-lg text-muted-foreground mt-1">
+            <CardTitle className="text-4xl font-headline text-primary-foreground/95">Mağaza</CardTitle>
+            <CardDescription className="text-lg text-muted-foreground mt-1">
               Sohbet deneyimini zenginleştirmek için elmas ve premium paketler!
             </CardDescription>
           </CardHeader>
@@ -274,6 +274,3 @@ export default function StorePage() {
     </div>
   );
 }
-
-
-    

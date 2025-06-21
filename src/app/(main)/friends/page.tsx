@@ -509,7 +509,7 @@ export default function FriendsPage() {
     <div className="space-y-6">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl sm:text-3xl font-headline">Arkadaşlar</CardTitle>
+          <CardTitle className="text-3xl font-headline">Arkadaşlar</CardTitle>
           <CardDescription>Arkadaşlarınla bağlantıda kal, yeni bağlantılar kur.</CardDescription>
         </CardHeader>
         <CardContent>
