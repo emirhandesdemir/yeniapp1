@@ -91,27 +91,12 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     }
   }, [isEditing]);
 
+  const bubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
+  const frameStyle = msg.isOwn ? (currentUserData?.avatarFrameStyle || 'default') : (msg.senderAvatarFrameStyle || 'default');
+  const displayAvatarSrc = msg.isOwn ? currentUserData?.photoURL : msg.senderAvatar;
+  const displayNameText = msg.isOwn ? currentUserData?.displayName || "Siz" : msg.senderName;
+  const displayIsPremium = msg.isOwn ? checkUserPremium(currentUserData) : msg.senderIsPremium;
 
-  const getDisplayAvatar = () => {
-    if (msg.isOwn) return currentUserData?.photoURL;
-    return msg.senderAvatar;
-  };
-
-  const getDisplayName = () => {
-    if (msg.isOwn) return currentUserData?.displayName || "Siz";
-    return msg.senderName;
-  };
-
-  const getIsPremium = () => {
-    if (msg.isOwn) return checkUserPremium(currentUserData);
-    return msg.senderIsPremium;
-  };
-
-  const displayAvatarSrc = getDisplayAvatar();
-  const displayNameText = getDisplayName();
-  const displayIsPremium = getIsPremium();
-  const bubbleStyle = msg.senderBubbleStyle || 'default';
-  const frameStyle = msg.senderAvatarFrameStyle || 'default';
 
   const handleDeleteMessage = async () => {
     if (!msg.isOwn || !chatId || !msg.id) return;
@@ -201,8 +186,8 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     }
   };
 
-  const AvatarContainer: React.FC<{children: React.ReactNode, isLink: boolean, userId: string}> = ({ children, isLink, userId }) => {
-    const className = cn('self-end mb-1 relative flex-shrink-0 transition-transform hover:scale-110', `avatar-frame-${frameStyle}`);
+  const AvatarContainer: React.FC<{children: React.ReactNode, isLink: boolean, userId: string, currentFrameStyle: string}> = ({ children, isLink, userId, currentFrameStyle }) => {
+    const className = cn('self-end mb-1 relative flex-shrink-0 transition-transform hover:scale-110', `avatar-frame-${currentFrameStyle}`);
     if (isLink) {
       return <Link href={`/profile/${userId}`} className={className}>{children}</Link>;
     }
@@ -214,7 +199,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     <>
     <div key={msg.id} className={cn("flex items-end gap-2 my-1.5 group", msg.isOwn ? "justify-end" : "justify-start")}>
       {!msg.isOwn && (
-          <AvatarContainer isLink={!isMatchSession} userId={msg.senderId}>
+          <AvatarContainer isLink={!isMatchSession} userId={msg.senderId} currentFrameStyle={frameStyle}>
             <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
                 <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                 <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
@@ -229,9 +214,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
           <div
             className={cn(
               "relative p-2.5 sm:p-3 shadow-md break-words group/bubble",
-              msg.isOwn
-              ? `bubble-${currentUserData?.bubbleStyle || 'default'}`
-              : `bubble-${msg.senderBubbleStyle || 'default'}`,
+              `bubble-${bubbleStyle}`,
               msg.isOwn
               ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
               : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
@@ -351,13 +334,13 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
           </p>
       </div>
       {msg.isOwn && (
-        <div className={cn("relative self-end mb-1 cursor-default flex-shrink-0", `avatar-frame-${frameStyle}`)}>
+        <AvatarContainer isLink={false} userId={msg.senderId} currentFrameStyle={frameStyle}>
             <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
                 <AvatarImage src={displayAvatarSrc || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(displayNameText)}</AvatarFallback>
             </Avatar>
             {displayIsPremium && <Star className="absolute -bottom-1 -right-1 h-3 w-3 sm:h-3.5 sm:w-3.5 text-yellow-400 fill-yellow-400 bg-card p-px rounded-full shadow" />}
-        </div>
+        </AvatarContainer>
       )}
     </div>
     <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>

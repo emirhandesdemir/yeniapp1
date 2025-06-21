@@ -296,26 +296,27 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
   const currentUsersActualPhoto = currentUserData?.photoURL;
   const currentUsersActualDisplayName = currentUserData?.displayName;
   const currentUsersActualIsPremium = checkUserPremium(currentUserData);
-  const currentUsersBubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
-  const currentUsersFrameStyle = msg.isOwn ? (currentUserData?.avatarFrameStyle || 'default') : (msg.senderAvatarFrameStyle || 'default');
-
+  
+  const bubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
+  const frameStyle = msg.isOwn ? (currentUserData?.avatarFrameStyle || 'default') : (msg.senderAvatarFrameStyle || 'default');
+  
   const isMentioned = msg.mentionedUserIds && msg.mentionedUserIds.includes(currentUserUid || '');
 
   let baseBubbleClasses = msg.isOwn
     ? "bg-primary text-primary-foreground rounded-t-2xl rounded-l-2xl"
     : "bg-secondary text-secondary-foreground rounded-t-2xl rounded-r-2xl";
   
-  let bubbleClasses = cn(baseBubbleClasses, `bubble-${currentUsersBubbleStyle}`);
+  let bubbleClasses = cn(baseBubbleClasses, `bubble-${bubbleStyle}`);
   
   let textClasses = "text-sm whitespace-pre-wrap break-words";
 
   if (isMentioned) {
     if (msg.isOwn) {
-      bubbleClasses = cn(baseBubbleClasses, `bubble-${currentUsersBubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform");
+      bubbleClasses = cn(baseBubbleClasses, `bubble-${bubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-400 dark:ring-amber-500 shadow-lg scale-[1.01] transform");
       textClasses = "text-sm font-medium whitespace-pre-wrap break-words";
     } else {
-      bubbleClasses = cn(baseBubbleClasses, `bubble-${currentUsersBubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out");
-      if(currentUsersBubbleStyle === 'default'){
+      bubbleClasses = cn(baseBubbleClasses, `bubble-${bubbleStyle}`, "ring-2 ring-offset-1 ring-offset-card ring-amber-600 dark:ring-amber-700 shadow-lg scale-[1.02] transform transition-transform duration-150 ease-out");
+      if(bubbleStyle === 'default'){
         bubbleClasses = cn(bubbleClasses, "bg-amber-400 dark:bg-amber-500 text-black dark:text-amber-950");
       }
       textClasses = "text-sm font-semibold whitespace-pre-wrap break-words";
@@ -332,7 +333,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
         }}>
             <PopoverTrigger asChild>
                 <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 cursor-pointer">
-                    <div className={cn('relative flex-shrink-0', `avatar-frame-${msg.senderAvatarFrameStyle || 'default'}`)}>
+                    <div className={cn('relative flex-shrink-0', `avatar-frame-${frameStyle}`)}>
                         <Avatar className="h-7 w-7">
                             <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                             <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
@@ -489,12 +490,12 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent side={msg.isOwn ? "right" : "left"} align="center">
-                          <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
-                              <Edit2 className="mr-2 h-4 w-4" /> Düzenle
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
-                              <Trash2 className="mr-2 h-4 w-4" /> Sil
-                          </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                            <Edit2 className="mr-2 h-4 w-4" /> Düzenle
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Sil
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -530,7 +531,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
           </p>
       </div>
       {msg.isOwn && (
-        <div className={cn('relative self-end mb-1 cursor-default', `avatar-frame-${currentUsersFrameStyle}`)}>
+        <div className={cn('relative self-end mb-1 cursor-default', `avatar-frame-${frameStyle}`)}>
             <Avatar className="h-7 w-7">
                 <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
