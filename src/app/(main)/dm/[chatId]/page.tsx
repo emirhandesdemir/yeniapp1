@@ -59,7 +59,9 @@ interface DirectMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string | null;
-  senderIsPremium?: boolean; 
+  senderIsPremium?: boolean;
+  senderBubbleStyle?: string;
+  senderAvatarFrameStyle?: string;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -75,6 +77,7 @@ interface DmPartnerDetails {
   isPremium?: boolean; 
   isBanned?: boolean;
   lastSeen?: Timestamp | null; 
+  avatarFrameStyle?: string;
 }
 
 interface DmDocumentData {
@@ -235,6 +238,7 @@ export default function DirectMessagePage() {
                         isPremium: checkUserPremium(partnerData),
                         isBanned: partnerData.isBanned || false,
                         lastSeen: partnerData.lastSeen || null,
+                        avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
                     }));
                     if (!data.isMatchSession || data.matchSessionEnded) {
                          document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
@@ -457,7 +461,9 @@ export default function DirectMessagePage() {
           senderId: data.senderId,
           senderName: data.senderName,
           senderAvatar: data.senderAvatar,
-          senderIsPremium: data.senderIsPremium || false, 
+          senderIsPremium: data.senderIsPremium || false,
+          senderBubbleStyle: data.senderBubbleStyle || 'default',
+          senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default',
           timestamp: data.timestamp,
           editedAt: data.editedAt, 
           reactions: data.reactions,
@@ -570,7 +576,9 @@ export default function DirectMessagePage() {
         senderId: currentUser.uid,
         senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
         senderAvatar: userData?.photoURL || currentUser.photoURL,
-        senderIsPremium: userIsCurrentlyPremium, 
+        senderIsPremium: userIsCurrentlyPremium,
+        senderBubbleStyle: userData?.bubbleStyle || 'default',
+        senderAvatarFrameStyle: userData?.avatarFrameStyle || 'default',
         timestamp: serverTimestamp(),
         editedAt: null, 
         reactions: {},
@@ -720,12 +728,14 @@ export default function DirectMessagePage() {
                 )}
                  onClick={!isMatchSessionActive ? () => router.push(`/profile/${dmPartnerDetails.uid}`) : undefined}
             >
-                <Avatar className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
-                    <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
-                    <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                <div className={cn('relative flex-shrink-0', `avatar-frame-${dmPartnerDetails.avatarFrameStyle || 'default'}`)}>
+                    <Avatar className="h-9 w-9 sm:h-10 sm:w-10 border-2 border-transparent group-hover:border-primary/50 transition-colors duration-200 rounded-full">
+                        <AvatarImage src={dmPartnerDetails.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar"/>
+                        <AvatarFallback className="rounded-full">{getAvatarFallbackText(dmPartnerDetails.displayName)}</AvatarFallback>
+                    </Avatar>
                     {isPartnerCurrentlyActive && !isMatchSessionActive && <Dot className="absolute -bottom-1 -right-1 h-6 w-6 text-green-500 fill-green-500" />}
-                </Avatar>
-                {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
+                    {dmPartnerDetails.isPremium && <Star className="absolute bottom-0 left-7 h-4 w-4 text-yellow-400 fill-yellow-400 bg-card p-0.5 rounded-full shadow-md" />}
+                </div>
                 <div className="flex-1 min-w-0">
                     <h2 className={cn(
                         "text-sm sm:text-base font-semibold text-foreground truncate transition-colors",

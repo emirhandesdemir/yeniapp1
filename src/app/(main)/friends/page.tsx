@@ -29,7 +29,7 @@ import {
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
-import { generateDmChatId } from "@/lib/utils";
+import { generateDmChatId, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
@@ -53,6 +53,7 @@ import {
 interface Friend extends UserData {
   addedAt?: Timestamp;
   isPremium?: boolean; 
+  avatarFrameStyle?: string;
 }
 
 interface SearchResultUser extends UserData {
@@ -63,6 +64,7 @@ interface SearchResultUser extends UserData {
   incomingRequestId?: string | null; 
   isPremium?: boolean; 
   isBlockedByCurrentUser?: boolean;
+  avatarFrameStyle?: string;
 }
 
 export default function FriendsPage() {
@@ -182,7 +184,7 @@ export default function FriendsPage() {
       const processedResults: SearchResultUser[] = [];
 
       for (const user of rawResults) {
-        let processedUser: SearchResultUser = { ...user, isPremium: checkUserPremium(user) }; 
+        let processedUser: SearchResultUser = { ...user, isPremium: checkUserPremium(user), avatarFrameStyle: user.avatarFrameStyle || 'default' }; 
         processedUser.isFriend = myFriends.some(f => f.uid === user.uid);
         processedUser.isBlockedByCurrentUser = await checkIfUserBlocked(user.uid);
 
@@ -529,7 +531,7 @@ export default function FriendsPage() {
                   {myFriends.map(friend => (
                     <li key={friend.uid} className="flex items-center justify-between p-3 sm:p-4 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border transition-colors">
                       <Link href={`/profile/${friend.uid}`} className="flex items-center gap-3 flex-grow min-w-0">
-                        <div className="relative">
+                        <div className={cn('relative', `avatar-frame-${friend.avatarFrameStyle || 'default'}`)}>
                             <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                             <AvatarImage src={friend.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar" />
                             <AvatarFallback>{getAvatarFallback(friend.displayName)}</AvatarFallback>
@@ -609,7 +611,7 @@ export default function FriendsPage() {
                     {searchResults.map(user => (
                       <li key={user.uid} className="flex items-center justify-between p-3 bg-card hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-lg shadow-sm border">
                         <Link href={`/profile/${user.uid}`} className="flex items-center gap-3 flex-grow min-w-0">
-                           <div className="relative">
+                           <div className={cn('relative', `avatar-frame-${user.avatarFrameStyle || 'default'}`)}>
                              <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                                <AvatarImage src={user.photoURL || `https://placehold.co/40x40.png`} data-ai-hint="person avatar search" />
                                <AvatarFallback>{getAvatarFallback(user.displayName)}</AvatarFallback>

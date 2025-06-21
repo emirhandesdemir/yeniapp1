@@ -70,6 +70,8 @@ interface Message {
   senderName: string;
   senderAvatar: string | null;
   senderIsPremium?: boolean;
+  senderBubbleStyle?: string;
+  senderAvatarFrameStyle?: string;
   timestamp: Timestamp | null;
   isOwn?: boolean;
   userAiHint?: string;
@@ -109,6 +111,7 @@ export interface ActiveTextParticipant {
   joinedAt?: Timestamp;
   isTyping?: boolean;
   lastSeen?: Timestamp | null; 
+  avatarFrameStyle?: string;
 }
 
 export interface ActiveVoiceParticipantData {
@@ -120,6 +123,7 @@ export interface ActiveVoiceParticipantData {
   isMuted?: boolean;
   isMutedByAdmin?: boolean;
   isSpeaking?: boolean;
+  avatarFrameStyle?: string;
 }
 
 interface WebRTCSignal {
@@ -731,6 +735,7 @@ export default function ChatRoomPage() {
         displayName: userData.displayName || currentUser.displayName || "Bilinmeyen",
         photoURL: userData.photoURL || currentUser.photoURL || null,
         isPremium: userIsCurrentlyPremium,
+        avatarFrameStyle: userData.avatarFrameStyle || 'default',
         joinedAt: serverTimestamp(),
         isMuted: selfIsAdminMuted,
         isMutedByAdmin: selfIsAdminMuted,
@@ -1192,6 +1197,7 @@ export default function ChatRoomPage() {
           isTyping: false,
           isPremium: userIsCurrentlyPremium,
           lastSeen: serverTimestamp(), 
+          avatarFrameStyle: userData.avatarFrameStyle || 'default',
        });
       batch.update(roomRef, { participantCount: increment(1) });
 
@@ -1272,7 +1278,7 @@ export default function ChatRoomPage() {
     const participantsQuery = query(collection(db, `chatRooms/${roomId}/participants`), orderBy("joinedAt", "asc"));
     const unsubscribeParticipants = onSnapshot(participantsQuery, (snapshot) => {
       const fetchedParticipants: ActiveTextParticipant[] = []; let currentUserIsFoundInSnapshot = false;
-      snapshot.forEach((doc) => { const participantData = doc.data(); fetchedParticipants.push({ id: doc.id, displayName: participantData.displayName, photoURL: participantData.photoURL, isPremium: participantData.isPremium || false, joinedAt: participantData.joinedAt, isTyping: participantData.isTyping, lastSeen: participantData.lastSeen } as ActiveTextParticipant); if (doc.id === currentUser.uid) currentUserIsFoundInSnapshot = true; });
+      snapshot.forEach((doc) => { const participantData = doc.data(); fetchedParticipants.push({ id: doc.id, displayName: participantData.displayName, photoURL: participantData.photoURL, isPremium: participantData.isPremium || false, joinedAt: participantData.joinedAt, isTyping: participantData.isTyping, lastSeen: participantData.lastSeen, avatarFrameStyle: participantData.avatarFrameStyle || 'default' } as ActiveTextParticipant); if (doc.id === currentUser.uid) currentUserIsFoundInSnapshot = true; });
       setActiveTextParticipants(fetchedParticipants);
       if (isCurrentUserParticipantRef.current !== currentUserIsFoundInSnapshot) { if (isCurrentUserParticipantRef.current && !currentUserIsFoundInSnapshot && !isProcessingJoinLeave) { toast({ title: "Bilgi", description: "Odadan çıkarıldınız veya bağlantınız kesildi.", variant: "default" }); } setIsCurrentUserParticipant(currentUserIsFoundInSnapshot); }
     });
@@ -1284,7 +1290,7 @@ export default function ChatRoomPage() {
     const messagesQuery = query(collection(db, `chatRooms/${roomId}/messages`), orderBy("timestamp", "asc"));
     const unsubscribeMessages = onSnapshot(messagesQuery, (querySnapshot) => {
       const fetchedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
+      querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
       setLoadingMessages(false); setTimeout(() => scrollToBottom(), 0);
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
@@ -1400,6 +1406,8 @@ export default function ChatRoomPage() {
             senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
             senderAvatar: userData?.photoURL || currentUser.photoURL,
             senderIsPremium: userIsCurrentlyPremium,
+            senderBubbleStyle: userData?.bubbleStyle || 'default',
+            senderAvatarFrameStyle: userData?.avatarFrameStyle || 'default',
             timestamp: serverTimestamp(),
             isGameMessage: false,
             mentionedUserIds: mentionedUserIds,
@@ -1706,7 +1714,7 @@ export default function ChatRoomPage() {
                         const isActiveNow = activityStatus === "Aktif";
                         return (
                         <li key={participant.id} className="flex items-center gap-2 p-2.5 hover:bg-secondary/30 dark:hover:bg-secondary/20">
-                        <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className="flex-shrink-0 cursor-pointer relative">
+                        <div onClick={() => participant.id !== currentUser?.uid && handleOpenUserInfoPopover(participant.id)} className={cn('relative flex-shrink-0 cursor-pointer', `avatar-frame-${participant.avatarFrameStyle || 'default'}`)}>
                             <Avatar className="h-7 w-7">
                                 <AvatarImage src={participant.photoURL || "https://placehold.co/40x40.png"} data-ai-hint="active user avatar" />
                                 <AvatarFallback>{getAvatarFallbackText(participant.displayName)}</AvatarFallback>

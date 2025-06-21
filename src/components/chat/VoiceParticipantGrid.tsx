@@ -40,6 +40,8 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
   const muteIconColor = participant?.isMutedByAdmin || participant?.isMuted ? "text-red-500" : "text-green-500";
   const avatarSizeClass = isHostSlot ? "h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24" : "h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16";
   const nameTextSize = isHostSlot ? "text-sm" : "text-xs";
+  const frameStyle = `avatar-frame-${participant.avatarFrameStyle || 'default'}`;
+
 
   return (
     <motion.div
@@ -50,7 +52,7 @@ const VoiceParticipantSlot: React.FC<VoiceParticipantSlotProps> = React.memo(({
       animate={{ scale: participant.isSpeaking ? (isHostSlot ? 1.02 : 1.05) : 1 }}
       transition={{ type: "spring", stiffness: 300, damping: 15 }}
     >
-        <div className="relative">
+        <div className={cn('relative', frameStyle)}>
             <Avatar className={cn(
                 avatarSizeClass,
                 "mb-1 border-2 transition-all duration-150",
@@ -203,4 +205,3 @@ const VoiceParticipantGrid: React.FC<{
 });
 VoiceParticipantGrid.displayName = 'VoiceParticipantGrid';
 export default VoiceParticipantGrid;
-
