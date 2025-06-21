@@ -72,14 +72,14 @@ export default function AdminOverlayPanel() {
         <div className="flex-1 p-1.5 sm:p-2 md:p-3 overflow-hidden">
           <Tabs defaultValue="dashboard" value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col sm:flex-row gap-2 sm:gap-3">
             <TabsList className={cn(
-                "flex flex-row sm:flex-col sm:h-full justify-start p-1.5 sm:p-2 bg-muted/50 rounded-md sm:w-48 md:w-56 shrink-0",
-                "overflow-x-auto sm:overflow-x-hidden sm:overflow-y-auto"
+                "flex flex-row flex-wrap sm:flex-col sm:h-full justify-start p-1.5 sm:p-2 bg-muted/50 rounded-md sm:w-48 md:w-56 shrink-0",
+                "sm:overflow-y-auto"
             )}>
               {adminSections.map(section => (
                 <TabsTrigger 
                     key={section.value} 
                     value={section.value} 
-                    className="w-full justify-start text-xs sm:text-sm px-2.5 py-2 sm:px-3 sm:py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md hover:bg-primary/5 data-[state=inactive]:hover:text-primary transition-all whitespace-nowrap"
+                    className="w-auto sm:w-full justify-start text-xs sm:text-sm px-2.5 py-2 sm:px-3 sm:py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md hover:bg-primary/5 data-[state=inactive]:hover:text-primary transition-all whitespace-nowrap"
                 >
                   <section.icon className="h-4 w-4 mr-2" />
                   {section.label}

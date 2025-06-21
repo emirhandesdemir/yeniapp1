@@ -88,7 +88,6 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pressTimer = useRef<NodeJS.Timeout>();
 
-
   useEffect(() => {
     if (isEditing && editInputRef.current) {
       editInputRef.current.focus();
@@ -99,9 +98,9 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
         setIsMenuOpen(true);
-    }, 500); 
+    }, 500);
   };
-  
+
   const handlePointerUp = () => {
     clearTimeout(pressTimer.current);
   };
@@ -160,12 +159,12 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       });
       onMessageEdited(msg.id, editedText.trim(), newEditedAt);
       toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
-      setIsEditing(false);
     } catch (error) {
       console.error("Error editing message:", error);
       toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsProcessingEditOrDelete(false);
+      setIsEditing(false);
     }
   };
 
@@ -237,43 +236,43 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
           msg.isOwn ? "items-end" : "items-start"
       )}>
         <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-            <DropdownMenuTrigger asChild>
-                <div
-                    onPointerDown={handlePointerDown}
-                    onPointerUp={handlePointerUp}
-                    onContextMenu={handleContextMenu}
-                    className={cn(
-                    "relative p-2.5 sm:p-3 shadow-md break-words group/bubble cursor-pointer",
-                    `bubble-${bubbleStyle}`,
-                    msg.isOwn
-                    ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
-                    : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
-                    )}
-                >
-                    {isEditing ? (
-                        <div className="space-y-2">
-                            <Textarea
-                                ref={editInputRef}
-                                value={editedText}
-                                onChange={(e) => setEditedText(e.target.value)}
-                                className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                                rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                                disabled={isProcessingEditOrDelete}
-                            />
-                            <div className="flex justify-end gap-2">
-                                <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                                <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                                    {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                                </Button>
-                            </div>
+          <DropdownMenuTrigger asChild>
+            <div
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
+                onContextMenu={handleContextMenu}
+                className={cn(
+                "relative p-2.5 sm:p-3 shadow-md break-words group/bubble cursor-pointer",
+                `bubble-${bubbleStyle}`,
+                msg.isOwn
+                ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
+                : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
+                )}
+            >
+                {isEditing ? (
+                    <div className="space-y-2">
+                        <Textarea
+                            ref={editInputRef}
+                            value={editedText}
+                            onChange={(e) => setEditedText(e.target.value)}
+                            className="text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
+                            rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
+                            disabled={isProcessingEditOrDelete}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
+                            <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
+                                {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
+                            </Button>
                         </div>
-                    ) : (
-                    <div className="allow-text-selection">
-                        <p className="text-sm">{msg.text}</p>
-                        {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
                     </div>
-                    )}
+                ) : (
+                <div className="allow-text-selection">
+                    <p className="text-sm">{msg.text}</p>
+                    {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
                 </div>
+                )}
+            </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
                 {!isMatchSession && (
@@ -315,7 +314,6 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
                 )}
             </DropdownMenuContent>
         </DropdownMenu>
-
            {/* Reactions Display */}
             {msg.reactions && Object.keys(msg.reactions).length > 0 && !isEditing && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>

@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot, Gift } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent, useLayoutEffect } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -1334,7 +1334,7 @@ export default function ChatRoomPage() {
       const fetchedMessages: Message[] = [];
       querySnapshot.forEach((doc) => { const data = doc.data(); fetchedMessages.push({ id: doc.id, text: data.text, senderId: data.senderId, senderName: data.senderName, senderAvatar: data.senderAvatar, senderIsPremium: data.senderIsPremium || false, senderBubbleStyle: data.senderBubbleStyle || 'default', senderAvatarFrameStyle: data.senderAvatarFrameStyle || 'default', timestamp: data.timestamp, isGameMessage: data.isGameMessage || false, isChestMessage: data.isChestMessage || false, mentionedUserIds: data.mentionedUserIds || [], editedAt: data.editedAt, reactions: data.reactions }); });
       setMessages(fetchedMessages.map(msg => ({ ...msg, isOwn: msg.senderId === currentUser?.uid, userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking" })));
-      setLoadingMessages(false); setTimeout(() => scrollToBottom(), 0);
+      setLoadingMessages(false);
     }, (error) => { console.error("Error fetching messages:", error); toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" }); setLoadingMessages(false); });
     return () => unsubscribeMessages();
   }, [roomId, currentUser?.uid, toast]);
@@ -1388,7 +1388,12 @@ export default function ChatRoomPage() {
 
 
   const scrollToBottom = useCallback(() => { if (scrollAreaRef.current) { const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]'); if (viewport) viewport.scrollTop = viewport.scrollHeight; } }, []);
-  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+  useLayoutEffect(() => {
+    if (!loadingMessages) {
+        scrollToBottom();
+    }
+  }, [messages, loadingMessages, scrollToBottom]);
+
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
   const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current;
 
@@ -1796,7 +1801,7 @@ export default function ChatRoomPage() {
                 chest={activeChest}
                 roomExpiresAt={roomDetails.expiresAt}
                 onOpenChest={handleOpenChest}
-                isOpening={isOpeningChest}
+                isOpening={isOpening}
             />
       )}
       <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">

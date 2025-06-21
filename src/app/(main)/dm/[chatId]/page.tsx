@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut, Edit2 } from "lucide-react"; 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent, useLayoutEffect } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -475,7 +475,6 @@ export default function DirectMessagePage() {
         userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking"
       })));
       setLoadingMessages(false);
-      setTimeout(() => scrollToBottom(), 0);
     }, (error) => {
       console.error("Error fetching DM messages:", error);
       toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
@@ -510,9 +509,11 @@ export default function DirectMessagePage() {
     }
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+  useLayoutEffect(() => {
+    if (!loadingMessages) {
+        scrollToBottom();
+    }
+  }, [messages, loadingMessages, scrollToBottom]);
 
 
   const handleNewMessageInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -932,5 +933,3 @@ export default function DirectMessagePage() {
     </div>
   );
 }
-
-    

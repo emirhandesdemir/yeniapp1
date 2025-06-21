@@ -217,12 +217,12 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
       });
       onMessageEdited(msg.id, editedText.trim(), newEditedAt);
       toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
-      setIsEditing(false);
     } catch (error) {
       console.error("Error editing message:", error);
       toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsProcessingEditOrDelete(false);
+      setIsEditing(false);
     }
   };
 
@@ -352,7 +352,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
         }}>
             <PopoverTrigger asChild>
                 <Link href={`/profile/${msg.senderId}`} className="self-end mb-1 cursor-pointer">
-                    <div className={cn('relative flex-shrink-0', frameStyle)}>
+                    <div className={cn('relative flex-shrink-0', `avatar-frame-${frameStyle}`)}>
                         <Avatar className="h-7 w-7">
                             <AvatarImage src={msg.senderAvatar || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "person talking"} />
                             <AvatarFallback>{getAvatarFallbackText(msg.senderName)}</AvatarFallback>
@@ -538,7 +538,7 @@ if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
           </p>
       </div>
       {msg.isOwn && (
-        <div className={cn('relative self-end mb-1 cursor-default', frameStyle)}>
+        <div className={cn('relative self-end mb-1 cursor-default', `avatar-frame-${frameStyle}`)}>
             <Avatar className="h-7 w-7">
                 <AvatarImage src={currentUsersActualPhoto || `https://placehold.co/40x40.png`} data-ai-hint={msg.userAiHint || "user avatar"} />
                 <AvatarFallback>{getAvatarFallbackText(currentUsersActualDisplayName)}</AvatarFallback>
