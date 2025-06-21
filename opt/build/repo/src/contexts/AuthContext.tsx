@@ -468,5 +468,3 @@ export interface FriendRequest {
   status: "pending" | "accepted" | "declined";
   createdAt: Timestamp;
 }
-
-    

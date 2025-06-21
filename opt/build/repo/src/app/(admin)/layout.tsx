@@ -2,7 +2,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ShieldAlert, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot, Palette, ArrowLeft } from 'lucide-react';
@@ -25,7 +25,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isUserLoading && !isUserDataLoading) {
       if (!currentUser) {
         router.replace('/login?redirect=/admin/dashboard');

@@ -1,12 +1,9 @@
 
 "use client";
 
-import React from 'react';
-
-// This component is deprecated and no longer in use.
-// The admin panel functionality has been moved to a dedicated page layout
-// under src/app/(admin)/layout.tsx for a better user experience.
-// This file can be safely removed from the project in the future.
+// Bu bileşen, /app/(admin) altındaki yeni sayfa düzenine geçildiği için artık kullanılmamaktadır.
+// Kodun daha temiz ve yönetilebilir olması amacıyla içeriği kaldırılmıştır.
+// Bu dosya ileride projeden güvenle silinebilir.
 
 export default function AdminOverlayPanel() {
   return null;

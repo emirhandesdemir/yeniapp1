@@ -9,7 +9,7 @@ import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 import { firebaseConfig } from "@/lib/firebase"; // Firebase config import
 
 // Version comment to force service worker update
-// Version: 2
+// Version: 3
 try {
   const app = initializeApp(firebaseConfig);
   const messaging = getMessaging(app);
@@ -43,7 +43,7 @@ try {
 
 // Install event: triggers when the service worker is first installed.
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] V2 Install event in progress.');
+  console.log('[Service Worker] V3 Install event in progress.');
   event.waitUntil(self.skipWaiting());
 });
 
