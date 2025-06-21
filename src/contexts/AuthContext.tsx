@@ -17,13 +17,13 @@ import { auth, db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction, deleteDoc, query, orderBy, getDocs } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useRouter } from 'next/navigation';
-import { Loader2, Star } from 'lucide-react'; // Flame ikonu kaldırıldı, Loader2 zaten import edilmişti.
+import { Loader2, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { isPast } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
 const INITIAL_DIAMONDS = 30;
-const REPORT_BAN_THRESHOLD = 5; // Ban için şikayet sayısı eşiği
+const REPORT_BAN_THRESHOLD = 5;
 
 export interface PrivacySettings {
   postsVisibleToFriendsOnly?: boolean;
@@ -47,10 +47,11 @@ export interface UserData {
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
   isPremium?: boolean;
-  reportCount?: number; 
-  isBanned?: boolean;    
+  reportCount?: number;
+  isBanned?: boolean;
   profileViewCount?: number;
   lastSeen?: Timestamp | null;
+  bubbleStyle?: string;
 }
 
 export interface BlockedUserData {
@@ -70,7 +71,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   isAdminPanelOpen: boolean;
@@ -121,16 +122,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [userData]);
 
   const createUserDocument = useCallback(async (
-    user: User, 
-    username?: string, 
-    gender?: 'kadın' | 'erkek' | 'belirtilmemiş', 
+    user: User,
+    username?: string,
+    gender?: 'kadın' | 'erkek' | 'belirtilmemiş',
     isGoogleSignUp: boolean = false,
     googlePhotoURL?: string | null
   ) => {
     const userDocRef = doc(db, "users", user.uid);
     const initialPhotoURL = isGoogleSignUp ? (googlePhotoURL || null) : null;
     const initialDisplayName = username || (isGoogleSignUp ? user.displayName : `Kullanıcı-${user.uid.substring(0,6)}`) || `Kullanıcı-${user.uid.substring(0,6)}`;
-    
+
     const dataToSave: Omit<UserData, 'createdAt' | 'lastSeen' | 'isPremium'> = {
         uid: user.uid,
         email: user.email,
@@ -143,23 +144,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
         privacySettings: defaultPrivacySettings,
         premiumStatus: 'none',
         premiumExpiryDate: null,
-        reportCount: 0,       
-        isBanned: false,        
-        profileViewCount: 0,  
+        reportCount: 0,
+        isBanned: false,
+        profileViewCount: 0,
+        bubbleStyle: 'default',
     };
-    
+
     try {
         const fullData = {
             ...dataToSave,
-            isPremium: false, 
-            createdAt: serverTimestamp() as Timestamp, 
+            isPremium: false,
+            createdAt: serverTimestamp() as Timestamp,
             lastSeen: serverTimestamp() as Timestamp
         };
         await setDoc(userDocRef, fullData);
         setUserData({
             ...dataToSave,
             isPremium: false,
-            createdAt: Timestamp.now(), 
+            createdAt: Timestamp.now(),
             lastSeen: Timestamp.now(),
         });
     } catch (error: any) {
@@ -170,7 +172,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
 
   const hydrateAndSyncUserData = useCallback(async (
-    userAuth: User, 
+    userAuth: User,
     existingFirestoreData: Partial<UserData> | null
   ): Promise<UserData | null> => {
     const userDocRef = doc(db, "users", userAuth.uid);
@@ -184,7 +186,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             displayName: existingFirestoreData.displayName ?? userAuth.displayName ?? `Kullanıcı-${userAuth.uid.substring(0,6)}`,
             photoURL: existingFirestoreData.photoURL ?? userAuth.photoURL ?? null,
             diamonds: existingFirestoreData.diamonds ?? INITIAL_DIAMONDS,
-            createdAt: existingFirestoreData.createdAt ?? Timestamp.now(), 
+            createdAt: existingFirestoreData.createdAt ?? Timestamp.now(),
             role: existingFirestoreData.role ?? "user",
             bio: existingFirestoreData.bio ?? "",
             gender: existingFirestoreData.gender ?? "belirtilmemiş",
@@ -195,7 +197,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             isBanned: existingFirestoreData.isBanned ?? false,
             profileViewCount: existingFirestoreData.profileViewCount ?? 0,
             lastSeen: existingFirestoreData.lastSeen ?? Timestamp.now(),
-            isPremium: false, 
+            bubbleStyle: existingFirestoreData.bubbleStyle ?? 'default',
+            isPremium: false,
         };
     } else {
         await createUserDocument(userAuth, userAuth.displayName || undefined, "belirtilmemiş", true, userAuth.photoURL);
@@ -222,10 +225,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
             isBanned: snapData.isBanned ?? false,
             profileViewCount: snapData.profileViewCount ?? 0,
             lastSeen: snapData.lastSeen ?? Timestamp.now(),
+            bubbleStyle: snapData.bubbleStyle ?? 'default',
             isPremium: false, // Aşağıda hesaplanacak
         };
     }
-    
+
     if (finalUserData.displayName === `Kullanıcı-${userAuth.uid.substring(0,6)}` && userAuth.displayName) {
         finalUserData.displayName = userAuth.displayName;
         firestoreUpdates.displayName = userAuth.displayName;
@@ -238,19 +242,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
         finalUserData.email = userAuth.email;
         firestoreUpdates.email = userAuth.email;
     }
-    
+    if (finalUserData.bubbleStyle === undefined) {
+        finalUserData.bubbleStyle = 'default';
+        firestoreUpdates.bubbleStyle = 'default';
+    }
+
+
     const calculatedIsPremium = checkUserPremium(finalUserData);
-    if (finalUserData.isPremium !== calculatedIsPremium) { 
+    if (finalUserData.isPremium !== calculatedIsPremium) {
         firestoreUpdates.isPremium = calculatedIsPremium;
     }
-    finalUserData.isPremium = calculatedIsPremium; 
+    finalUserData.isPremium = calculatedIsPremium;
 
     firestoreUpdates.lastSeen = serverTimestamp() as Timestamp;
 
     if (Object.keys(firestoreUpdates).length > 0) {
         try {
             await updateDoc(userDocRef, firestoreUpdates);
-            finalUserData.lastSeen = Timestamp.now(); 
+            finalUserData.lastSeen = Timestamp.now();
         } catch (error) {
             console.error("[AuthContext] Firestore kullanıcı verisi senkronizasyon hatası:", error);
         }
@@ -270,26 +279,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const hydratedUser = await hydrateAndSyncUserData(user, docSnap.exists() ? (docSnap.data() as UserData) : null);
 
             if (hydratedUser?.isBanned) {
-                await signOut(auth); 
+                await signOut(auth);
                 router.push('/login?reason=banned_auth_check');
                 toast({title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır. Destek için iletişime geçin.", variant: "destructive", duration: 7000});
-                setUserData(null); 
+                setUserData(null);
             } else {
                 setUserData(hydratedUser);
             }
         } catch (error: any) {
              console.error("[AuthContext] Error fetching/hydrating user document on auth state change:", error.message, error.code, error.stack);
              toast({ title: "Kullanıcı Verisi Yükleme Hatası", description: "Kullanıcı bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
-             setUserData(null); 
+             setUserData(null);
         } finally {
             setIsUserDataLoading(false);
         }
       } else {
         setUserData(null);
         setIsUserDataLoading(false);
-        setIsAdminPanelOpen(false); 
+        setIsAdminPanelOpen(false);
       }
-      setLoading(false); 
+      setLoading(false);
     });
     return unsubscribe;
   }, [router, toast, hydrateAndSyncUserData]);
@@ -300,20 +309,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateFirebaseProfile(userCredential.user, { displayName: username, photoURL: null });
-      // Firestore document creation is now handled by onAuthStateChanged -> hydrateAndSyncUserData
-      // for consistency, especially if a user drops off before full Firestore write.
-      // We will create it with gender during hydrateAndSyncUserData or initial onAuthStateChanged if it's the very first time.
-      // For now, we rely on onAuthStateChanged to create the user document.
-      // For an even better UX, createUserDocument could be called here immediately
-      // and then onAuthStateChanged would just sync/confirm.
-      // For this iteration, let's keep it simple and rely on onAuthStateChanged.
-      
-      // We can assume that onAuthStateChanged will pick up the new user and call
-      // hydrateAndSyncUserData which in turn will call createUserDocument.
-      // Gender needs to be passed to createUserDocument if it's called directly.
-      // Since it's not, ensure hydrateAndSyncUserData (via createUserDocument) handles a gender param or defaults it.
-      // `createUserDocument` was updated to accept and default gender.
-      
+
       router.push('/');
       toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
@@ -329,7 +325,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsUserLoading(false);
     }
-  }, [router, toast]); // createUserDocument kaldırıldı
+  }, [router, toast]);
 
   const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
@@ -374,7 +370,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(userDocRef, { lastSeen: serverTimestamp() }).catch(e => console.warn("Failed to update lastSeen on logout", e));
       }
       await signOut(auth);
-      setIsAdminPanelOpen(false); 
+      setIsAdminPanelOpen(false);
       router.push('/login');
       toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
@@ -384,7 +380,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [currentUser, userData, router, toast]);
 
-  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       setIsUserLoading(false);
@@ -395,7 +391,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     const firestoreUpdates: Partial<UserData> = {};
     let authUpdates: { displayName?: string; photoURL?: string | null } = {};
-    let finalPhotoURL: string | null | undefined = undefined; 
+    let finalPhotoURL: string | null | undefined = undefined;
 
     try {
       if (updates.newPhotoBlob) {
@@ -408,7 +404,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setIsUserLoading(false);
             return false;
         }
-        
+
         const photoFileName = `profileImage-${uuidv4()}.${fileExtension}`;
         const photoRef = storageRef(storage, `profile_pictures/${auth.currentUser.uid}/${photoFileName}`);
 
@@ -425,7 +421,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await uploadBytes(photoRef, photoBlob);
         finalPhotoURL = await getDownloadURL(photoRef);
       } else if (updates.removePhoto) {
-        finalPhotoURL = null; 
+        finalPhotoURL = null;
         const currentPhotoURLForDelete = userData?.photoURL || auth.currentUser?.photoURL;
         if (currentPhotoURLForDelete && !currentPhotoURLForDelete.includes('placehold.co')) {
           try {
@@ -437,7 +433,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       }
 
-      if (finalPhotoURL !== undefined) { 
+      if (finalPhotoURL !== undefined) {
         authUpdates.photoURL = finalPhotoURL;
         firestoreUpdates.photoURL = finalPhotoURL;
       }
@@ -454,17 +450,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       const currentBio = userData?.bio || "";
-      if (updates.bio !== undefined && updates.bio.trim() !== currentBio) { 
+      if (updates.bio !== undefined && updates.bio.trim() !== currentBio) {
         firestoreUpdates.bio = updates.bio.trim();
       }
 
       if (updates.privacySettings) {
         firestoreUpdates.privacySettings = {
-          ...(userData?.privacySettings || defaultPrivacySettings), 
-          ...updates.privacySettings, 
+          ...(userData?.privacySettings || defaultPrivacySettings),
+          ...updates.privacySettings,
         };
       }
-      
+
+      if (updates.bubbleStyle) {
+        firestoreUpdates.bubbleStyle = updates.bubbleStyle;
+      }
+
       if (updates.lastSeen !== undefined) {
         firestoreUpdates.lastSeen = updates.lastSeen;
       }
@@ -473,24 +473,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const hasAuthUpdates = Object.keys(authUpdates).length > 0;
       const hasFirestoreUpdates = Object.keys(firestoreUpdates).length > 0;
 
-      if (!hasAuthUpdates && !hasFirestoreUpdates && updates.lastSeen === undefined) { 
+      if (!hasAuthUpdates && !hasFirestoreUpdates && updates.lastSeen === undefined) {
         toast({ title: "Bilgi", description: "Profilde güncellenecek bir değişiklik yok." });
         setIsUserLoading(false);
-        return true; 
+        return true;
       }
-      
-      if (hasAuthUpdates && auth.currentUser) { 
+
+      if (hasAuthUpdates && auth.currentUser) {
         await updateFirebaseProfile(auth.currentUser, authUpdates);
       }
 
-      if (hasFirestoreUpdates || updates.lastSeen) { 
+      if (hasFirestoreUpdates || updates.lastSeen) {
         const finalFirestorePayload = { ...firestoreUpdates };
-        if (updates.lastSeen && !hasFirestoreUpdates) { 
+        if (updates.lastSeen && !hasFirestoreUpdates) {
             finalFirestorePayload.lastSeen = updates.lastSeen;
         }
         await updateDoc(userDocRef, finalFirestorePayload);
       }
-      
+
       setUserData(prev => {
         if (!prev) return null;
         const newLocalData = { ...prev };
@@ -498,8 +498,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (authUpdates.photoURL !== undefined) newLocalData.photoURL = authUpdates.photoURL;
         if (firestoreUpdates.bio !== undefined) newLocalData.bio = firestoreUpdates.bio;
         if (firestoreUpdates.privacySettings !== undefined) newLocalData.privacySettings = firestoreUpdates.privacySettings;
-        if (updates.lastSeen !== undefined) newLocalData.lastSeen = updates.lastSeen; 
-        
+        if (firestoreUpdates.bubbleStyle !== undefined) newLocalData.bubbleStyle = firestoreUpdates.bubbleStyle;
+        if (updates.lastSeen !== undefined) newLocalData.lastSeen = updates.lastSeen;
+
         newLocalData.isPremium = checkUserPremium(newLocalData);
         return newLocalData;
       });
@@ -554,7 +555,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         reportedUserId: reportedUserId,
         reason: reason,
         timestamp: serverTimestamp(),
-        status: "pending_review", 
+        status: "pending_review",
       });
 
       const reportedUserRef = doc(db, "users", reportedUserId);
@@ -575,7 +576,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
         transaction.update(reportedUserRef, updates);
       });
-      
+
       toast({ title: "Şikayet Alındı", description: "Kullanıcı hakkındaki şikayetiniz tarafımıza iletilmiştir." });
       if(shouldBeBanned){
          toast({ title: "Kullanıcı Banlandı", description: `Şikayet edilen kullanıcı ${finalReportCount} şikayete ulaştığı için hesabı askıya alındı.`, variant: "destructive", duration: 7000 });
@@ -604,7 +605,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       let nameToStore = blockedUserName;
       let photoToStore = blockedUserPhoto;
 
-      if (!nameToStore && !photoToStore) { 
+      if (!nameToStore && !photoToStore) {
         const targetUserDoc = await getDoc(doc(db, "users", blockedUserId));
         if(targetUserDoc.exists()){
           nameToStore = targetUserDoc.data()?.displayName || "Bilinmeyen Kullanıcı";
@@ -614,7 +615,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       await setDoc(blockRef, {
         blockedAt: serverTimestamp(),
-        displayName: nameToStore || "Bilinmeyen Kullanıcı", 
+        displayName: nameToStore || "Bilinmeyen Kullanıcı",
         photoURL: photoToStore,
       });
       toast({ title: "Kullanıcı Engellendi", description: `${nameToStore || 'Kullanıcı'} engellendi.` });
@@ -625,7 +626,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setIsUserLoading(false);
     }
   }, [currentUser, userData, toast]);
-  
+
   const unblockUser = useCallback(async (blockedUserId: string) => {
     if (!currentUser) {
       toast({ title: "Giriş Gerekli", description: "Engeli kaldırmak için giriş yapmalısınız.", variant: "destructive" });
@@ -652,7 +653,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return docSnap.exists();
     } catch (error) {
         console.error("Error checking if user blocked target:", error);
-        return false; 
+        return false;
     }
   }, [currentUser]);
 
@@ -664,7 +665,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return docSnap.exists();
     } catch (error) {
         console.error("Error checking if current user is blocked by target:", error);
-        return false; 
+        return false;
     }
   }, [currentUser]);
 
@@ -679,7 +680,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           // console.warn("Failed to update lastSeen periodically:", error);
         }
       }
-    }, 5 * 60 * 1000); 
+    }, 5 * 60 * 1000);
 
     const handleVisibilityChange = async () => {
       if (currentUser && document.visibilityState === 'visible') {
@@ -715,8 +716,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     currentUser,
     userData,
     loading,
-    isUserLoading, 
-    isUserDataLoading, 
+    isUserLoading,
+    isUserDataLoading,
     isCurrentUserPremium,
     signUp,
     logIn,
@@ -751,6 +752,6 @@ export interface FriendRequest {
 
 export const checkUserPremium = (user: UserData | Partial<UserData> | null): boolean => {
   if (!user) return false;
-  return !!(user.premiumStatus && user.premiumStatus !== 'none' && 
+  return !!(user.premiumStatus && user.premiumStatus !== 'none' &&
          (!user.premiumExpiryDate || !isPast(user.premiumExpiryDate.toDate())));
 };

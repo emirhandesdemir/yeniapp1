@@ -114,3 +114,43 @@ textarea {
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
 }
+
+/* Bubble Style Animations and Classes */
+@keyframes sparkle-animation {
+  0% { transform: scale(1); box-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }
+  50% { transform: scale(1.01); box-shadow: 0 0 15px rgba(255, 255, 255, 0.5), 0 0 25px rgba(255, 215, 0, 0.4); }
+  100% { transform: scale(1); box-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }
+}
+
+.bubble-sparkle {
+  animation: sparkle-animation 4s ease-in-out infinite;
+  border: 1px solid hsl(var(--primary) / 0.3);
+}
+
+.bubble-neon-green {
+  background-color: hsl(140 80% 20% / 0.7) !important;
+  color: hsl(140 90% 90%) !important;
+  text-shadow: 0 0 5px hsl(140 90% 60%);
+  box-shadow: 0 0 5px hsl(140 90% 50%), 0 0 10px hsl(140 90% 50%), inset 0 0 3px hsl(140 90% 60% / 0.5);
+}
+
+.bubble-gradient-blue {
+  background-image: linear-gradient(45deg, #3b82f6, #8b5cf6) !important;
+  color: white !important;
+}
+
+.bubble-gradient-purple {
+  background-image: linear-gradient(45deg, #8b5cf6, #ec4899) !important;
+  color: white !important;
+}
+
+.bubble-striped {
+    background: repeating-linear-gradient(
+      45deg,
+      hsl(var(--secondary)),
+      hsl(var(--secondary)) 10px,
+      hsl(var(--secondary) / 0.8) 10px,
+      hsl(var(--secondary) / 0.8) 20px
+    ) !important;
+    color: hsl(var(--secondary-foreground)) !important;
+}
