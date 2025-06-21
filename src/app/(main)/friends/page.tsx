@@ -25,7 +25,8 @@ import {
   limit,
   getDocs,
   setDoc,
-  updateDoc, // updateDoc eklendi
+  updateDoc,
+  orderBy,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -97,7 +98,7 @@ export default function FriendsPage() {
     }
     setLoadingFriends(true);
     const friendsRef = collection(db, `users/${currentUser.uid}/confirmedFriends`);
-    const q = query(friendsRef, orderBy("addedAt", "desc")); 
+    const q = query(friendsRef, orderBy("addedAt", "desc"));
     
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const friendsPromises = snapshot.docs.map(async (friendDoc) => {
@@ -105,13 +106,13 @@ export default function FriendsPage() {
         try {
             const userProfileDoc = await getDoc(doc(db, "users", friendDoc.id));
             if (userProfileDoc.exists()) {
-            const profile = userProfileDoc.data() as UserData;
-            return {
-                uid: friendDoc.id,
-                ...profile,
-                isPremium: checkUserPremium(profile), 
-                addedAt: friendData.addedAt
-            } as Friend;
+              const profile = userProfileDoc.data() as UserData;
+              return {
+                  uid: friendDoc.id,
+                  ...profile,
+                  isPremium: checkUserPremium(profile), 
+                  addedAt: friendData.addedAt
+              } as Friend;
             }
         } catch (error) {
             console.error("Error fetching profile for friend:", friendDoc.id, error);
@@ -148,9 +149,9 @@ export default function FriendsPage() {
   }, [currentUser?.uid, toast]);
 
   useEffect(() => {
-    const unsubscribe = fetchFriends();
+    const unsubscribePromise = fetchFriends();
     return () => {
-      unsubscribe.then(unsub => {
+      unsubscribePromise.then(unsub => {
         if (unsub) unsub();
       }).catch(err => console.error("Error unsubscribing from friends listener:", err));
     };
@@ -348,7 +349,6 @@ export default function FriendsPage() {
 
         toast({ title: "Başarılı", description: `${targetUser.displayName} ile arkadaş oldunuz.` });
         setSearchResults(prev => prev.map(u => u.uid === targetUser.uid ? {...u, isFriend: true, isRequestReceived: false, incomingRequestId: null } : u));
-        // fetchFriends(); // onSnapshot zaten listeyi güncelleyecektir.
     } catch (error) {
         console.error("Error accepting friend request:", error);
         toast({ title: "Hata", description: "Arkadaşlık isteği kabul edilemedi.", variant: "destructive" });
@@ -395,17 +395,16 @@ export default function FriendsPage() {
         where("toUserId", "==", currentUser.uid)
       );
 
-      const [requestSnap1, requestSnap2] = await Promise.all([
+      const [snap1, snap2] = await Promise.all([
         getDocs(requestQuery1),
         getDocs(requestQuery2)
       ]);
 
-      requestSnap1.forEach(doc => batch.delete(doc.ref));
-      requestSnap2.forEach(doc => batch.delete(doc.ref));
+      snap1.forEach(doc => batch.delete(doc.ref));
+      snap2.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
       toast({ title: "Başarılı", description: `${friendName} arkadaşlıktan çıkarıldı.` });
-      // fetchFriends(); // onSnapshot zaten listeyi güncelleyecektir.
       setSearchResults(prevResults => prevResults.map(sr =>
         sr.uid === friendId ? { ...sr, isFriend: false, isRequestSent: false, isRequestReceived: false, outgoingRequestId: null, incomingRequestId: null } : sr
       ));
@@ -713,3 +712,5 @@ export default function FriendsPage() {
     </div>
   );
 }
+
+    
