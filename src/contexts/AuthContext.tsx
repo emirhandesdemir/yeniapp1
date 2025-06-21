@@ -33,6 +33,13 @@ export interface PrivacySettings {
   showOnlineStatus?: boolean;
 }
 
+export interface NotificationSettings {
+  likes?: boolean;
+  comments?: boolean;
+  friendRequests?: boolean;
+  dms?: boolean;
+}
+
 export interface UserData {
   uid: string;
   email: string | null;
@@ -44,6 +51,7 @@ export interface UserData {
   bio?: string;
   gender?: 'kadın' | 'erkek' | 'belirtilmemiş';
   privacySettings?: PrivacySettings;
+  notificationSettings?: NotificationSettings; // Eklendi
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
   isPremium?: boolean;
@@ -72,7 +80,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; notificationSettings?: NotificationSettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   reportUser: (reportedUserId: string, reason?: string) => Promise<void>;
@@ -104,6 +112,13 @@ const defaultPrivacySettings: PrivacySettings = {
   showOnlineStatus: true,
 };
 
+const defaultNotificationSettings: NotificationSettings = {
+    likes: true,
+    comments: true,
+    friendRequests: true,
+    dms: true,
+};
+
 export function checkUserPremium(user: UserData | Partial<UserData> | null): boolean {
   if (!user) return false;
   return !!(user.premiumStatus && user.premiumStatus !== 'none' &&
@@ -127,7 +142,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş', isGoogleSignUp = false) => {
     const userDocRef = doc(db, "users", user.uid);
     const docSnap = await getDoc(userDocRef);
-    if (docSnap.exists()) return; // Don't overwrite if it somehow exists
+    if (docSnap.exists()) return;
   
     const initialDisplayName = username || (isGoogleSignUp ? user.displayName : null) || `kullanici_${user.uid.substring(0, 6)}`;
     const initialPhotoURL = isGoogleSignUp ? user.photoURL : null;
@@ -141,6 +156,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       bio: "",
       gender: gender || "belirtilmemiş",
       privacySettings: defaultPrivacySettings,
+      notificationSettings: defaultNotificationSettings,
       premiumStatus: 'none',
       premiumExpiryDate: null,
       reportCount: 0,
@@ -157,7 +173,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
   }, []);
 
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
@@ -170,7 +185,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const fetchedData = docSnap.data() as UserData;
             if (fetchedData.isBanned) {
               await signOut(auth);
-              router.push('/login?reason=banned_auth_check');
             } else {
               setCurrentUser(user);
               setUserData({ uid: user.uid, ...fetchedData });
@@ -202,8 +216,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     });
     return unsubscribe;
-  }, [router, toast, createUserDocument]);
-
+  }, [toast, createUserDocument]);
 
   const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
     setIsUserLoading(true);
@@ -217,6 +230,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       else if (error.code === 'auth/weak-password') message = "Şifre çok zayıf. Lütfen en az 6 karakterli daha güçlü bir şifre seçin.";
       else if (error.code === 'auth/invalid-email') message = "Geçersiz e-posta adresi formatı.";
       toast({ title: "Kayıt Hatası", description: message, variant: "destructive" });
+      throw error; 
     } finally {
       setIsUserLoading(false);
     }
@@ -232,6 +246,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         message = "E-posta veya şifre hatalı.";
       }
       toast({ title: "Giriş Hatası", description: message, variant: "destructive" });
+      throw error;
     } finally {
       setIsUserLoading(false);
     }
@@ -251,6 +266,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         message = "Bu e-posta adresiyle zaten bir hesap mevcut. Lütfen diğer yöntemle giriş yapmayı deneyin.";
       }
       toast({ title: "Google Giriş Hatası", description: message, variant: "destructive" });
+      throw error;
     } finally {
       setIsUserLoading(false);
     }
@@ -263,14 +279,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await updateDoc(doc(db, "users", currentUser.uid), { lastSeen: serverTimestamp() });
       }
       await signOut(auth);
+      router.push('/login');
+      toast({ title: "Başarılı", description: "Çıkış yapıldı." });
     } catch (error: any) {
       toast({ title: "Çıkış Hatası", description: "Çıkış yapılırken bir hata oluştu.", variant: "destructive" });
     } finally {
       setIsUserLoading(false);
     }
-  }, [currentUser, toast]);
+  }, [currentUser, toast, router]);
 
-  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; notificationSettings?: NotificationSettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       setIsUserLoading(false);
@@ -307,6 +325,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       if (updates.bio !== undefined) firestoreUpdates.bio = updates.bio;
       if (updates.privacySettings) firestoreUpdates.privacySettings = updates.privacySettings;
+      if (updates.notificationSettings) firestoreUpdates.notificationSettings = updates.notificationSettings;
       if (updates.bubbleStyle) firestoreUpdates.bubbleStyle = updates.bubbleStyle;
       if (updates.avatarFrameStyle) firestoreUpdates.avatarFrameStyle = updates.avatarFrameStyle;
       if (updates.lastSeen) firestoreUpdates.lastSeen = updates.lastSeen;
@@ -316,9 +335,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       setUserData(prev => prev ? { ...prev, ...firestoreUpdates, ...authUpdates } : null);
       
-      if (Object.keys(firestoreUpdates).length > 0 || Object.keys(authUpdates).length > 0) {
-        toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
-      }
       return true;
     } catch (error: any) {
       toast({ title: "Profil Güncelleme Hatası", description: `Bir sorun oluştu: ${error.message}`, variant: "destructive" });
@@ -343,7 +359,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (!currentUser || !userData) return;
     setIsUserLoading(true);
     try {
-      await addDoc(collection(db, "reports"), { /*...*/ });
+      await addDoc(collection(db, "reports"), {
+        reporterId: currentUser.uid,
+        reporterName: userData.displayName,
+        reportedUserId,
+        reason,
+        timestamp: serverTimestamp(),
+        status: 'new'
+      });
       const reportedUserRef = doc(db, "users", reportedUserId);
       await runTransaction(db, async (transaction) => {
         const snap = await transaction.get(reportedUserRef);
@@ -353,26 +376,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (newCount >= REPORT_BAN_THRESHOLD) updates.isBanned = true;
         transaction.update(reportedUserRef, updates);
       });
-      toast({ title: "Şikayet Alındı" });
+      toast({ title: "Şikayet Alındı", description: "Şikayetiniz incelenmek üzere bize ulaştı. Teşekkür ederiz." });
     } catch (e) { toast({ title: "Hata", description: "Şikayet gönderilemedi.", variant: "destructive" }); }
     finally { setIsUserLoading(false); }
   }, [currentUser, userData, toast]);
 
-  const blockUser = useCallback(async (blockedUserId, blockedUserName, blockedUserPhoto) => {
+  const blockUser = useCallback(async (blockedUserId: string, blockedUserName?: string | null, blockedUserPhoto?: string | null) => {
     if (!currentUser) return;
     setIsUserLoading(true);
     try {
       await setDoc(doc(db, `users/${currentUser.uid}/blockedUsers`, blockedUserId), {
         blockedAt: serverTimestamp(),
-        displayName: blockedUserName,
-        photoURL: blockedUserPhoto,
+        displayName: blockedUserName || null,
+        photoURL: blockedUserPhoto || null,
       });
       toast({ title: "Kullanıcı Engellendi" });
     } catch (e) { toast({ title: "Hata", description: "Engelleme başarısız.", variant: "destructive" }); }
     finally { setIsUserLoading(false); }
   }, [currentUser, toast]);
 
-  const unblockUser = useCallback(async (blockedUserId) => {
+  const unblockUser = useCallback(async (blockedUserId: string) => {
     if (!currentUser) return;
     setIsUserLoading(true);
     try {
@@ -382,13 +405,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     finally { setIsUserLoading(false); }
   }, [currentUser, toast]);
 
-  const checkIfUserBlocked = useCallback(async (targetUserId) => {
+  const checkIfUserBlocked = useCallback(async (targetUserId: string) => {
     if (!currentUser) return false;
     const snap = await getDoc(doc(db, `users/${currentUser.uid}/blockedUsers`, targetUserId));
     return snap.exists();
   }, [currentUser]);
 
-  const checkIfCurrentUserIsBlockedBy = useCallback(async (targetUserId) => {
+  const checkIfCurrentUserIsBlockedBy = useCallback(async (targetUserId: string) => {
     if (!currentUser) return false;
     const snap = await getDoc(doc(db, `users/${targetUserId}/blockedUsers`, currentUser.uid));
     return snap.exists();

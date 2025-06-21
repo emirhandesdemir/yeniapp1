@@ -264,6 +264,9 @@ export default function ChatRoomPage() {
   const [isChestCreateOpen, setIsChestCreateOpen] = useState(false);
   const [activeChest, setActiveChest] = useState<ActiveChest | null>(null);
   const [isOpeningChest, setIsOpeningChest] = useState(false);
+  
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   const roomDetailsRef = useRef(roomDetails);
   useEffect(() => { roomDetailsRef.current = roomDetails }, [roomDetails]);
@@ -282,6 +285,11 @@ export default function ChatRoomPage() {
         msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
     ));
   }, []);
+
+  const handleStartEdit = (messageId: string, text: string) => {
+    // This function will be called from ChatMessageItem
+    console.log("Not implemented, but would start editing for", messageId);
+  };
 
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
@@ -1801,7 +1809,7 @@ export default function ChatRoomPage() {
                 chest={activeChest}
                 roomExpiresAt={roomDetails.expiresAt}
                 onOpenChest={handleOpenChest}
-                isOpening={isOpening}
+                isOpening={isOpeningChest}
             />
       )}
       <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
@@ -1945,27 +1953,27 @@ export default function ChatRoomPage() {
                 const isActiveInRoom = senderIsActiveText || senderIsActiveVoice;
                 return (
                 <ChatMessageItem
-                key={msg.id}
-                msg={msg}
-                currentUserUid={currentUser?.uid}
-                popoverOpenForUserId={popoverOpenForUserId}
-                onOpenUserInfoPopover={handleOpenUserInfoPopover}
-                setPopoverOpenForUserId={setPopoverOpenForUserId}
-                popoverLoading={popoverLoading}
-                popoverTargetUser={popoverTargetUser}
-                friendshipStatus={friendshipStatus}
-                relevantFriendRequest={relevantFriendRequest}
-                onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
-                onSendFriendRequestPopover={handleSendFriendRequestPopover}
-                onDmAction={handleDmAction}
-                onViewProfileAction={handleViewProfileAction}
-                getAvatarFallbackText={getAvatarFallbackText}
-                isCurrentUserRoomCreator={isCurrentUserRoomCreator}
-                onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
-                roomId={roomId}
-                isActiveParticipant={isActiveInRoom}
-                onMessageDeleted={handleMessageDeleted}
-                onMessageEdited={handleMessageEdited}
+                  key={msg.id}
+                  msg={msg}
+                  currentUserUid={currentUser?.uid}
+                  popoverOpenForUserId={popoverOpenForUserId}
+                  onOpenUserInfoPopover={handleOpenUserInfoPopover}
+                  setPopoverOpenForUserId={setPopoverOpenForUserId}
+                  popoverLoading={popoverLoading}
+                  popoverTargetUser={popoverTargetUser}
+                  friendshipStatus={friendshipStatus}
+                  relevantFriendRequest={relevantFriendRequest}
+                  onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
+                  onSendFriendRequestPopover={handleSendFriendRequestPopover}
+                  onDmAction={handleDmAction}
+                  onViewProfileAction={handleViewProfileAction}
+                  getAvatarFallbackText={getAvatarFallbackText}
+                  isCurrentUserRoomCreator={isCurrentUserRoomCreator}
+                  onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
+                  roomId={roomId}
+                  isActiveParticipant={isActiveInRoom}
+                  onMessageDeleted={handleMessageDeleted}
+                  onMessageEdited={handleMessageEdited}
                 />
             )})}
             </ScrollArea>
@@ -2007,3 +2015,4 @@ export default function ChatRoomPage() {
     </div>
   );
 }
+
