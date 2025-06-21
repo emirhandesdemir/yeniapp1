@@ -4,9 +4,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
-import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
-// Script importu kaldırıldı
 
 export const metadata: Metadata = {
   title: 'HiweWalk',
@@ -19,7 +17,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // recaptchaSiteKey değişkeni kaldırıldı
 
   return (
     <html lang="tr" suppressHydrationWarning>
@@ -46,7 +43,6 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#ADD8E6" />
         <link rel="shortcut icon" href="/favicon.ico" />
-        {/* reCAPTCHA Script etiketi kaldırıldı */}
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col">
         <ThemeProvider
@@ -54,12 +50,10 @@ export default function RootLayout({
           storageKey="hiwewalk-theme"
         >
           <AuthProvider>
-            <InAppNotificationProvider>
-              <MinimizedChatProvider>
-                {children}
-                <Toaster />
-              </MinimizedChatProvider>
-            </InAppNotificationProvider>
+            <MinimizedChatProvider>
+              {children}
+              <Toaster />
+            </MinimizedChatProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
