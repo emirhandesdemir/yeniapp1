@@ -39,7 +39,7 @@ try {
       // IMPORTANT: Replace the placeholder below with your actual reCAPTCHA v3 Site Key.
       // You can get this key from the Google Cloud Console or your Firebase project's App Check section.
       initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider(''),
+        provider: new ReCaptchaV3Provider('6LeUBGkrAAAAANbXDY-97-kzg9QofLWJSYRy1Vj1'),
         isTokenAutoRefreshEnabled: true,
       });
       console.log("Firebase App Check initialized successfully.");

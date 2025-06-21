@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut, Edit2, Check, X } from "lucide-react"; 
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, UserCircle, MessageSquare, Video, MoreVertical, ShieldAlert, Ban, Phone, Star, Flag, Clock, ThumbsUp, ThumbsDown, RefreshCw, MessageSquareHeart, Dot, LogOut, Edit2, X, Check } from "lucide-react"; 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent, useLayoutEffect } from "react";
@@ -87,7 +87,6 @@ interface DmDocumentData {
     lastMessageTimestamp: Timestamp | null;
     lastMessageText?: string;
     lastMessageSenderId?: string;
-    isMatchSession?: boolean;
 }
 
 const ACTIVE_THRESHOLD_MINUTES_DM = 2; 
@@ -152,7 +151,6 @@ export default function DirectMessagePage() {
       });
       toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
     } catch (error) {
-      console.error("Error saving edited DM:", error);
       toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsSending(false);
@@ -169,12 +167,7 @@ export default function DirectMessagePage() {
         if (docSnap.exists()) {
             const data = docSnap.data() as DmDocumentData;
             setDmDocData(data);
-
-            if(data.isMatchSession) {
-                router.replace(`/match/${chatId}`);
-                return;
-            }
-
+            
             const partnerUid = data.participantUids.find(uid => uid !== currentUser.uid);
             if (!partnerUid) {
                 toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
@@ -218,14 +211,6 @@ export default function DirectMessagePage() {
                     }));
                      document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
                 }
-            }, (error) => {
-                console.error("Error listening to partner user document:", error);
-                 setDmPartnerDetails(prev => ({
-                    ...(prev || partnerInfo),
-                    uid: partnerUid,
-                    lastSeen: null,
-                }));
-                document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
             });
 
 
@@ -240,9 +225,8 @@ export default function DirectMessagePage() {
         }
         setLoadingDmPartner(false);
     }, (error) => {
-        console.error("Error fetching DM document:", error);
-        toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive"});
         setLoadingDmPartner(false);
+        toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive"});
     });
     return () => {
         unsubscribeDmDoc();
@@ -252,6 +236,17 @@ export default function DirectMessagePage() {
     };
   }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
 
+  const handleMessageDeleted = useCallback((deletedMessageId: string) => {
+    setMessages(prev => prev.filter(msg => msg.id !== deletedMessageId));
+  }, []);
+
+  const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
+    setMessages(prev =>
+      prev.map(msg =>
+        msg.id === messageId ? { ...msg, text: newText, editedAt } : msg
+      )
+    );
+  }, []);
 
   useEffect(() => {
     if(!chatId || !currentUser?.uid) return;
@@ -281,10 +276,6 @@ export default function DirectMessagePage() {
         userAiHint: msg.senderId === currentUser?.uid ? "user avatar" : "person talking"
       })));
       setLoadingMessages(false);
-    }, (error) => {
-      console.error("Error fetching DM messages:", error);
-      toast({ title: "Hata", description: "Mesajlar yüklenirken bir sorun oluştu.", variant: "destructive" });
-      setLoadingMessages(false);
     });
     return () => unsubscribeMessages();
   }, [chatId, currentUser?.uid, toast]);
@@ -312,9 +303,7 @@ export default function DirectMessagePage() {
   };
 
   const handleSendMessage = useCallback(async () => {
-    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) {
-        return;
-    }
+    if (!currentUser || !newMessage.trim() || !chatId || !userData || !dmPartnerDetails || isUserLoading) return;
     if (isCurrentUserBlockedByPartner) {
         toast({ title: "Engellendiniz", description: "Bu kullanıcı tarafından engellendiğiniz için mesaj gönderemezsiniz.", variant: "destructive"});
         return;
@@ -323,17 +312,14 @@ export default function DirectMessagePage() {
         toast({ title: "Engellendi", description: "Bu kullanıcıyı engellediğiniz için mesaj gönderemezsiniz. Engeli kaldırmayı deneyin.", variant: "destructive"});
         return;
     }
-   
 
     if (isSending) return;
-
     setIsSending(true);
     const tempMessage = newMessage.trim();
     const userIsCurrentlyPremium = isCurrentUserPremium();
 
     try {
       const dmChatDocRef = doc(db, "directMessages", chatId);
-      
       const messageDataForParentDoc = {
         lastMessageTimestamp: serverTimestamp(),
         lastMessageText: tempMessage.substring(0, 50),
@@ -355,12 +341,11 @@ export default function DirectMessagePage() {
       } else if (dmChatDocSnap.exists()) {
          await updateDoc(dmChatDocRef, messageDataForParentDoc);
       }
-
-
+      
       await addDoc(collection(db, `directMessages/${chatId}/messages`), {
         text: tempMessage,
         senderId: currentUser.uid,
-        senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
+        senderName: userData?.displayName || currentUser.displayName || "Bilinmeyen",
         senderAvatar: userData?.photoURL || currentUser.photoURL,
         senderIsPremium: userIsCurrentlyPremium,
         senderBubbleStyle: userData?.bubbleStyle || 'default',
@@ -371,7 +356,6 @@ export default function DirectMessagePage() {
       });
       setNewMessage("");
     } catch (error) {
-      console.error("Error sending DM:", error);
       toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" });
     } finally {
       setIsSending(false);
@@ -388,10 +372,7 @@ export default function DirectMessagePage() {
   }, [editingMessage, handleSaveEdit, handleSendMessage]);
 
   const handleVoiceCall = useCallback(async () => {
-    if (!currentUser || !userData || !dmPartnerDetails) {
-      toast({ title: "Hata", description: "Arama başlatılamadı. Kullanıcı bilgileri eksik.", variant: "destructive" });
-      return;
-    }
+    if (!currentUser || !userData || !dmPartnerDetails) return;
     if (isCurrentUserBlockedByPartner || isPartnerBlockedByCurrentUser) {
       toast({ title: "Engellendi", description: "Engellenmiş bir kullanıcı ile arama başlatamazsınız.", variant: "destructive"});
       return;
@@ -400,8 +381,7 @@ export default function DirectMessagePage() {
     const callId = doc(collection(db, "directCalls")).id;
     const currentUserIsCurrentlyPremium = isCurrentUserPremium();
     try {
-      const callDocRef = doc(db, "directCalls", callId);
-      await setDoc(callDocRef, {
+      await setDoc(doc(db, "directCalls", callId), {
         callId: callId,
         callerId: currentUser.uid,
         callerName: userData.displayName,
@@ -418,7 +398,6 @@ export default function DirectMessagePage() {
       toast({ title: "Arama Başlatılıyor...", description: `${dmPartnerDetails.displayName || 'Kullanıcı'} aranıyor.` });
       router.push(`/call/${callId}`);
     } catch (error) {
-      console.error("Error initiating call from DM header:", error);
       toast({ title: "Arama Hatası", description: "Arama başlatılırken bir sorun oluştu.", variant: "destructive" });
     }
   }, [currentUser, userData, dmPartnerDetails, router, toast, isCurrentUserPremium, isPartnerBlockedByCurrentUser, isCurrentUserBlockedByPartner]);
@@ -449,7 +428,6 @@ export default function DirectMessagePage() {
     }
     setIsSending(false);
   };
-
 
   const formatPartnerLastSeen = (lastSeen: Timestamp | null | undefined): string => {
     if (!lastSeen) return "Son görülme bilinmiyor";
@@ -488,7 +466,6 @@ export default function DirectMessagePage() {
 
   const partnerActivityStatus = formatPartnerLastSeen(dmPartnerDetails?.lastSeen);
   const isPartnerCurrentlyActive = partnerActivityStatus === "Aktif";
-
 
   return (
     <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
@@ -584,6 +561,8 @@ export default function DirectMessagePage() {
                   getAvatarFallbackText={getAvatarFallbackText}
                   chatId={chatId}
                   onStartEdit={handleStartEdit}
+                  onMessageDeleted={handleMessageDeleted}
+                  onMessageEdited={handleMessageEdited}
                 />
               </motion.div>
             ))}
