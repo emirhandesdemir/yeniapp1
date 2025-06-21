@@ -1,10 +1,9 @@
-
 "use client";
 
 import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, MessageSquare, LogIn, AlertCircle, Compass, Star, Gamepad2, RadioTower } from "lucide-react";
+import { Users, MessageSquare, LogIn, AlertCircle, Compass, Star, Gamepad2, RadioTower, Clock } from "lucide-react";
 import Link from "next/link";
 import { Timestamp } from "firebase/firestore";
 import { formatDistanceToNow, isPast } from 'date-fns';
