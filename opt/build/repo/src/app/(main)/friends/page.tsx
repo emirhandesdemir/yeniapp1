@@ -25,7 +25,8 @@ import {
   limit,
   getDocs,
   setDoc,
-  updateDoc, // updateDoc eklendi
+  updateDoc,
+  orderBy,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
