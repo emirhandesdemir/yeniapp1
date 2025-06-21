@@ -38,8 +38,6 @@ const RoomInFeedCard: React.FC<RoomInFeedCardProps> = React.memo(({ room, now = 
   const isFull = room.participantCount != null && room.participantCount >= room.maxParticipants;
   
   const getPreciseCardExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
-    // This function is not used in the current card but kept for potential future use.
-    // The simplified formattedDate is used instead.
     if (!expiresAt) return "Süre bilgisi yok";
     const expiryDate = expiresAt.toDate();
     if (isPast(expiryDate, now)) {

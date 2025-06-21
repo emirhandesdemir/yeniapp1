@@ -1739,13 +1739,13 @@ export default function ChatRoomPage() {
 
   return (
     <>
-      <div className="relative flex flex-col h-screen bg-card overflow-hidden">
+      <div className="flex flex-col h-screen bg-card rounded-xl shadow-lg overflow-hidden relative">
         {activeChest && roomDetails?.expiresAt && (
             <ActiveChestDisplay
                 chest={activeChest}
                 roomExpiresAt={roomDetails.expiresAt}
                 onOpenChest={handleOpenChest}
-                isOpening={isOpeningChest}
+                isOpening={isOpening}
             />
         )}
         {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
