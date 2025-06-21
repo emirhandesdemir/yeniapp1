@@ -75,7 +75,7 @@ interface Message {
   userAiHint?: string;
   isGameMessage?: boolean;
   mentionedUserIds?: string[];
-  editedAt?: Timestamp | null;
+  editedAt?: Timestamp | null; 
   reactions?: { [key: string]: string[] };
 }
 
@@ -97,6 +97,8 @@ interface ChatRoomDetails {
   currentGameAnswerDeadline?: Timestamp | null;
   image?: string;
   imageAiHint?: string;
+  isActive?: boolean;
+  lastMessageAt?: Timestamp;
 }
 
 export interface ActiveTextParticipant {
@@ -106,7 +108,7 @@ export interface ActiveTextParticipant {
   isPremium?: boolean;
   joinedAt?: Timestamp;
   isTyping?: boolean;
-  lastSeen?: Timestamp | null;
+  lastSeen?: Timestamp | null; 
 }
 
 export interface ActiveVoiceParticipantData {
@@ -163,7 +165,7 @@ const PREMIUM_USER_ROOM_CAPACITY = 50;
 
 const SPEAKING_THRESHOLD = 5;
 const SILENCE_DELAY_MS = 1000;
-const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2;
+const ACTIVE_IN_ROOM_THRESHOLD_MINUTES = 2; 
 
 
 export default function ChatRoomPage() {
@@ -243,14 +245,10 @@ export default function ChatRoomPage() {
 
   const handleMessageDeleted = useCallback((deletedMessageId: string) => {
     setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
-    if (roomDetails) {
-        const roomRef = doc(db, "chatRooms", roomDetails.id);
-        updateDoc(roomRef, { messageCount: increment(-1) }).catch(e => console.warn("Failed to decrement messageCount", e));
-    }
-  }, [roomDetails]);
+  }, []);
 
   const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
-    setMessages(prevMessages => prevMessages.map(msg =>
+    setMessages(prevMessages => prevMessages.map(msg => 
         msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
     ));
   }, []);
@@ -1010,7 +1008,7 @@ export default function ChatRoomPage() {
 
     console.log("[GameSystem] Answer timeout for question:", questionText);
     const roomDocRef = doc(db, "chatRooms", roomId);
-
+    
     const currentRoomSnap = await getDoc(roomDocRef);
     if (!currentRoomSnap.exists() || currentRoomSnap.data()?.currentGameQuestionId !== roomDetails.currentGameQuestionId) {
       console.log("[GameSystem] Timeout: Question already changed or room deleted. Aborting timeout action.");
@@ -1175,6 +1173,16 @@ export default function ChatRoomPage() {
       const currentRoomData = currentRoomSnap.data() as ChatRoomDetails;
       if ((currentRoomData.participantCount ?? 0) >= currentRoomData.maxParticipants) { setIsRoomFullError(true); toast({ title: "Oda Dolu", description: "Bu oda maksimum katılımcı sayısına ulaşmış.", variant: "destructive" }); setIsProcessingJoinLeave(false); return; }
 
+      // Check and correct stale active status on join
+      if (currentRoomData.isActive && currentRoomData.lastMessageAt) {
+          const threeMinutesAgo = new Date();
+          threeMinutesAgo.setMinutes(threeMinutesAgo.getMinutes() - 3);
+          if (currentRoomData.lastMessageAt.toDate() < threeMinutesAgo) {
+              console.log(`[Activity Check] Room ${roomId} is stale. Deactivating on join.`);
+              await updateDoc(roomRef, { isActive: false, activeSince: null });
+          }
+      }
+
       const batch = writeBatch(db);
       batch.set(participantRef, {
           joinedAt: serverTimestamp(),
@@ -1183,7 +1191,7 @@ export default function ChatRoomPage() {
           uid: currentUser.uid,
           isTyping: false,
           isPremium: userIsCurrentlyPremium,
-          lastSeen: serverTimestamp(),
+          lastSeen: serverTimestamp(), 
        });
       batch.update(roomRef, { participantCount: increment(1) });
 
@@ -1248,6 +1256,8 @@ export default function ChatRoomPage() {
             currentGameAnswerDeadline: data.currentGameAnswerDeadline,
             image: data.image,
             imageAiHint: data.imageAiHint,
+            isActive: data.isActive || false,
+            lastMessageAt: data.lastMessageAt,
         };
         setRoomDetails(fetchedRoomDetails); document.title = `${fetchedRoomDetails.name} - HiweWalk`;
       } else { toast({ title: "Hata", description: "Sohbet odası bulunamadı.", variant: "destructive" }); router.push("/chat"); }
@@ -1324,9 +1334,10 @@ export default function ChatRoomPage() {
       return;
     }
 
-    setIsSending(true); const tempMessage = newMessage.trim();
+    setIsSending(true);
+    const tempMessage = newMessage.trim();
     if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
-    updateUserTypingStatus(false); const roomDocRef = doc(db, "chatRooms", roomId);
+    updateUserTypingStatus(false);
     const userIsCurrentlyPremium = isCurrentUserPremium();
 
     const mentionedUserIds: string[] = [];
@@ -1353,6 +1364,7 @@ export default function ChatRoomPage() {
         toast({ title: "Süre Doldu!", description: "Bu soru için cevap süresi doldu.", variant: "destructive" });
         setIsSending(false); return;
       }
+      const roomDocRef = doc(db, "chatRooms", roomId); // Moved here to be available for game logic
       if (tempMessage.toLowerCase() === "/hint") {
         if ((userData.diamonds ?? 0) < HINT_COST) { toast({ title: "Yetersiz Elmas", description: `İpucu için ${HINT_COST} elmasa ihtiyacın var.`, variant: "destructive" }); setIsSending(false); return; }
         try { await updateUserDiamonds((userData.diamonds ?? 0) - HINT_COST); toast({ title: "İpucu!", description: (<div className="flex items-start gap-2"><Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5" /><span>{activeGameQuestion.hint} (-{HINT_COST} <Gem className="inline h-3 w-3 mb-px" />)</span></div>), duration: 10000 }); await addDoc(collection(db, `chatRooms/${roomId}/messages`), { text: `[OYUN] ${userData.displayName} bir ipucu kullandı!`, senderId: "system", senderName: "Oyun Ustası", timestamp: serverTimestamp(), isGameMessage: true }); } catch (error) { console.error("[GameSystem] Error processing hint:", error); toast({ title: "Hata", description: "İpucu alınırken bir sorun oluştu.", variant: "destructive" }); } finally { setNewMessage(""); setIsSending(false); } return;
@@ -1366,7 +1378,23 @@ export default function ChatRoomPage() {
       }
     }
     try {
-        await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+        const batch = writeBatch(db);
+        const roomRef = doc(db, "chatRooms", roomId);
+
+        const roomSnap = await getDoc(roomRef);
+        if (roomSnap.exists()) {
+            const roomData = roomSnap.data();
+            const updates: {[key: string]: any} = {
+                lastMessageAt: serverTimestamp()
+            };
+            if (!roomData.isActive && (roomData.participantCount ?? 0) >= 5) {
+                updates.isActive = true;
+                updates.activeSince = serverTimestamp();
+            }
+            batch.update(roomRef, updates);
+        }
+        
+        batch.set(doc(collection(db, `chatRooms/${roomId}/messages`)), {
             text: tempMessage,
             senderId: currentUser.uid,
             senderName: userData?.displayName || currentUser.displayName || currentUser.email || "Bilinmeyen Kullanıcı",
@@ -1378,6 +1406,9 @@ export default function ChatRoomPage() {
             editedAt: null,
             reactions: {},
         });
+        
+        await batch.commit();
+        
         setNewMessage("");
         lastMessageTimesRef.current.push(now);
     } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); }
@@ -1781,5 +1812,4 @@ export default function ChatRoomPage() {
     </>
   );
 }
-
 
