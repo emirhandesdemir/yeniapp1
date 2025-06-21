@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview Proje yapısı ve dosyaları hakkında soruları yanıtlayan bir AI asistanı.
@@ -8,8 +7,8 @@
  * - ProjectAssistantOutput - Çıkış tipi.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { defineFlow, generate } from 'genkit/ai';
+import { z } from 'zod';
 
 const ProjectAssistantInputSchema = z.object({
   question: z.string().describe('Proje yapısı, dosyalar veya genel işleyiş hakkında sorulan soru.'),
@@ -68,8 +67,8 @@ HiweWalk, kullanıcıların dinamik sohbet odaları oluşturup katılabildiği, 
 
 **Kullanılan Sohbet Odası Komutları:**
 Sohbet odası içinde, özellikle oyun aktifken aşağıdaki komutlar kullanılabilir:
-*   \`/answer <cevabınız>\`: Aktif oyun sorusuna cevap göndermek için kullanılır. Örnek: \`/answer İstanbul\`
-*   \`/hint\`: Aktif oyun sorusu için ipucu almak için kullanılır. Bu komutun elmas maliyeti (genellikle 1 elmas) olabilir.
+*   `/answer <cevabınız>`: Aktif oyun sorusuna cevap göndermek için kullanılır. Örnek: `/answer İstanbul`
+*   `/hint`: Aktif oyun sorusu için ipucu almak için kullanılır. Bu komutun elmas maliyeti (genellikle 1 elmas) olabilir.
 
 **Kullanılan Teknolojiler ve Araçlar:**
 *   **Frontend Çatısı:** Next.js (App Router)
@@ -179,29 +178,26 @@ Admin Panelindeki Proje Asistanı olarak, sana sorulan soruları bu bilgilere da
 Bir oyun mesajı örneği olarak: "Süre doldu! Kimse '[soru metni]' sorusunu bilemedi. Doğru cevap: [doğru cevap]." şeklinde bir mesaj gösterilebilir.
 `;
 
-const projectAssistantPrompt = ai.definePrompt({
-  name: 'projectAssistantPrompt',
-  input: {schema: ProjectAssistantInputSchema},
-  output: {schema: ProjectAssistantOutputSchema},
-  prompt: `${projectContext}
-
-Kullanıcının Sorusu: {{{question}}}
-
-Cevabın:`,
-});
-
-const projectAssistant = ai.defineFlow(
+const projectAssistant = defineFlow(
   {
     name: 'projectAssistantFlow',
     inputSchema: ProjectAssistantInputSchema,
     outputSchema: ProjectAssistantOutputSchema,
   },
   async (input) => {
-    const {output} = await projectAssistantPrompt(input);
-    if (output) {
-        return output;
-    }
-    return { answer: "Proje asistanından bir cevap alınamadı." };
+    const llmResponse = await generate({
+      model: 'googleai/gemini-pro',
+      prompt: `${projectContext}
+
+Kullanıcının Sorusu: ${input.question}
+
+Cevabın:`,
+      output: {
+        format: 'json',
+        schema: ProjectAssistantOutputSchema,
+      },
+    });
+
+    return llmResponse.output()!;
   }
 );
-
