@@ -1,20 +1,34 @@
 
-"use client"; // Added to ensure client-side rendering context
+"use client";
 
-import React from 'react'; // Added for explicit React import
+import React, { useEffect } from 'react';
 import AuthLayout from "@/components/layout/AuthLayout";
 import SignupForm from "@/components/auth/SignupForm";
-import type { Metadata } from 'next';
-
-// Metadata should be defined in a server component layout if the page itself is client.
-// For simplicity, we'll keep it here, but Next.js might move it or show a warning.
-// Consider moving metadata to src/app/layout.tsx or a dedicated server layout for auth pages if issues persist.
-// export const metadata: Metadata = {
-// title: 'Kayıt Ol - HiweWalk',
-// description: 'HiweWalk\'e katılarak yeni insanlarla tanışın.',
-// };
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 
 export default function SignupPage() {
+  const { currentUser, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && currentUser) {
+      router.replace('/');
+    }
+  }, [currentUser, loading, router]);
+  
+  if (loading || (!loading && currentUser)) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Yönlendiriliyor...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AuthLayout
       title="Aramıza Katıl!"
