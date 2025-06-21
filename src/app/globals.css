@@ -170,3 +170,97 @@ textarea {
 .animate-chest-pulse {
   animation: chest-pulse 2.5s ease-in-out infinite;
 }
+
+
+/* Avatar Frame Styles */
+[class^="avatar-frame-"] {
+  position: relative;
+  display: inline-block;
+}
+[class^="avatar-frame-"] > div:first-of-type { /* Targets the Avatar component inside */
+  vertical-align: middle; /* Fixes potential alignment issues */
+}
+.avatar-frame-default {
+  padding: 0;
+}
+.avatar-frame-gold, .avatar-frame-silver, .avatar-frame-neon-pink {
+  padding: 2px;
+  border-radius: 9999px;
+}
+.avatar-frame-gold {
+  background: linear-gradient(45deg, #f0b90b, #ffd700);
+  box-shadow: 0 0 8px 1px rgba(255, 215, 0, 0.6);
+}
+.avatar-frame-silver {
+  background: linear-gradient(45deg, #c0c0c0, #e8e8e8);
+  box-shadow: 0 0 8px 1px rgba(192, 192, 192, 0.6);
+}
+
+@keyframes neon-flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% {
+    box-shadow:
+    0 0 2px #fff, 0 0 4px #fff, 0 0 6px #ff00ff,
+    0 0 8px #ff00ff, 0 0 10px #ff00ff;
+  }
+  20%, 24%, 55% { box-shadow: none; }
+}
+
+.avatar-frame-neon-pink {
+  box-shadow:
+    0 0 2px #fff, 0 0 4px #fff, 0 0 6px #ff00ff,
+    0 0 8px #ff00ff, 0 0 10px #ff00ff;
+  animation: neon-flicker 2s infinite alternate;
+}
+
+/* Complex frames need pseudo-elements */
+.avatar-frame-angel-wings { padding: 0; }
+.avatar-frame-angel-wings::before,
+.avatar-frame-angel-wings::after {
+  content: "";
+  position: absolute;
+  top: 10%;
+  height: 80%;
+  width: 50%;
+  background-size: contain;
+  background-repeat: no-repeat;
+  z-index: 0;
+  pointer-events: none;
+  filter: drop-shadow(0px 1px 3px rgba(255,255,255,0.4));
+}
+.avatar-frame-angel-wings::before {
+  left: -40%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M95,50 C 40,20 60,90 95,50 Z' fill='rgba(255,255,255,0.8)'/%3E%3Cpath d='M90,50 C 50,30 65,80 90,50 Z' fill='rgba(255,255,255,0.6)'/%3E%3C/svg%3E");
+  transform-origin: right center;
+  animation: flap-left 5s ease-in-out infinite;
+}
+.avatar-frame-angel-wings::after {
+  right: -40%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M5,50 C 60,20 40,90 5,50 Z' fill='rgba(255,255,255,0.8)'/%3E%3Cpath d='M10,50 C 50,30 35,80 10,50 Z' fill='rgba(255,255,255,0.6)'/%3E%3C/svg%3E");
+  transform-origin: left center;
+  animation: flap-right 5s ease-in-out infinite;
+}
+@keyframes flap-left { 0%, 100% { transform: rotate(15deg) scale(1); } 50% { transform: rotate(5deg) scale(0.95); } }
+@keyframes flap-right { 0%, 100% { transform: rotate(-15deg) scale(1); } 50% { transform: rotate(-5deg) scale(0.95); } }
+
+.avatar-frame-tech-ring { padding: 3px; }
+.avatar-frame-tech-ring::before,
+.avatar-frame-tech-ring::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    animation: rotate-tech-ring 4s linear infinite;
+}
+.avatar-frame-tech-ring::before {
+    border-top-color: hsl(var(--primary) / 0.8);
+    border-bottom-color: hsl(var(--primary) / 0.8);
+}
+.avatar-frame-tech-ring::after {
+    animation-direction: reverse;
+    border-left-color: hsl(var(--accent) / 0.6);
+    border-right-color: hsl(var(--accent) / 0.6);
+}
+@keyframes rotate-tech-ring {
+    to { transform: rotate(360deg); }
+}

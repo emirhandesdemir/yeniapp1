@@ -266,7 +266,7 @@ export default function SettingsPage() {
                         <AccordionTrigger>Avatar Çerçevesi</AccordionTrigger>
                         <AccordionContent>
                             <div className="flex justify-center p-4 bg-muted/30 rounded-md mb-3">
-                                <div className={cn("relative p-2", `avatar-frame-${selectedFrameStyle}`)}>
+                                <div className={cn("relative", `avatar-frame-${selectedFrameStyle}`)}>
                                     <Avatar className="h-16 w-16">
                                         <AvatarImage src={userData?.photoURL || `https://placehold.co/64x64.png`} />
                                         <AvatarFallback>{userData?.displayName?.substring(0,2)}</AvatarFallback>
