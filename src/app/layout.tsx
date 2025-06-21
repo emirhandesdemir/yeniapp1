@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
+import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 
 export const metadata: Metadata = {
   title: 'HiweWalk',
@@ -50,10 +51,12 @@ export default function RootLayout({
           storageKey="hiwewalk-theme"
         >
           <AuthProvider>
-            <MinimizedChatProvider>
-              {children}
-              <Toaster />
-            </MinimizedChatProvider>
+            <InAppNotificationProvider>
+              <MinimizedChatProvider>
+                {children}
+                <Toaster />
+              </MinimizedChatProvider>
+            </InAppNotificationProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
