@@ -64,7 +64,6 @@ import {
 import CreateChestDialog from "@/components/chat/CreateChestDialog";
 import ActiveChestDisplay from "@/components/chat/ActiveChestDisplay";
 import { useMinimizedChat } from '@/contexts/MinimizedChatContext';
-import { motion, AnimatePresence } from 'framer-motion';
 
 
 export interface ActiveChest {
@@ -1836,7 +1835,7 @@ export default function ChatRoomPage() {
                 chest={activeChest}
                 roomExpiresAt={roomDetails.expiresAt}
                 onOpenChest={handleOpenChest}
-                isOpening={isOpening}
+                isOpening={isOpeningChest}
             />
       )}
       <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
