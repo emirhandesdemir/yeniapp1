@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
+import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 // Script importu kaldırıldı
 
 export const metadata: Metadata = {
@@ -54,8 +55,10 @@ export default function RootLayout({
         >
           <AuthProvider>
             <InAppNotificationProvider>
-              {children}
-              <Toaster />
+              <MinimizedChatProvider>
+                {children}
+                <Toaster />
+              </MinimizedChatProvider>
             </InAppNotificationProvider>
           </AuthProvider>
         </ThemeProvider>
