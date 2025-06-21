@@ -300,7 +300,7 @@ export default function ChatRoomPage() {
         text: newMessage.trim(),
         editedAt: serverTimestamp(),
       });
-      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
+      // The onSnapshot listener will handle the UI update
     } catch (error) {
       console.error("Error saving edited message:", error);
       toast({ title: "Hata", description: "Mesaj düzenlenirken bir hata oluştu.", variant: "destructive" });
@@ -1836,7 +1836,7 @@ export default function ChatRoomPage() {
                 chest={activeChest}
                 roomExpiresAt={roomDetails.expiresAt}
                 onOpenChest={handleOpenChest}
-                isOpening={isOpeningChest}
+                isOpening={isOpening}
             />
       )}
       <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
@@ -2034,7 +2034,7 @@ export default function ChatRoomPage() {
                 </Button>
                 <Input
                   ref={messageInputRef}
-                  placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."}
+                  placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : editingMessage ? "Mesajı düzenle..." : "Mesajınızı yazın (@kullanıcı_adı)..."}
                   value={newMessage}
                   onChange={handleNewMessageInputChange}
                   className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
