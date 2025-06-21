@@ -1,4 +1,4 @@
-t Bu uygulamanin lisansi ve hakları gizlidir.
+t i Bu uygulamanin lisansi ve hakları gizlidir.
 
 ---
 
