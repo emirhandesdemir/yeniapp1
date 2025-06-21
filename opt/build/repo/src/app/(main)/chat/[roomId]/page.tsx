@@ -276,38 +276,15 @@ export default function ChatRoomPage() {
   useEffect(() => { isCurrentUserInVoiceChatRef.current = isCurrentUserInVoiceChat; }, [isCurrentUserInVoiceChat]);
   useEffect(() => { localIsSpeakingRef.current = localIsSpeaking; }, [localIsSpeaking]);
 
-  const handleStartEdit = useCallback((messageId: string, currentText: string) => {
-    setEditingMessage({ id: messageId, text: currentText });
-    setNewMessage(currentText);
-    messageInputRef.current?.focus();
+  const handleMessageDeleted = useCallback((deletedMessageId: string) => {
+    setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
   }, []);
 
-  const handleCancelEdit = useCallback(() => {
-    setEditingMessage(null);
-    setNewMessage("");
+  const handleMessageEdited = useCallback((messageId: string, newText: string, editedAt: Timestamp) => {
+    setMessages(prevMessages => prevMessages.map(msg =>
+        msg.id === messageId ? { ...msg, text: newText, editedAt: editedAt } : msg
+    ));
   }, []);
-
-  const handleSaveEdit = useCallback(async () => {
-    if (!editingMessage || !newMessage.trim() || newMessage.trim() === editingMessage.text) {
-      handleCancelEdit();
-      return;
-    }
-    setIsSending(true);
-    const messageRef = doc(db, `chatRooms/${roomId}/messages`, editingMessage.id);
-    try {
-      await updateDoc(messageRef, {
-        text: newMessage.trim(),
-        editedAt: serverTimestamp(),
-      });
-      // The onSnapshot listener will handle the UI update
-    } catch (error) {
-      console.error("Error saving edited message:", error);
-      toast({ title: "Hata", description: "Mesaj düzenlenirken bir hata oluştu.", variant: "destructive" });
-    } finally {
-      setIsSending(false);
-      handleCancelEdit();
-    }
-  }, [editingMessage, newMessage, roomId, toast, handleCancelEdit]);
 
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
@@ -1432,7 +1409,8 @@ export default function ChatRoomPage() {
     else { typingTimeoutRef.current = setTimeout(() => { updateUserTypingStatus(false); typingTimeoutRef.current = null; }, TYPING_DEBOUNCE_DELAY); }
   }, [canSendMessage, updateUserTypingStatus]);
 
-  const handleSendMessage = useCallback(async () => {
+  const handleSendMessage = useCallback(async (e: FormEvent) => {
+    e.preventDefault();
     if (isSending || isUserLoading || !currentUser || !newMessage.trim() || !roomId || !canSendMessage || !userData || loadingGameAssets) return;
 
     const now = Date.now();
@@ -1525,15 +1503,6 @@ export default function ChatRoomPage() {
     } catch (error) { console.error("Error sending message:", error); toast({ title: "Hata", description: "Mesaj gönderilirken bir sorun oluştu.", variant: "destructive" }); }
     finally { setIsSending(false); }
   },[isSending, isUserLoading, currentUser, newMessage, roomId, canSendMessage, userData, loadingGameAssets, activeGameQuestion, globalGameSettings, roomDetails, toast, updateUserDiamonds, activeTextParticipants, updateUserTypingStatus, isCurrentUserPremium]);
-  
-  const handleFormSubmit = useCallback((e: FormEvent) => {
-    e.preventDefault();
-    if (editingMessage) {
-        handleSaveEdit();
-    } else {
-        handleSendMessage();
-    }
-  }, [editingMessage, handleSaveEdit, handleSendMessage]);
 
   const handleDeleteRoom = useCallback(async () => {
     if (!roomDetails || !currentUser || roomDetails.creatorId !== currentUser.uid) { toast({ title: "Hata", description: "Bu odayı silme yetkiniz yok.", variant: "destructive" }); return; }
@@ -1998,47 +1967,19 @@ export default function ChatRoomPage() {
                   onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
                   roomId={roomId}
                   isActiveParticipant={isActiveInRoom}
-                  onStartEdit={handleStartEdit}
+                  onMessageDeleted={handleMessageDeleted}
+                  onMessageEdited={handleMessageEdited}
                 />
             )})}
             </ScrollArea>
         </div>
-        <form onSubmit={handleFormSubmit} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
-            <AnimatePresence>
-              {editingMessage && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  animate={{ opacity: 1, height: 'auto', marginBottom: '8px' }}
-                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  transition={{ duration: 0.2, ease: "easeInOut" }}
-                  className="bg-secondary/50 rounded-lg px-3 py-2 border-l-4 border-primary"
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-semibold text-sm text-primary">Mesajı Düzenle</p>
-                      <p className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md">{editingMessage.text}</p>
-                    </div>
-                    <Button variant="ghost" size="icon" type="button" onClick={handleCancelEdit}>
-                      <X className="h-4 w-4"/>
-                      <span className="sr-only">Düzenlemeyi İptal Et</span>
-                    </Button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+        <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
             <div className="relative flex items-center gap-2"> 
                 <Button variant="ghost" size="icon" type="button" onClick={() => setIsChestCreateOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
                     <Gift className="h-5 w-5" />
                     <span className="sr-only">Hediye Sandığı Gönder</span>
                 </Button>
-                <Input
-                  ref={messageInputRef}
-                  placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : editingMessage ? "Mesajı düzenle..." : "Mesajınızı yazın (@kullanıcı_adı)..."}
-                  value={newMessage}
-                  onChange={handleNewMessageInputChange}
-                  className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
-                  autoComplete="off"
-                  disabled={!canSendMessage || isSending || isUserLoading} />
+                <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
             </div>
             {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
