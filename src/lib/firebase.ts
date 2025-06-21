@@ -4,7 +4,8 @@ import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, type Analytics } from "firebase/analytics";
-import { getMessaging, type Messaging } from "firebase/messaging"; // FCM için eklendi
+import { getMessaging, type Messaging } from "firebase/messaging";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -33,6 +34,19 @@ try {
   storage = getStorage(app);
 
   if (typeof window !== 'undefined') {
+    // Initialize Firebase App Check with reCAPTCHA v3 provider
+    try {
+      // IMPORTANT: Replace the placeholder below with your actual reCAPTCHA v3 Site Key.
+      // You can get this key from the Google Cloud Console or your Firebase project's App Check section.
+      initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider('YOUR_RECAPTCHA_V3_SITE_KEY'),
+        isTokenAutoRefreshEnabled: true,
+      });
+      console.log("Firebase App Check initialized successfully.");
+    } catch (e) {
+      console.error("Firebase App Check initialization error:", e);
+    }
+    
     // Initialize Analytics only on the client side and if measurementId is present
     if (firebaseConfig.measurementId) {
       try {
@@ -63,8 +77,6 @@ try {
   }
 } catch (error) {
   console.error("Firebase başlatma sırasında genel hata oluştu:", error);
-  // Potansiyel olarak, burada da auth, db, storage gibi servisleri null yapmak gerekebilir
-  // eğer initializeApp başarısız olursa. Şimdilik mevcut yapıyı koruyoruz.
 }
 
 export { app, auth, db, storage, analytics, messaging };
