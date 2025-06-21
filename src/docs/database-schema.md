@@ -55,6 +55,8 @@ Oluşturulan sohbet odaları hakkında bilgi saklar.
   - `creatorName`: (String) Oluşturanın görünen adı
   - `creatorIsPremium`: (Boolean, isteğe bağlı) Odayı oluşturan kullanıcının premium olup olmadığı. (Varsayılan: `false`)
   - `isPremiumRoom`: (Boolean, isteğe bağlı) Odanın bir premium kullanıcı tarafından oluşturulup oluşturulmadığı veya premium özelliklere sahip olup olmadığı. (Varsayılan: `false`)
+  - `isActive`: (Boolean, isteğe bağlı) Odanın o an çok aktif olup olmadığını belirtir (örn: ≥5 kullanıcı ve son 1dk'da ≥3 mesaj). Bu alan bir backend süreci (örn: Cloud Function) tarafından güncellenmelidir. (Varsayılan: `false`)
+  - `activeSince`: (Timestamp, nullable) `isActive` durumunun `true` olarak ayarlandığı zaman.
   - `createdAt`: (Timestamp) Odanın oluşturulduğu zaman
   - `expiresAt`: (Timestamp) Odanın süresinin dolacağı zaman (Varsayılan: Oluşturulma + 20 dakika)
   - `image`: (String, nullable) Oda için bir resim URL'si. Başlangıçta `placehold.co` URL'si ile ayarlanabilir. Daha sonra kullanıcı tarafından özel bir resimle (Firebase Storage'a yüklenmiş) güncellenebilir.
@@ -292,13 +294,13 @@ service cloud.firestore {
         }
 
         // 'text' güncelleniyorsa, 'editedAt' de güncellenmeli ve bir timestamp olmalı
-        if (incomingKeys.has('text') && 
+        if (incomingKeys.has('text') &&
             (!(requestData.editedAt is timestamp) || (messageData.editedAt != null && requestData.editedAt <= messageData.editedAt))
            ) {
-          return false; 
+          return false;
         }
         // 'editedAt' güncelleniyorsa, bir timestamp olmalı ve eskisinden büyük olmalı (eğer eski varsa)
-        if (incomingKeys.has('editedAt') && 
+        if (incomingKeys.has('editedAt') &&
             (!(requestData.editedAt is timestamp) || (messageData.editedAt != null && requestData.editedAt <= messageData.editedAt))
            ) {
            return false;
@@ -308,7 +310,7 @@ service cloud.firestore {
         if (incomingKeys.has('reactions') && !(requestData.reactions is map)) {
           return false;
         }
-        
+
         // En az bir değişiklik olmalı (metin, tepki veya ilk kez editedAt ayarlanması)
         let textChanged = incomingKeys.has('text') && requestData.text != messageData.text;
         let reactionsChanged = incomingKeys.has('reactions') && requestData.reactions != messageData.reactions;
@@ -367,7 +369,8 @@ service cloud.firestore {
                       request.resource.data.currentGameQuestionId != resource.data.currentGameQuestionId ||
                       request.resource.data.nextGameQuestionTimestamp != resource.data.nextGameQuestionTimestamp ||
                       request.resource.data.currentGameAnswerDeadline != resource.data.currentGameAnswerDeadline ||
-                      request.resource.data.expiresAt != resource.data.expiresAt
+                      request.resource.data.expiresAt != resource.data.expiresAt ||
+                      request.resource.data.isActive != resource.data.isActive
                     );
       allow delete: if request.auth.uid != null && (request.auth.uid == resource.data.creatorId || isUserAdmin(request.auth.uid));
 
@@ -454,4 +457,5 @@ service cloud.firestore {
   }
 }
 \`\`\`
+
 

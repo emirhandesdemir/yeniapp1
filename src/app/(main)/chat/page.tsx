@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2, PlusCircle, AlertTriangle } from "lucide-react";
+import { Users, LogIn, Loader2, MessageSquare, X, Clock, Gem, UsersRound, ShoppingBag, Youtube, Compass, SearchCode, Mic, Star, Settings as SettingsIcon, Gamepad2, PlusCircle, AlertTriangle, RadioTower } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
@@ -30,12 +30,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import EditChatRoomDialog from "@/components/chat/EditChatRoomDialog";
-
-interface ChatRoomVoiceParticipantPreview {
-  uid: string;
-  photoURL: string | null;
-  displayName: string | null;
-}
+import RoomInFeedCard from "@/components/feed/RoomInFeedCard"; // RoomInFeedCard import edildi
 
 interface ChatRoom {
   id: string;
@@ -53,6 +48,14 @@ interface ChatRoom {
   image?: string;
   imageAiHint?: string;
   isGameEnabledInRoom?: boolean;
+  isActive?: boolean;
+  activeSince?: Timestamp;
+}
+
+interface ChatRoomVoiceParticipantPreview {
+  uid: string;
+  photoURL: string | null;
+  displayName: string | null;
 }
 
 interface GameSettings {
@@ -180,68 +183,80 @@ export default function ChatRoomsPage() {
 
   const fetchRooms = useCallback(async () => {
     setLoading(true);
-    try {
-      const currentTime = Timestamp.now();
-      const q = query(
+    const q = query(
         collection(db, "chatRooms"),
-        where("expiresAt", ">", currentTime),
+        where("expiresAt", ">", Timestamp.now()),
         orderBy("expiresAt", "asc"),
         limit(50)
-      );
-      const querySnapshot = await getDocs(q);
-      const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
-        const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
-        if (roomData.expiresAt && !isPast(roomData.expiresAt.toDate())) {
-          let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
-          try {
-            const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
-            const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
-            const voiceSnapshot = await getDocs(voiceQuery);
-            voiceSnapshot.forEach(vpDoc => {
-              const vpData = vpDoc.data();
-              voicePreviews.push({
-                uid: vpDoc.id,
-                photoURL: vpData.photoURL || null,
-                displayName: vpData.displayName || null,
-              });
-            });
-          } catch (error) {
-            console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
-          }
-          return {
-              id: docSnapshot.id,
-              ...roomData,
-              voiceParticipantPreviews: voicePreviews,
-              creatorIsPremium: roomData.creatorIsPremium || false,
-              isPremiumRoom: roomData.isPremiumRoom || false,
-              isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (gameSettings?.isGameEnabled ?? false),
-          } as ChatRoom;
-        }
-        return null;
-      });
+    );
+    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+        const roomsPromises = querySnapshot.docs.map(async (docSnapshot) => {
+            const roomData = docSnapshot.data() as Omit<ChatRoom, 'id' | 'voiceParticipantPreviews'>;
+            
+            let voicePreviews: ChatRoomVoiceParticipantPreview[] = [];
+            try {
+                const voiceParticipantsRef = collection(db, `chatRooms/${docSnapshot.id}/voiceParticipants`);
+                const voiceQuery = query(voiceParticipantsRef, orderBy("joinedAt", "asc"), limit(MAX_VOICE_PREVIEWS_ON_CARD));
+                const voiceSnapshot = await getDocs(voiceQuery);
+                voiceSnapshot.forEach(vpDoc => {
+                    const vpData = vpDoc.data();
+                    voicePreviews.push({
+                    uid: vpDoc.id,
+                    photoURL: vpData.photoURL || null,
+                    displayName: vpData.displayName || null,
+                    });
+                });
+            } catch (error) {
+                console.warn(`Error fetching voice previews for room ${docSnapshot.id}:`, error);
+            }
+            return {
+                id: docSnapshot.id,
+                ...roomData,
+                voiceParticipantPreviews: voicePreviews,
+                creatorIsPremium: roomData.creatorIsPremium || false,
+                isPremiumRoom: roomData.isPremiumRoom || false,
+                isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (gameSettings?.isGameEnabled ?? false),
+                isActive: roomData.isActive || false,
+            } as ChatRoom;
+        });
 
-      const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
-      const sortedRooms = resolvedRooms.sort((a,b) => {
-        if (a.isPremiumRoom && !b.isPremiumRoom) return -1;
-        if (!a.isPremiumRoom && b.isPremiumRoom) return 1;
-        const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
-        if (participantDiff !== 0) return participantDiff;
-        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-        return timeB - timeA;
-      });
-      setChatRooms(sortedRooms);
-    } catch (error) {
-      console.error("Error fetching chat rooms: ", error);
+        try {
+            const resolvedRooms = (await Promise.all(roomsPromises)).filter(room => room !== null) as ChatRoom[];
+            const sortedRooms = resolvedRooms.sort((a, b) => {
+                if ((a.isActive && !b.isActive)) return -1;
+                if ((!a.isActive && b.isActive)) return 1;
+                if (a.isPremiumRoom && !b.isPremiumRoom) return -1;
+                if (!a.isPremiumRoom && b.isPremiumRoom) return 1;
+                const participantDiff = (b.participantCount ?? 0) - (a.participantCount ?? 0);
+                if (participantDiff !== 0) return participantDiff;
+                const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+                const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+                return timeB - timeA;
+            });
+            setChatRooms(sortedRooms);
+        } catch (error) {
+            console.error("Error resolving room data:", error);
+            toast({ title: "Hata", description: "Oda detayları işlenirken bir sorun oluştu.", variant: "destructive" });
+        } finally {
+            setLoading(false);
+        }
+    }, (error) => {
+      console.error("Error listening to chat rooms: ", error);
       toast({ title: "Hata", description: "Sohbet odaları yüklenirken bir sorun oluştu.", variant: "destructive" });
-    } finally {
       setLoading(false);
-    }
+    });
+    
+    return unsubscribe;
   }, [toast, gameSettings]);
 
   useEffect(() => {
     document.title = 'Sohbet Odaları - HiweWalk';
-    fetchRooms();
+    const unsubscribe = fetchRooms();
+    return () => {
+        unsubscribe.then(unsub => {
+            if (unsub) unsub();
+        }).catch(err => console.error("Error unsubscribing from chatRooms listener:", err));
+    };
   }, [fetchRooms]);
 
   const resetCreateRoomForm = () => {
@@ -323,6 +338,8 @@ export default function ChatRoomsPage() {
       currentGameQuestionId: null,
       nextGameQuestionTimestamp: null,
       currentGameAnswerDeadline: null,
+      isActive: false, // Yeni alan
+      activeSince: null, // Yeni alan
     };
 
     if (isGameInitiallyEnabled && gameSettings?.isGameEnabled && typeof gameSettings.questionIntervalSeconds === 'number' && gameSettings.questionIntervalSeconds >= 30) {
@@ -355,9 +372,10 @@ export default function ChatRoomsPage() {
         imageAiHint: roomDataToCreate.imageAiHint,
         maxParticipants: roomDataToCreate.maxParticipants,
         isGameEnabledInRoom: roomDataToCreate.isGameEnabledInRoom,
+        isActive: false,
       } as ChatRoom);
       setIsEditRoomModalOpen(true);
-      fetchRooms(); 
+      // fetchRooms(); // onSnapshot will update the list
 
     } catch (error: any) {
       console.error("[ChatPage] Error creating room:", error);
@@ -414,7 +432,7 @@ export default function ChatRoomsPage() {
     }
     try {
       await deleteChatRoomAndSubcollections(roomId);
-      setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId));
+      // setChatRooms(prevRooms => prevRooms.filter(room => room.id !== roomId)); // onSnapshot handles this
       toast({ title: "Başarılı", description: `"${roomName}" odası silindi.` });
     } catch (error) {
       console.error("Error deleting room: ", error);
@@ -422,48 +440,6 @@ export default function ChatRoomsPage() {
     }
   };
 
-  const getPreciseCardExpiryInfo = (expiresAt: Timestamp | null | undefined): string => {
-    if (!expiresAt) return "Süre bilgisi yok";
-    const expiryDate = expiresAt.toDate();
-    if (isPast(expiryDate)) {
-      return "Süresi Doldu";
-    }
-
-    const diffSecondsTotal = Math.floor((expiryDate.getTime() - now.getTime()) / 1000);
-
-    if (diffSecondsTotal < 0) return "Süresi Doldu";
-
-    const days = Math.floor(diffSecondsTotal / 86400);
-    const hours = Math.floor((diffSecondsTotal % 86400) / 3600);
-    const minutes = Math.floor((diffSecondsTotal % 3600) / 60);
-
-    if (days > 0) {
-      return `Kalan: ${days} gün ${hours} sa`;
-    }
-    if (hours > 0) {
-      return `Kalan: ${hours} sa ${minutes} dk`;
-    }
-    if (minutes > 0) {
-      return `Kalan: ${minutes} dk`;
-    }
-    return `Kalan: <1 dk`;
-  };
-
-  const getAvatarFallbackText = (name?: string | null) => {
-    if (name) return name.substring(0, 2).toUpperCase();
-    return "PN";
-  };
-
-
-  if (loading && (!chatRooms || chatRooms.length === 0)) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center text-center p-8">
-        <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
-        <h2 className="text-2xl font-semibold text-foreground">Sohbet Odaları Yükleniyor</h2>
-        <p className="text-muted-foreground mt-2">Lütfen bekleyin, sizin için en iyi odaları buluyoruz...</p>
-      </div>
-    );
-  }
   const isCreatorPremiumForDialog = isCurrentUserPremium();
   const hasEnoughDiamonds = (userData?.diamonds ?? 0) >= ROOM_CREATION_COST;
 
@@ -625,7 +601,7 @@ export default function ChatRoomsPage() {
           onClose={() => {
             setIsEditRoomModalOpen(false);
             setEditingRoomDetails(null);
-            fetchRooms();
+            // fetchRooms(); // onSnapshot will handle refresh
           }}
           roomId={editingRoomDetails.id}
           initialName={editingRoomDetails.name}
@@ -665,107 +641,9 @@ export default function ChatRoomsPage() {
       ) : (
         <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {chatRooms.map((room, index) => {
-            const isFull = (room.participantCount != null && room.maxParticipants != null && room.participantCount >= room.maxParticipants);
-            const gameStatusText = room.isGameEnabledInRoom ? "Oyun Aktif" : "Oyun Kapalı";
-            const gameStatusColor = room.isGameEnabledInRoom ? "bg-green-500/15 text-green-700 dark:bg-green-500/20 dark:text-green-300 border-green-500/30" : "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-400 border-red-500/20";
-
             return (
             <motion.div key={room.id} custom={index} variants={listItemVariants} initial="hidden" animate="visible">
-              <Card
-                className={cn(
-                  "flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 rounded-2xl border hover:border-primary/50 dark:hover:border-primary/60 group",
-                  room.isPremiumRoom ? 'border-yellow-500 dark:border-yellow-400 ring-1 ring-yellow-500/50 dark:ring-yellow-400/50 bg-gradient-to-br from-yellow-500/5 via-card to-yellow-500/10 dark:from-yellow-400/10 dark:via-card dark:to-yellow-400/15' : 'border-border/30 dark:border-border/20'
-                )}
-              >
-                <CardHeader className="pt-5 pb-3 sm:pt-6 sm:pb-4 relative">
-                  <div className="flex items-center justify-between">
-                      <CardTitle
-                      className="text-lg sm:text-xl font-bold text-foreground group-hover:text-primary transition-colors truncate pr-10"
-                      title={room.name}
-                      >
-                      {room.isPremiumRoom && <Star className="inline h-4 w-4 mb-0.5 mr-1.5 text-yellow-500 dark:text-yellow-400" />}
-                      {room.name}
-                      </CardTitle>
-                      {currentUser && room.creatorId === currentUser.uid && (
-                      <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-3 right-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 sm:h-8 sm:w-8 opacity-70 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleDeleteRoom(room.id, room.name);
-                          }}
-                          aria-label="Odayı Sil"
-                      >
-                          <X className="h-4 w-4 sm:h-5 sm:w-5" />
-                      </Button>
-                      )}
-                  </div>
-                  <CardDescription className="h-10 text-xs sm:text-sm overflow-hidden text-ellipsis text-muted-foreground/80 group-hover:text-muted-foreground transition-colors mt-1.5" title={room.description}>
-                    {room.description || "Açıklama yok."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-grow pt-2 pb-3 sm:pb-4">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                    <Badge variant="secondary" className="flex items-center justify-center gap-1.5 shadow-sm px-2.5 py-1">
-                      <UsersRound className="h-3.5 w-3.5 text-primary/80" />
-                      <span className="font-medium">{room.participantCount ?? 0} / {room.maxParticipants}</span>
-                    </Badge>
-                    <Badge 
-                        variant={room.expiresAt && isPast(room.expiresAt.toDate()) ? 'destructive' : 'outline'} 
-                        className="flex items-center gap-1.5 shadow-sm px-2.5 py-1"
-                    >
-                        <Clock className="h-3.5 w-3.5" />
-                        <span className="font-medium">{getPreciseCardExpiryInfo(room.expiresAt)}</span>
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-start text-xs text-muted-foreground mb-1">
-                    <Badge className={cn("flex items-center gap-1.5 shadow-sm px-2 py-0.5 border", gameStatusColor)}>
-                      <Gamepad2 className="h-3.5 w-3.5" />
-                      <span className="font-medium">{gameStatusText}</span>
-                    </Badge>
-                  </div>
-                  {room.voiceParticipantPreviews && room.voiceParticipantPreviews.length > 0 && (
-                    <div className="mt-2.5 pt-2.5 border-t border-border/20">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                          <Mic className="h-3.5 w-3.5 text-green-500"/>
-                          <span className="text-xs font-medium text-muted-foreground">Sesli Sohbette:</span>
-                      </div>
-                      <div className="flex -space-x-2 overflow-hidden">
-                        {room.voiceParticipantPreviews.map(vp => (
-                          <Avatar key={vp.uid} className="inline-block h-6 w-6 rounded-full ring-2 ring-background" title={vp.displayName || 'Katılımcı'}>
-                            <AvatarImage src={vp.photoURL || `https://placehold.co/24x24.png`} data-ai-hint="voice participant preview" />
-                            <AvatarFallback>{getAvatarFallbackText(vp.displayName)}</AvatarFallback>
-                          </Avatar>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground/70 truncate mt-2.5">
-                    Oluşturan: <span className="font-medium text-muted-foreground/90">{room.creatorName}</span>
-                    {room.creatorIsPremium && <Star className="inline h-3 w-3 ml-1 text-yellow-500 dark:text-yellow-400" title="Premium Oluşturucu" />}
-                  </p>
-                </CardContent>
-                <CardFooter className="p-3 sm:p-4 border-t bg-muted/20 dark:bg-card/30 mt-auto">
-                  <Button
-                    asChild
-                    className={cn(
-                      "w-full text-sm py-2.5 rounded-lg transition-transform group-hover:scale-105",
-                      isFull ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed' :
-                      room.isPremiumRoom ? 'bg-yellow-500 hover:bg-yellow-600 text-black dark:text-yellow-950' :
-                      'bg-primary hover:bg-primary/80 text-primary-foreground'
-                    )}
-                    disabled={isFull}
-                    aria-disabled={isFull}
-                  >
-                    <Link href={!isFull ? `/chat/${room.id}` : '#'}>
-                      <LogIn className="mr-2 h-4 w-4" />
-                      {isFull ? "Oda Dolu" : "Sohbete Katıl"}
-                    </Link>
-                  </Button>
-                </CardFooter>
-              </Card>
+                <RoomInFeedCard room={room} now={now}/>
             </motion.div>
           )})}
         </div>

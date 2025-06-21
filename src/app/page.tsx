@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit3, RefreshCw, Star, Gamepad2, MessageSquarePlus } from "lucide-react"; // Edit3 eklendi
+import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit3, RefreshCw, Star, Gamepad2, MessageSquarePlus, RadioTower } from "lucide-react"; // Edit3 eklendi
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
@@ -18,7 +18,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, orderBy, Timestamp, where, limit, getDocs } from "firebase/firestore";
 import { isPast } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 
@@ -178,7 +178,6 @@ export default function HomePage() {
         collection(db, "chatRooms"),
         where("expiresAt", ">", now),
         orderBy("expiresAt", "asc"),
-        orderBy("participantCount", "desc"),
         limit(ROOMS_FETCH_LIMIT)
       );
       const roomsSnapshot = await getDocs(roomsQuery);
@@ -196,6 +195,7 @@ export default function HomePage() {
             isPremiumRoom: roomData.isPremiumRoom || false,
             creatorIsPremium: roomData.creatorIsPremium || false,
             isGameEnabledInRoom: roomData.isGameEnabledInRoom ?? (roomData.gameInitialized ?? false),
+            isActive: roomData.isActive || false,
           } as RoomInFeedCardData);
         }
       });
@@ -324,6 +324,11 @@ export default function HomePage() {
     const roomItems: FeedDisplayItem[] = activeRooms.map(r => ({ ...r, feedItemType: 'room' }));
 
     const combined = [...postItems, ...roomItems].sort((a, b) => {
+        const aIsActive = a.feedItemType === 'room' && (a as RoomInFeedCardData).isActive;
+        const bIsActive = b.feedItemType === 'room' && (b as RoomInFeedCardData).isActive;
+        if (aIsActive && !bIsActive) return -1;
+        if (!aIsActive && bIsActive) return 1;
+        
         const aIsPremiumContent = (a.feedItemType === 'room' && (a as RoomInFeedCardData).isPremiumRoom) || (a.feedItemType === 'post' && (a as Post).authorIsPremium);
         const bIsPremiumContent = (b.feedItemType === 'room' && (b as RoomInFeedCardData).isPremiumRoom) || (b.feedItemType === 'post' && (b as Post).authorIsPremium);
 
@@ -601,4 +606,3 @@ export default function HomePage() {
     </div>
   );
 }
-
