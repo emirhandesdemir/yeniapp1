@@ -25,6 +25,8 @@ import { tr } from "date-fns/locale";
 import { motion } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 const themeOptions: { value: ThemeSetting; label: string }[] = [
   { value: 'system', label: 'Sistem Varsayılanı' },
@@ -39,6 +41,7 @@ const bubbleStyles = [
   { id: 'gradient-blue', name: 'Mavi Gradient' },
   { id: 'gradient-purple', name: 'Mor Gradient' },
   { id: 'striped', name: 'Çizgili' },
+  { id: 'snake', name: 'Yılan' },
 ];
 
 const avatarFrameStyles = [
@@ -48,6 +51,7 @@ const avatarFrameStyles = [
   { id: 'neon-pink', name: 'Neon Pembe' },
   { id: 'angel-wings', name: 'Melek Kanatları' },
   { id: 'tech-ring', name: 'Teknoloji Halkası' },
+  { id: 'snake', name: 'Yılan' },
 ];
 
 const sectionVariants = {
@@ -62,6 +66,11 @@ const sectionVariants = {
     },
   }),
 };
+
+interface AppearanceConfig {
+    bubbleStyles: { [key: string]: boolean };
+    avatarFrameStyles: { [key: string]: boolean };
+}
 
 export default function SettingsPage() {
   const { currentUser, userData, updateUserProfile, isUserLoading, logOut, setIsAdminPanelOpen, isCurrentUserPremium } = useAuth();
@@ -81,6 +90,50 @@ export default function SettingsPage() {
   
   const [selectedBubbleStyle, setSelectedBubbleStyle] = useState('default');
   const [selectedFrameStyle, setSelectedFrameStyle] = useState('default');
+  
+  const [appearanceConfig, setAppearanceConfig] = useState<AppearanceConfig | null>(null);
+  const [loadingAppearanceConfig, setLoadingAppearanceConfig] = useState(true);
+
+  useEffect(() => {
+    const fetchAppearanceConfig = async () => {
+        setLoadingAppearanceConfig(true);
+        try {
+            const configDocRef = doc(db, 'appSettings', 'appearanceConfig');
+            const docSnap = await getDoc(configDocRef);
+            if (docSnap.exists()) {
+                setAppearanceConfig(docSnap.data() as AppearanceConfig);
+            } else {
+                // If it doesn't exist, create a default where everything is enabled
+                const defaultConfig: AppearanceConfig = {
+                    bubbleStyles: bubbleStyles.reduce((acc, style) => ({ ...acc, [style.id]: true }), {}),
+                    avatarFrameStyles: avatarFrameStyles.reduce((acc, style) => ({ ...acc, [style.id]: true }), {}),
+                };
+                setAppearanceConfig(defaultConfig);
+            }
+        } catch (error) {
+            console.error("Error fetching appearance config:", error);
+            // Fallback to all enabled on error
+            setAppearanceConfig({
+                bubbleStyles: bubbleStyles.reduce((acc, style) => ({ ...acc, [style.id]: true }), {}),
+                avatarFrameStyles: avatarFrameStyles.reduce((acc, style) => ({ ...acc, [style.id]: true }), {}),
+            });
+        } finally {
+            setLoadingAppearanceConfig(false);
+        }
+    };
+    fetchAppearanceConfig();
+  }, []);
+
+  const enabledBubbleStyles = useMemo(() => {
+    if (!appearanceConfig) return [];
+    return bubbleStyles.filter(style => appearanceConfig.bubbleStyles[style.id] !== false); // default to true if not set
+  }, [appearanceConfig]);
+
+  const enabledAvatarFrameStyles = useMemo(() => {
+      if (!appearanceConfig) return [];
+      return avatarFrameStyles.filter(style => appearanceConfig.avatarFrameStyles[style.id] !== false); // default to true if not set
+  }, [appearanceConfig]);
+
 
   useEffect(() => {
     document.title = 'Ayarlar - HiweWalk';
@@ -234,6 +287,11 @@ export default function SettingsPage() {
                 </div>
             </CardHeader>
             <CardContent>
+                {loadingAppearanceConfig ? (
+                    <div className="flex justify-center items-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                ) : (
                 <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="bubble-style">
                         <AccordionTrigger>Baloncuk Stili</AccordionTrigger>
@@ -254,7 +312,7 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {bubbleStyles.map(style => (
+                                {enabledBubbleStyles.map(style => (
                                     <Button key={style.id} variant={selectedBubbleStyle === style.id ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange('bubble', style.id)}>
                                         {selectedBubbleStyle === style.id && <CheckCircle className="mr-2 h-4 w-4"/>} {style.name}
                                     </Button>
@@ -274,7 +332,7 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {avatarFrameStyles.map(style => (
+                                {enabledAvatarFrameStyles.map(style => (
                                     <Button key={style.id} variant={selectedFrameStyle === style.id ? 'default' : 'outline'} size="sm" onClick={() => handleAppearanceChange('frame', style.id)}>
                                        {selectedFrameStyle === style.id && <CheckCircle className="mr-2 h-4 w-4"/>} {style.name}
                                     </Button>
@@ -283,6 +341,7 @@ export default function SettingsPage() {
                         </AccordionContent>
                     </AccordionItem>
                 </Accordion>
+                )}
             </CardContent>
         </Card>
       </motion.div>

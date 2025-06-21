@@ -1,10 +1,11 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot, ShieldCheck } from 'lucide-react';
+import { X, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot, ShieldCheck, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 import AdminDashboardContent from '@/components/admin/sections/AdminDashboardContent';
@@ -12,6 +13,7 @@ import AdminUsersContent from '@/components/admin/sections/AdminUsersContent';
 import AdminChatRoomsContent from '@/components/admin/sections/AdminChatRoomsContent';
 import AdminGameSettingsContent from '@/components/admin/sections/AdminGameSettingsContent';
 import AdminProjectAssistantContent from '@/components/admin/sections/AdminProjectAssistantContent';
+import AdminAppearanceContent from '@/components/admin/sections/AdminAppearanceContent';
 
 export default function AdminOverlayPanel() {
   const { isAdminPanelOpen, setIsAdminPanelOpen, userData } = useAuth();
@@ -37,6 +39,7 @@ export default function AdminOverlayPanel() {
     { value: "users", label: "Kullanıcılar", icon: Users, component: <AdminUsersContent /> },
     { value: "chat-rooms", label: "Odalar", icon: ListChecks, component: <AdminChatRoomsContent /> },
     { value: "game-settings", label: "Oyun", icon: GameSettingsIcon, component: <AdminGameSettingsContent /> },
+    { value: "appearance", label: "Görünüm", icon: Palette, component: <AdminAppearanceContent /> },
     { value: "project-assistant", label: "Asistan", icon: Bot, component: <AdminProjectAssistantContent /> },
   ];
 

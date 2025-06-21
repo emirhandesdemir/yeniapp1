@@ -155,6 +155,19 @@ textarea {
     color: hsl(var(--secondary-foreground)) !important;
 }
 
+@keyframes snake-background-animation {
+	0% { background-position: 0% 50%; }
+	50% { background-position: 100% 50%; }
+	100% { background-position: 0% 50%; }
+}
+
+.bubble-snake {
+  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)), hsl(var(--primary))) !important;
+  background-size: 200% 200%;
+  color: white !important;
+  animation: snake-background-animation 4s ease infinite;
+}
+
 /* Chest animation */
 @keyframes chest-pulse {
   0%, 100% {
@@ -263,4 +276,19 @@ textarea {
 }
 @keyframes rotate-tech-ring {
     to { transform: rotate(360deg); }
+}
+
+@keyframes snake-border-animation {
+  0% { border-color: hsl(var(--primary)); }
+  25% { border-color: hsl(var(--accent)); }
+  50% { border-color: hsl(140, 70%, 60%); } /* A green color */
+  75% { border-color: hsl(var(--accent)); }
+  100% { border-color: hsl(var(--primary)); }
+}
+
+.avatar-frame-snake { padding: 2px; }
+.avatar-frame-snake > div { /* Target the avatar root */
+  border-radius: 9999px;
+  border: 2px solid;
+  animation: snake-border-animation 3s linear infinite;
 }

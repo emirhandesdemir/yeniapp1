@@ -245,6 +245,10 @@ Kullanıcı şikayetlerini saklar.
 Genel uygulama ayarlarını saklar.
 - **Yol:** `/appSettings/gameConfig`
 - **Alanlar (`gameConfig` için):** `isGameEnabled`, `questionIntervalSeconds`
+- **Yol:** `/appSettings/appearanceConfig`
+- **Alanlar (`appearanceConfig` için):**
+  - `bubbleStyles`: (Map<String, Boolean>) Baloncuk stillerinin aktif olup olmadığını tutar. Örnek: `{ "sparkle": true, "neon-green": false }`
+  - `avatarFrameStyles`: (Map<String, Boolean>) Avatar çerçeve stillerinin aktif olup olmadığını tutar. Örnek: `{ "gold": true, "snake": true }`
 
 ## `gameQuestions`
 Sohbet odası quiz oyunu için soruları saklar.
@@ -461,7 +465,7 @@ service cloud.firestore {
       allow update, delete: if request.auth.uid == resource.data.fromUserId || request.auth.uid == resource.data.toUserId;
     }
 
-    match /appSettings/gameConfig {
+    match /appSettings/{settingId} {
       allow read: if request.auth.uid != null;
       allow write: if isUserAdmin(request.auth.uid);
     }
@@ -485,6 +489,7 @@ service cloud.firestore {
   }
 }
 \`\`\`
+
 
 
 
