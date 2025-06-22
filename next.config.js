@@ -1,26 +1,7 @@
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "placehold.co",
-        port: "",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
-        hostname: "firebasestorage.googleapis.com",
-      },
-    ],
-  },
+  reactStrictMode: true,
+  // Tüm PWA, header ve diğer karmaşık ayarlar teşhis için kaldırıldı.
 };
 
 module.exports = nextConfig;

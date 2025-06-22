@@ -1,11 +1,4 @@
-
-"use client";
-
-import AppLayout from "@/components/layout/AppLayout";
-import type { ReactNode } from 'react';
-
-export default function MainAppPagesLayout({ children }: { children: ReactNode }) {
-  return (
-    <AppLayout>{children}</AppLayout>
-  );
+// Teşhis için bu layout devre dışı bırakıldı.
+export default function DeprecatedMainLayout({ children }: { children: React.ReactNode }) {
+  return null;
 }

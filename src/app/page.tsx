@@ -1,8 +1,20 @@
-
-import { notFound } from 'next/navigation';
-
-// This page is now handled by the (main) route group at src/app/(main)/page.tsx.
-// This file calls notFound() to prevent any routing conflicts.
-export default function RootPage() {
-  notFound();
+// Teşhis için en temel ana sayfa.
+export default function HomePage() {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      fontFamily: 'sans-serif',
+      padding: '2rem',
+      fontSize: '2rem',
+      color: '#22c55e',
+      fontWeight: 'bold',
+      textAlign: 'center',
+      background: '#f0fdf4'
+    }}>
+      SUNUCU BAŞARIYLA BAŞLATILDI ve ANA SAYFA YÜKLENDİ!
+    </div>
+  );
 }

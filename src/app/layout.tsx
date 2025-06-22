@@ -1,37 +1,12 @@
-
 import type { ReactNode } from "react";
 import "./globals.css";
-import { ThemeProvider } from "@/contexts/ThemeContext";
-import { AuthProvider } from "@/contexts/AuthContext";
-import { Toaster } from "@/components/ui/toaster";
-import { InAppNotificationProvider } from "@/contexts/InAppNotificationContext";
-import { MinimizedChatProvider } from "@/contexts/MinimizedChatContext";
 
-
-export default function RootLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
-
+// Teşhis için en temel RootLayout. Provider veya karmaşık bileşenler yok.
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="tr" suppressHydrationWarning>
+    <html lang="tr">
       <body>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-            <AuthProvider>
-                <InAppNotificationProvider>
-                    <MinimizedChatProvider>
-                        {children}
-                        <Toaster />
-                    </MinimizedChatProvider>
-                </InAppNotificationProvider>
-            </AuthProvider>
-        </ThemeProvider>
+        {children}
       </body>
     </html>
   );
