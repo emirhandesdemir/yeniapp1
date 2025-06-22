@@ -849,7 +849,7 @@ export default function DirectMessagePage() {
                   getAvatarFallbackText={getAvatarFallbackText}
                   chatId={chatId}
                   onStartEdit={handleStartEdit}
-                  isMatchSession={isMatchSessionActive}
+                  isMatchSession={!!isMatchSessionActive}
                   onMessageDeleted={handleMessageDeleted}
                   onMessageEdited={handleMessageEdited}
                 />
@@ -974,3 +974,4 @@ export default function DirectMessagePage() {
     </div>
   );
 }
+
