@@ -21,7 +21,6 @@ import {
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc as deleteFirestoreDoc, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Textarea } from '@/components/ui/textarea';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import {
@@ -57,8 +56,6 @@ interface DirectMessageItemProps {
   getAvatarFallbackText: (name?: string | null) => string;
   chatId: string;
   onStartEdit: (messageId: string, currentText: string) => void;
-  onMessageDeleted: (messageId: string) => void;
-  onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
   isMatchSession?: boolean;
 }
 
@@ -75,8 +72,6 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   getAvatarFallbackText,
   chatId,
   onStartEdit,
-  onMessageDeleted,
-  onMessageEdited,
   isMatchSession,
 }) => {
   const { userData: currentUserData, currentUser } = useAuth();
@@ -126,7 +121,6 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     try {
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
-      // Let onSnapshot handle the UI update
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
     } catch (error) {
       console.error("Error deleting direct message:", error);

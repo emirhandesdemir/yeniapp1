@@ -2063,7 +2063,7 @@ export default function ChatRoomPage() {
                 )}
             </AnimatePresence>
             <div className="relative flex items-center gap-2"> 
-                <Button variant="ghost" size="icon" type="button" onClick={() => setIsCreateChestOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
+                <Button variant="ghost" size="icon" type="button" onClick={() => setIsChestCreateOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
                     <Gift className="h-5 w-5" />
                     <span className="sr-only">Hediye Sandığı Gönder</span>
                 </Button>
