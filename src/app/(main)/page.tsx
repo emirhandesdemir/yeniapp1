@@ -1,5 +1,8 @@
 
-// This page is temporarily disabled to diagnose the startup issue.
-export default function DeprecatedMainPage() {
-  return null;
+// This file is a placeholder. The main feed logic is in /feed/page.tsx
+// This can be removed or repurposed later.
+import { redirect } from 'next/navigation';
+
+export default function DeprecatedMainRootPage() {
+    redirect('/feed');
 }
