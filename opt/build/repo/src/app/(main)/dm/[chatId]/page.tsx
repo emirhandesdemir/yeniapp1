@@ -154,6 +154,14 @@ export default function DirectMessagePage() {
     setNewMessage("");
   }, []);
   
+  const handleMessageDeleted = (messageId: string) => {
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+  };
+  
+  const handleMessageEdited = (messageId: string, newText: string, editedAt: Timestamp) => {
+     setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text: newText, editedAt } : m));
+  };
+
   const handleSaveEdit = useCallback(async () => {
     if (!editingMessage || !newMessage.trim() || newMessage.trim() === editingMessage.text) {
       handleCancelEdit();
@@ -769,10 +777,10 @@ export default function DirectMessagePage() {
         </div>
         {!isMatchSessionActive && (
             <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Sesli Ara">
+            <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || !!(isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Sesli Ara">
                 <Phone className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Görüntülü Ara (Yakında)">
+            <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || !!(isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Görüntülü Ara (Yakında)">
                 <Video className="h-5 w-5" />
             </Button>
             <DropdownMenu>
@@ -875,7 +883,7 @@ export default function DirectMessagePage() {
           )}
         </AnimatePresence>
         <div className="relative flex items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || (isMatchSessionChat && dmDocData?.matchSessionEnded)} className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 text-muted-foreground hover:text-primary">
+          <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || !!(isMatchSessionChat && dmDocData?.matchSessionEnded)} className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 text-muted-foreground hover:text-primary">
             <Smile className="h-5 w-5" />
             <span className="sr-only">Emoji Ekle</span>
           </Button>
@@ -886,14 +894,14 @@ export default function DirectMessagePage() {
             onChange={handleNewMessageInputChange}
             className="flex-1 pr-[calc(2.5rem+0.5rem+2.25rem)] sm:pr-[calc(2.5rem+0.5rem+2.5rem)] rounded-full h-10 sm:h-11 text-sm bg-muted/50 dark:bg-muted/30 focus:bg-background focus-visible:ring-primary/80"
             autoComplete="off"
-            disabled={isSending || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || (isMatchSessionChat && dmDocData?.matchSessionEnded)}
+            disabled={isSending || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || !!(isMatchSessionChat && dmDocData?.matchSessionEnded)}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || (isMatchSessionChat && dmDocData?.matchSessionEnded)} className="h-8 w-8 sm:h-9 sm:w-9 rounded-full hidden sm:inline-flex text-muted-foreground hover:text-primary">
+            <Button variant="ghost" size="icon" type="button" disabled={isUserLoading || isSending || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || !!(isMatchSessionChat && dmDocData?.matchSessionEnded)} className="h-8 w-8 sm:h-9 sm:w-9 rounded-full hidden sm:inline-flex text-muted-foreground hover:text-primary">
               <Paperclip className="h-5 w-5" />
               <span className="sr-only">Dosya Ekle</span>
             </Button>
-            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9 shadow-md hover:shadow-lg transition-shadow" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || (isMatchSessionChat && dmDocData?.matchSessionEnded)}>
+            <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9 shadow-md hover:shadow-lg transition-shadow" disabled={isSending || !newMessage.trim() || isUserLoading || isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || !!(isMatchSessionChat && dmDocData?.matchSessionEnded)}>
               {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : editingMessage ? <Check className="h-4 w-4"/> : <Send className="h-4 w-4" />}
               <span className="sr-only">{editingMessage ? 'Kaydet' : 'Gönder'}</span>
             </Button>
@@ -966,3 +974,4 @@ export default function DirectMessagePage() {
     </div>
   );
 }
+
