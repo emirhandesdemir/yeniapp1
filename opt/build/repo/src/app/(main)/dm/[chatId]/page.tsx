@@ -98,8 +98,6 @@ interface DmDocumentData {
     matchSessionEndedBy?: string; 
 }
 
-const TYPING_DEBOUNCE_DELAY = 1500;
-const MATCH_SESSION_DURATION_SECONDS = 4 * 60;
 const ACTIVE_THRESHOLD_MINUTES_DM = 2; 
 
 const messageVariants = {
@@ -122,7 +120,6 @@ export default function DirectMessagePage() {
   const { currentUser, userData, isUserLoading, reportUser, blockUser, unblockUser, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
 
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isPartnerBlockedByCurrentUser, setIsPartnerBlockedByCurrentUser] = useState(false);
   const [isCurrentUserBlockedByPartner, setIsCurrentUserBlockedByPartner] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
@@ -137,7 +134,6 @@ export default function DirectMessagePage() {
   const [partnerDecision, setPartnerDecision] = useState<'pending' | 'yes' | 'no'>('pending');
   const [decisionProcessing, setDecisionProcessing] = useState(false);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const partnerLastSeenUnsubscribeRef = useRef<() => void | null>(null);
   const [showLeaveMatchConfirm, setShowLeaveMatchConfirm] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
@@ -219,121 +215,104 @@ export default function DirectMessagePage() {
     dmDocDataRef.current = dmDocData;
   }, [dmDocData]);
 
+  // useEffect #1: Handle DM Document and non-user-specific state
   useEffect(() => {
     if (!chatId || !currentUser?.uid) return;
     setLoadingDmPartner(true);
 
     const dmDocRef = doc(db, "directMessages", chatId);
-    const unsubscribeDmDoc = onSnapshot(dmDocRef, async (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data() as DmDocumentData;
-            setDmDocData(data);
-            setIsMatchSessionChat(data.isMatchSession || false);
+    const unsubscribeDmDoc = onSnapshot(dmDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as DmDocumentData;
+        setDmDocData(data); // This will trigger the next useEffect
+        setIsMatchSessionChat(data.isMatchSession || false);
 
-            const partnerUid = data.participantUids.find(uid => uid !== currentUser.uid);
-            if (!partnerUid) {
-                toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
-                router.push("/friends"); return;
-            }
-            
-            let partnerInfo: Partial<DmPartnerDetails> = { uid: partnerUid };
-
-            if (data.participantInfo && data.participantInfo[partnerUid]) {
-                 partnerInfo = {
-                    ...partnerInfo,
-                    displayName: data.participantInfo[partnerUid].displayName,
-                    photoURL: data.participantInfo[partnerUid].photoURL,
-                    isPremium: data.participantInfo[partnerUid].isPremium || false,
-                 };
-            }
-            
-            if (partnerLastSeenUnsubscribeRef.current) {
-                partnerLastSeenUnsubscribeRef.current();
-            }
-            const userDocRef = doc(db, "users", partnerUid);
-            partnerLastSeenUnsubscribeRef.current = onSnapshot(userDocRef, (userSnap) => {
-                if (userSnap.exists()) {
-                    const partnerData = userSnap.data() as UserData;
-                    setDmPartnerDetails(prev => ({
-                        ...(prev || partnerInfo), 
-                        uid: partnerUid,
-                        displayName: partnerData.displayName || partnerInfo.displayName,
-                        photoURL: partnerData.photoURL || partnerInfo.photoURL,
-                        email: partnerData.email,
-                        isPremium: checkUserPremium(partnerData),
-                        isBanned: partnerData.isBanned || false,
-                        lastSeen: partnerData.lastSeen || null,
-                        avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
-                    }));
-                    if (!data.isMatchSession || data.matchSessionEnded) {
-                         document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
-                    } else {
-                         document.title = `Eşleşme: ${partnerData.displayName || 'Kullanıcı'}`;
-                    }
-                   
-                } else {
-                    setDmPartnerDetails(prev => ({
-                        ...(prev || partnerInfo),
-                        uid: partnerUid,
-                        lastSeen: null, 
-                    }));
-                     document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
-                }
-            }, (error) => {
-                console.error("Error listening to partner user document:", error);
-                 setDmPartnerDetails(prev => ({
-                    ...(prev || partnerInfo),
-                    uid: partnerUid,
-                    lastSeen: null,
-                }));
-                document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
-            });
-
-
-            if (currentUser && partnerUid) {
-                checkIfUserBlocked(partnerUid).then(setIsPartnerBlockedByCurrentUser);
-                checkIfCurrentUserIsBlockedBy(partnerUid).then(setIsCurrentUserBlockedByPartner);
-            }
-
-            if (data.isMatchSession && !data.matchSessionEnded) {
-                const myId = currentUser.uid;
-                
-                setMyDecision(myId === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
-                setPartnerDecision(partnerUid === data.matchSessionUser1Id ? data.matchSessionUser1Decision || 'pending' : data.matchSessionUser2Decision || 'pending');
-
-                if (data.matchSessionExpiresAt) {
-                    const now = Timestamp.now().toMillis();
-                    const expiry = (data.matchSessionExpiresAt as Timestamp).toMillis();
-                    const timeLeft = Math.max(0, Math.floor((expiry - now) / 1000));
-                    setSessionTimeLeft(timeLeft);
-                    if (timeLeft === 0 && (myDecision === 'pending' || partnerDecision === 'pending')) {
-                         setShowDecisionModal(true);
-                    }
-                }
-            } else if (data.isMatchSession && data.matchSessionEnded && data.matchSessionEndedBy !== currentUser.uid && (data.matchSessionEndedReason?.startsWith('partner_left') || data.matchSessionEndedReason === 'user_left')) {
-                
-                toast({ title: "Partner Ayrıldı", description: "Sohbet partneriniz eşleşmeden ayrıldı. Yeni bir eşleşme arayabilirsiniz.", duration: 7000 });
-                router.push('/match');
-            }
-
-        } else {
-            toast({ title: "Hata", description: "Sohbet bulunamadı.", variant: "destructive" });
-            router.push("/direct-messages");
+        const partnerUid = data.participantUids.find(uid => uid !== currentUser.uid);
+        if (partnerUid) {
+          checkIfUserBlocked(partnerUid).then(setIsPartnerBlockedByCurrentUser);
+          checkIfCurrentUserIsBlockedBy(partnerUid).then(setIsCurrentUserBlockedByPartner);
         }
-        setLoadingDmPartner(false);
+
+        if (data.isMatchSession && !data.matchSessionEnded) {
+            const myId = currentUser.uid;
+            const currentMyDecision = myId === data.matchSessionUser1Id ? data.matchSessionUser1Decision : data.matchSessionUser2Decision;
+            const currentPartnerDecision = partnerUid === data.matchSessionUser1Id ? data.matchSessionUser1Decision : data.matchSessionUser2Decision;
+            
+            setMyDecision(currentMyDecision || 'pending');
+            setPartnerDecision(currentPartnerDecision || 'pending');
+
+            if (data.matchSessionExpiresAt) {
+                const now = Timestamp.now().toMillis();
+                const expiry = (data.matchSessionExpiresAt as Timestamp).toMillis();
+                const timeLeft = Math.max(0, Math.floor((expiry - now) / 1000));
+                setSessionTimeLeft(timeLeft);
+                if (timeLeft === 0 && (currentMyDecision === 'pending' || currentPartnerDecision === 'pending')) {
+                     setShowDecisionModal(true);
+                }
+            }
+        } else if (data.isMatchSession && data.matchSessionEnded && data.matchSessionEndedBy !== currentUser.uid && (data.matchSessionEndedReason?.startsWith('partner_left') || data.matchSessionEndedReason === 'user_left')) {
+            toast({ title: "Partner Ayrıldı", description: "Sohbet partneriniz eşleşmeden ayrıldı. Yeni bir eşleşme arayabilirsiniz.", duration: 7000 });
+            router.push('/match');
+        }
+
+      } else {
+        toast({ title: "Hata", description: "Sohbet bulunamadı.", variant: "destructive" });
+        router.push("/direct-messages");
+      }
     }, (error) => {
-        console.error("Error fetching DM document:", error);
-        toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive"});
+      console.error("Error fetching DM document:", error);
+      toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive"});
+      setLoadingDmPartner(false);
+    });
+
+    return () => unsubscribeDmDoc();
+  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
+
+  // useEffect #2: Handle Partner User Document Listener
+  useEffect(() => {
+    if (!dmDocData || !currentUser?.uid) return;
+
+    const partnerUid = dmDocData.participantUids.find(uid => uid !== currentUser.uid);
+    if (!partnerUid) {
+      setLoadingDmPartner(false);
+      return;
+    }
+
+    const userDocRef = doc(db, "users", partnerUid);
+    const unsubscribeUserDoc = onSnapshot(userDocRef, (userSnap) => {
+      const partnerInfoFromDM = dmDocData.participantInfo?.[partnerUid];
+      if (userSnap.exists()) {
+        const partnerData = userSnap.data() as UserData;
+        setDmPartnerDetails({
+            uid: partnerUid,
+            displayName: partnerData.displayName,
+            photoURL: partnerData.photoURL,
+            email: partnerData.email,
+            isPremium: checkUserPremium(partnerData),
+            isBanned: partnerData.isBanned || false,
+            lastSeen: partnerData.lastSeen || null,
+            avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
+        });
+        document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
+      } else {
+        // Fallback to data stored in DM doc if user doc is not found
+        setDmPartnerDetails({
+          uid: partnerUid,
+          displayName: partnerInfoFromDM?.displayName || "Bilinmeyen Kullanıcı",
+          photoURL: partnerInfoFromDM?.photoURL || null,
+          isPremium: partnerInfoFromDM?.isPremium || false,
+          lastSeen: null,
+        });
+        document.title = `${partnerInfoFromDM?.displayName || 'Sohbet'} - DM`;
+      }
+      setLoadingDmPartner(false); // Set loading to false only after partner data is processed
+    }, (error) => {
+        console.error("Error listening to partner user document:", error);
         setLoadingDmPartner(false);
     });
-    return () => {
-        unsubscribeDmDoc();
-        if (partnerLastSeenUnsubscribeRef.current) {
-            partnerLastSeenUnsubscribeRef.current();
-        }
-    };
 
-  }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy, myDecision, partnerDecision]);
+    return () => unsubscribeUserDoc();
+  }, [dmDocData, currentUser?.uid]);
 
 
   useEffect(() => {
@@ -512,9 +491,6 @@ export default function DirectMessagePage() {
   useEffect(() => {
     const currentDmDocData = dmDocDataRef.current; 
     return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
        if (sessionTimerRef.current) {
         clearInterval(sessionTimerRef.current);
       }
@@ -866,6 +842,8 @@ export default function DirectMessagePage() {
                   chatId={chatId}
                   onStartEdit={handleStartEdit}
                   isMatchSession={isMatchSessionActive}
+                  onMessageDeleted={handleMessageDeleted}
+                  onMessageEdited={handleMessageEdited}
                 />
               </motion.div>
             ))}
