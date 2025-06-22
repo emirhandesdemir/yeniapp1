@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, Copy, Smile as SmileIcon } from "lucide-react";
+import { Loader2, UserCircle, MessageSquare, Gamepad2, ExternalLink, LogOut, Star, Flag, Ban, Sparkles, Trash2, AlertTriangle, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, Copy, Smile as SmileIcon, Check } from "lucide-react";
 import type { UserData, FriendRequest } from '@/contexts/AuthContext';
 import { Timestamp, doc, deleteDoc as deleteFirestoreDoc, updateDoc } from 'firebase/firestore';
 import Link from "next/link";
@@ -54,7 +54,6 @@ interface Message {
   mentionedUserIds?: string[];
   editedAt?: Timestamp | null;
   reactions?: { [key: string]: string[] };
-  systemMessageType?: 'premium_join' | 'normal_join';
 }
 
 interface ChatMessageItemProps {
@@ -78,6 +77,7 @@ interface ChatMessageItemProps {
   isActiveParticipant: boolean;
   onMessageDeleted: (messageId: string) => void;
   onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
+  onStartEdit: (messageId: string, currentText: string) => void;
 }
 
 const PREDEFINED_REACTIONS = [
@@ -109,6 +109,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   isActiveParticipant,
   onMessageDeleted,
   onMessageEdited,
+  onStartEdit,
 }) => {
   const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
@@ -117,21 +118,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const [reportReason, setReportReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedText, setEditedText] = useState(msg.text);
-  const [isProcessingEditOrDelete, setIsProcessingEditOrDelete] = useState(false);
+  const [isProcessingDelete, setIsProcessingDelete] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const editInputRef = useRef<HTMLTextAreaElement>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pressTimer = useRef<NodeJS.Timeout>();
-
-
-  useEffect(() => {
-    if (isEditing && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
-    }
-  }, [isEditing]);
 
 
   useEffect(() => {
@@ -160,6 +150,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     toast({ title: "Kopyalandı", description: "Mesaj panoya kopyalandı." });
   };
 
+  const handleEditMessage = () => {
+    onStartEdit(msg.id, msg.text);
+    setIsMenuOpen(false); // Close menu when editing starts
+  };
 
   const handleReportUserConfirmation = async () => {
     if (!popoverTargetUser) return;
@@ -183,55 +177,19 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
   const handleDeleteMessage = async () => {
     if (!msg.isOwn || !roomId || !msg.id) return;
-    setIsProcessingEditOrDelete(true);
+    setIsProcessingDelete(true);
     setShowDeleteConfirm(false);
     try {
       const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
-      // Parent's onSnapshot will handle UI update
+      // Let onSnapshot handle the UI update
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
     } catch (error) {
       console.error("Error deleting chat message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
     } finally {
-      setIsProcessingEditOrDelete(false);
+      setIsProcessingDelete(false);
     }
-  };
-
-  const handleEditMessage = () => {
-    setEditedText(msg.text);
-    setIsEditing(true);
-    setIsMenuOpen(false); // Close menu when editing starts
-  };
-
-  const handleSaveEdit = async () => {
-    if (!msg.isOwn || !roomId || !msg.id || !editedText.trim() || editedText.trim() === msg.text) {
-      setIsEditing(false);
-      return;
-    }
-    setIsProcessingEditOrDelete(true);
-    try {
-      const messageRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
-      await updateDoc(messageRef, {
-        text: editedText.trim(),
-        editedAt: Timestamp.now(),
-      });
-      // onMessageEdited is removed to let onSnapshot handle the update
-      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
-    } catch (error) {
-      console.error("Error editing message:", error);
-      toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
-    } finally {
-      setIsProcessingEditOrDelete(false);
-      setIsEditing(false);
-      setIsMenuOpen(false);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditedText(msg.text);
-    setIsMenuOpen(false);
   };
 
   const handleReaction = async (emoji: string) => {
@@ -286,36 +244,30 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     });
   }, []);
 
-  if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
-    const isPremiumJoin = msg.systemMessageType === 'premium_join';
-    let icon;
-    if (isPremiumJoin) {
-      icon = <Star className="inline h-4 w-4 mr-1.5" />;
-    } else if (msg.text.toLowerCase().includes("tebrikler")) {
-      icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
-    } else if (msg.text.toLowerCase().includes("ipucu")) {
-      icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
-    } else if (msg.isChestMessage) {
-      icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
-    } else {
-      icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
+
+  const getSystemMessageContent = (message: Message) => {
+    let icon = <Gamepad2 className="inline h-4 w-4 mr-1.5 text-primary" />;
+    if (message.text.toLowerCase().includes("tebrikler")) {
+        icon = <Star className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
+    } else if (message.text.toLowerCase().includes("ipucu")) {
+        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-accent" />;
+    } else if (message.isChestMessage) {
+        icon = <Sparkles className="inline h-4 w-4 mr-1.5 text-yellow-400" />;
     }
-  
+    return (
+        <>
+            {icon}
+            <span className="font-medium text-foreground/80">{message.senderName}: </span>
+            {message.text}
+        </>
+    );
+};
+
+if ((msg.isGameMessage || msg.isChestMessage) && msg.senderId === "system") {
     return (
       <div key={msg.id} className="w-full max-w-md mx-auto my-2">
-        <div className={cn(
-          "text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm",
-          isPremiumJoin && "system-message-premium-join"
-        )}>
-          {icon}
-          {isPremiumJoin ? (
-            <span className="font-semibold">{msg.text.replace('[SİSTEM] ', '')}</span>
-          ) : (
-            <>
-              <span className="font-medium text-foreground/80">{msg.senderName}: </span>
-              {msg.text}
-            </>
-          )}
+        <div className="text-xs text-center text-muted-foreground p-2 rounded-md bg-gradient-to-r from-primary/10 via-secondary/20 to-accent/10 border border-border/50 shadow-sm">
+           {getSystemMessageContent(msg)}
         </div>
       </div>
     );
@@ -453,29 +405,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     onContextMenu={handleContextMenu}
                     className={cn("relative p-2.5 sm:p-3 shadow-md group/bubble cursor-pointer", bubbleClasses)}
                 >
-                     {isEditing ? (
-                        <div className="space-y-2 w-full">
-                            <Textarea
-                                ref={editInputRef}
-                                value={editedText}
-                                onChange={(e) => setEditedText(e.target.value)}
-                                className="w-full text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                                rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                                disabled={isProcessingEditOrDelete}
-                            />
-                            <div className="flex justify-end gap-2">
-                                <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                                <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                                    {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                                </Button>
-                            </div>
-                        </div>
-                    ) : (
-                        <p className={cn(textClasses, "allow-text-selection")}>
-                            {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
-                            {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
-                        </p>
-                    )}
+                    <p className={cn(textClasses, "allow-text-selection")}>
+                        {renderMessageWithMentions(msg.text, currentUsersActualDisplayName)}
+                        {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
+                    </p>
                 </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
@@ -506,10 +439,10 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 {msg.isOwn && (
                     <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                        <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingDelete}>
                             <Edit2 className="mr-2 h-4 w-4" /> Düzenle
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
+                        <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingDelete}>
                             <Trash2 className="mr-2 h-4 w-4" /> Sil
                         </DropdownMenuItem>
                     </>
@@ -518,7 +451,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
            </DropdownMenu>
 
             {/* Reactions Display */}
-            {!isEditing && msg.reactions && Object.keys(msg.reactions).length > 0 && (
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
                     if (!users || users.length === 0) return null;
@@ -585,13 +518,13 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                   </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingEditOrDelete}>İptal</AlertDialogCancel>
+                  <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingDelete}>İptal</AlertDialogCancel>
                   <AlertDialogAction
                       onClick={handleDeleteMessage}
                       className="bg-destructive hover:bg-destructive/90"
-                      disabled={isProcessingEditOrDelete}
+                      disabled={isProcessingDelete}
                   >
-                      {isProcessingEditOrDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isProcessingDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Sil
                   </AlertDialogAction>
               </AlertDialogFooter>
