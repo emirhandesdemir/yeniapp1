@@ -1,6 +1,4 @@
 
-"use client";
-
 import type { ReactNode } from "react";
 import "./globals.css";
 import { ThemeProvider } from "@/contexts/ThemeContext";
