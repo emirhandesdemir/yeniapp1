@@ -61,7 +61,7 @@ interface FriendRequestForPopover {
 }
 
 interface BottomNavItemType {
-  href: (uid?: string) => string;
+  href: (uid: string) => string;
   label: string;
   icon: React.ElementType;
   activeIcon?: React.ElementType;
@@ -80,10 +80,10 @@ const bottomNavItems: BottomNavItemType[] = [
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
   { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle },
   { href: () => '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: UserPlus },
-  { href: (uid) => uid ? `/profile/${uid}` : '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
+  { href: (uid) => `/profile/${uid}`, label: 'Profilim', icon: UserRound, activeIcon: UserRound },
 ];
 
-function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItemType, isActive: boolean, currentUserUid?: string }) {
+function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItemType, isActive: boolean, currentUserUid: string }) {
   const IconComponent = isActive && item.activeIcon ? item.activeIcon : item.icon;
   const finalHref = item.href(currentUserUid);
   return (
@@ -306,6 +306,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/') || pathname.startsWith('/match/');
   const mainContentClasses = cn("flex-1 overflow-auto bg-background", isChatPage ? "p-0" : "px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-[calc(theme(spacing.16)+theme(spacing.3))] sm:pb-[calc(theme(spacing.16)+theme(spacing.4))]");
 
+  if (isAuthActionLoading && !currentUser) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    // This case is handled by the redirect in AuthProvider, but as a fallback
+    return <div className="h-screen w-screen bg-background">{children}</div>;
+  }
+  
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {!isChatPage && (
@@ -322,7 +335,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Link>
           <div className="flex items-center gap-0.5 sm:gap-1">
              <Button asChild variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:h-9" aria-label="Ayarlar">
-                <Link href="/profile"><Settings className="h-4 w-4 sm:h-5 sm:w-5" /></Link>
+                <Link href="/settings"><Settings className="h-4 w-4 sm:h-5 sm:w-5" /></Link>
             </Button>
             <Popover>
               <PopoverTrigger asChild>
@@ -380,9 +393,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </DialogContent>
         </Dialog>
       )}
-      {!isChatPage && isClient && (
+      {!isChatPage && isClient && currentUser && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-[0_-2px_10px_-3px_rgba(0,0,0,0.07)] z-30">
-          {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profil' ? pathname.startsWith('/profile') || pathname.startsWith('/settings') : pathname === item.href(currentUser?.uid)} currentUserUid={currentUser?.uid}/>))}
+          {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profilim' ? pathname.startsWith('/profile/') || pathname.startsWith('/settings') : pathname === item.href(currentUser.uid)} currentUserUid={currentUser.uid}/>))}
         </nav>
       )}
     </div>
