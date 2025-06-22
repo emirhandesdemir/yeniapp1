@@ -202,7 +202,7 @@ export default function ChatRoomPage() {
   const [loadingRoom, setLoadingRoom] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
-  const [isExtending, setIsExtending] = useState(isExtending);
+  const [isExtending, setIsExtending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { currentUser, userData, updateUserDiamonds, isUserLoading, isCurrentUserPremium } = useAuth();
   const { toast } = useToast();
@@ -1797,6 +1797,15 @@ export default function ChatRoomPage() {
     return (<div className="flex flex-1 items-center justify-center h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-2 text-lg">Oda yükleniyor...</p></div>);
   }
 
+  const handleFormSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if(editingMessage) {
+        handleSaveEdit();
+    } else {
+        handleSendMessage(e);
+    }
+  };
+
   return (
     <div className="relative h-screen">
       {activeChest && roomDetails?.expiresAt && (
@@ -1942,45 +1951,91 @@ export default function ChatRoomPage() {
         <div className="p-3 border-b bg-background/70 backdrop-blur-sm"> <div className="flex items-center justify-between mb-2"> <h3 className="text-sm font-medium text-primary">Sesli Sohbet ({activeVoiceParticipants.length}/{roomDetails.maxParticipants})</h3> {isCurrentUserInVoiceChat ? (<div className="flex items-center gap-2"> <Button variant={selfMuted ? "destructive" : "outline"} size="sm" onClick={toggleSelfMute} className="h-8 px-2.5" disabled={isProcessingVoiceJoinLeave} title={selfMuted ? "Mikrofonu Aç" : "Mikrofonu Kapat"}>{selfMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button> <Button variant="outline" size="sm" onClick={() => leaveRoomFully(false)} disabled={isProcessingVoiceJoinLeave} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ayrıl</Button> </div>) : (<Button variant="default" size="sm" onClick={handleJoinVoiceChat} disabled={isProcessingVoiceJoinLeave || (roomDetails.voiceParticipantCount ?? 0) >= roomDetails.maxParticipants} className="h-8 px-2.5">{isProcessingVoiceJoinLeave && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}<Mic className="mr-1.5 h-4 w-4" /> Katıl</Button>)} </div> <VoiceParticipantGrid participants={activeVoiceParticipants} currentUserUid={currentUser?.uid} isCurrentUserRoomCreator={isCurrentUserRoomCreator} roomCreatorId={roomDetails?.creatorId} maxSlots={roomDetails.maxParticipants} onAdminKickUser={() => { /* Kicking from voice is removed */ }} onAdminToggleMuteUser={handleAdminToggleMuteUserVoice} getAvatarFallbackText={getAvatarFallbackText} onSlotClick={handleVoiceParticipantSlotClick} /> </div>
         <div className="flex flex-1 overflow-hidden">
             <ScrollArea className="flex-1 p-3 sm:p-4 space-y-2" ref={scrollAreaRef}> {loadingMessages && (<div className="flex flex-1 items-center justify-center py-10"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2 text-muted-foreground">Mesajlar yükleniyor...</p> </div>)} {!loadingMessages && messages.length === 0 && !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current && (<div className="text-center text-muted-foreground py-10 px-4"> <MessageSquare className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Henüz hiç mesaj yok.</p> <p className="text-sm">İlk mesajı sen göndererek sohbeti başlat!</p> </div>)} {!isCurrentUserParticipantRef.current && !isRoomFullError && !loadingRoom && !isProcessingJoinLeave && (<div className="text-center text-muted-foreground py-10 px-4"> <Users className="mx-auto h-16 w-16 text-muted-foreground/50 mb-3" /> <p className="text-lg font-medium">Odaya katılmadınız.</p> <p className="text-sm">Mesajları görmek ve göndermek için odaya otomatik olarak katılıyorsunuz. Lütfen bekleyin veya bir sorun varsa sayfayı yenileyin.</p> </div>)} {isRoomFullError && (<div className="text-center text-destructive py-10 px-4"> <ShieldAlert className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odası dolu!</p> <p>Maksimum katılımcı sayısına ulaşıldığı için mesaj gönderemezsiniz.</p> </div>)} {isRoomExpired && !isRoomFullError && (<div className="text-center text-destructive py-10"> <Clock className="mx-auto h-16 w-16 text-destructive/80 mb-3" /> <p className="text-lg font-semibold">Bu sohbet odasının süresi dolmuştur.</p> <p>Yeni mesaj gönderilemez.</p> </div>)}
-            {messages.map((msg) => {
-                const senderIsActiveText = activeTextParticipants.some(p => p.id === msg.senderId && differenceInMinutes(new Date(), p.lastSeen?.toDate() || new Date(0)) < ACTIVE_IN_ROOM_THRESHOLD_MINUTES);
-                const senderIsActiveVoice = activeVoiceParticipants.some(p => p.id === msg.senderId);
-                const isActiveInRoom = senderIsActiveText || senderIsActiveVoice;
-                return (
-                <ChatMessageItem
-                  key={msg.id}
-                  msg={msg}
-                  currentUserUid={currentUser?.uid}
-                  popoverOpenForUserId={popoverOpenForUserId}
-                  onOpenUserInfoPopover={handleOpenUserInfoPopover}
-                  setPopoverOpenForUserId={setPopoverOpenForUserId}
-                  popoverLoading={popoverLoading}
-                  popoverTargetUser={popoverTargetUser}
-                  friendshipStatus={friendshipStatus}
-                  relevantFriendRequest={relevantFriendRequest}
-                  onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
-                  onSendFriendRequestPopover={handleSendFriendRequestPopover}
-                  onDmAction={handleDmAction}
-                  onViewProfileAction={handleViewProfileAction}
-                  getAvatarFallbackText={getAvatarFallbackText}
-                  isCurrentUserRoomCreator={isCurrentUserRoomCreator}
-                  onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
-                  roomId={roomId}
-                  isActiveParticipant={isActiveInRoom}
-                  onMessageDeleted={handleMessageDeleted}
-                  onMessageEdited={handleMessageEdited}
-                />
-            )})}
+            <AnimatePresence initial={false}>
+                {messages.map((msg) => (
+                    <motion.div
+                        key={msg.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                    >
+                        <ChatMessageItem
+                        msg={msg}
+                        currentUserUid={currentUser?.uid}
+                        popoverOpenForUserId={popoverOpenForUserId}
+                        onOpenUserInfoPopover={handleOpenUserInfoPopover}
+                        setPopoverOpenForUserId={setPopoverOpenForUserId}
+                        popoverLoading={popoverLoading}
+                        popoverTargetUser={popoverTargetUser}
+                        friendshipStatus={friendshipStatus}
+                        relevantFriendRequest={relevantFriendRequest}
+                        onAcceptFriendRequestPopover={handleAcceptFriendRequestPopover}
+                        onSendFriendRequestPopover={handleSendFriendRequestPopover}
+                        onDmAction={handleDmAction}
+                        onViewProfileAction={handleViewProfileAction}
+                        getAvatarFallbackText={getAvatarFallbackText}
+                        isCurrentUserRoomCreator={isCurrentUserRoomCreator}
+                        onKickParticipantFromTextChat={handleKickParticipantFromTextChat}
+                        roomId={roomId}
+                        isActiveParticipant={activeTextParticipants.some(p => p.id === msg.senderId)}
+                        onMessageDeleted={handleMessageDeleted}
+                        onMessageEdited={handleMessageEdited}
+                        onStartEdit={handleStartEdit}
+                        />
+                    </motion.div>
+                ))}
+            </AnimatePresence>
             </ScrollArea>
         </div>
-        <form onSubmit={handleSendMessage} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
+        <form onSubmit={handleFormSubmit} className="p-2 sm:p-3 border-t bg-background/80 backdrop-blur-sm sticky bottom-0">
+            <AnimatePresence>
+                {editingMessage && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        animate={{ opacity: 1, height: 'auto', marginBottom: '8px' }}
+                        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        transition={{ duration: 0.2, ease: "easeInOut" }}
+                        className="bg-secondary/50 rounded-lg px-3 py-2 border-l-4 border-primary"
+                    >
+                    <div className="flex justify-between items-center">
+                        <div>
+                        <p className="font-semibold text-sm text-primary">Mesajı Düzenle</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md">{editingMessage.text}</p>
+                        </div>
+                        <Button variant="ghost" size="icon" type="button" onClick={handleCancelEdit}>
+                        <X className="h-4 w-4"/>
+                        <span className="sr-only">Düzenlemeyi İptal Et</span>
+                        </Button>
+                    </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             <div className="relative flex items-center gap-2"> 
-                <Button variant="ghost" size="icon" type="button" onClick={() => setIsChestCreateOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
+                <Button variant="ghost" size="icon" type="button" onClick={() => setIsCreateChestOpen(true)} disabled={!canSendMessage || isUserLoading || isSending || !!activeChest} className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 text-yellow-500 hover:text-yellow-400">
                     <Gift className="h-5 w-5" />
                     <span className="sr-only">Hediye Sandığı Gönder</span>
                 </Button>
-                <Input placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : "Mesajınızı yazın (@kullanıcı_adı)..."} value={newMessage} onChange={handleNewMessageInputChange} className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80" autoComplete="off" disabled={!canSendMessage || isSending || isUserLoading} />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"> <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex"> <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" /> <span className="sr-only">Dosya Ekle</span> </Button> <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} <span className="sr-only">Gönder</span></Button> </div>
+                <Input
+                    ref={messageInputRef}
+                    placeholder={activeGameQuestion && roomDetails.isGameEnabledInRoom && globalGameSettings?.isGameEnabled ? "Soruya cevap: /answer <cevap> veya ipucu: /hint ..." : !canSendMessage ? (isRoomExpired ? "Oda süresi doldu" : isRoomFullError ? "Oda dolu, mesaj gönderilemez" : "Odaya bağlanılıyor...") : editingMessage ? "Mesajı düzenle..." : "Mesajınızı yazın (@kullanıcı_adı)..."}
+                    value={newMessage}
+                    onChange={handleNewMessageInputChange}
+                    className="flex-1 pr-24 sm:pr-28 rounded-full h-10 sm:h-11 text-sm focus-visible:ring-primary/80"
+                    autoComplete="off"
+                    disabled={!canSendMessage || isSending || isUserLoading}
+                />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                <Button variant="ghost" size="icon" type="button" disabled={!canSendMessage || isUserLoading || isSending} className="h-8 w-8 sm:h-9 sm:w-9 hidden sm:inline-flex">
+                    <Paperclip className="h-5 w-5 text-muted-foreground hover:text-accent" />
+                    <span className="sr-only">Dosya Ekle</span>
+                </Button>
+                <Button type="submit" size="icon" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full h-8 w-8 sm:h-9 sm:w-9" disabled={!canSendMessage || isSending || !newMessage.trim() || isUserLoading}>
+                    {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : editingMessage ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                    <span className="sr-only">{editingMessage ? 'Kaydet' : 'Gönder'}</span>
+                </Button>
+            </div>
             </div>
             {!canSendMessage && (<p className="text-xs text-destructive text-center mt-1.5"> {isRoomExpired ? "Bu odanın süresi dolduğu için mesaj gönderemezsiniz." : isRoomFullError ? "Oda dolu olduğu için mesaj gönderemezsiniz." : !isCurrentUserParticipantRef.current && !loadingRoom && !isProcessingJoinLeave ? "Mesaj göndermek için odaya katılmayı bekleyin." : ""} </p>)}
         </form>
@@ -2011,4 +2066,3 @@ export default function ChatRoomPage() {
   );
 }
 
-    
