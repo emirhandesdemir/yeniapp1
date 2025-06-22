@@ -975,5 +975,3 @@ export default function DirectMessagePage() {
   );
 }
 
-
-
