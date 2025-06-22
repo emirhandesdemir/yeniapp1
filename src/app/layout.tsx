@@ -5,6 +5,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
+import AppLayout from '@/components/layout/AppLayout';
 
 export const metadata: Metadata = {
   title: 'HiweWalk',
@@ -48,7 +49,9 @@ export default function RootLayout({
           <AuthProvider>
             <InAppNotificationProvider>
               <MinimizedChatProvider>
-                {children}
+                <AppLayout>
+                    {children}
+                </AppLayout>
                 <Toaster />
               </MinimizedChatProvider>
             </InAppNotificationProvider>

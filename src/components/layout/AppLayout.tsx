@@ -44,6 +44,7 @@ import {
 } from "firebase/firestore";
 import { UserCheck, UserX, Star } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
+import { InAppNotificationData, useInAppNotification } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { requestNotificationPermission, subscribeUserToPush } from '@/lib/notificationUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -61,7 +62,7 @@ interface FriendRequestForPopover {
 }
 
 interface BottomNavItemType {
-  href: (uid: string) => string;
+  href: (uid?: string) => string;
   label: string;
   icon: React.ElementType;
   activeIcon?: React.ElementType;
@@ -80,10 +81,10 @@ const bottomNavItems: BottomNavItemType[] = [
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
   { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle },
   { href: () => '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: UserPlus },
-  { href: (uid) => `/profile/${uid}`, label: 'Profilim', icon: UserRound, activeIcon: UserRound },
+  { href: (uid) => uid ? `/profile/${uid}` : '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
 
-function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItemType, isActive: boolean, currentUserUid: string }) {
+function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItemType, isActive: boolean, currentUserUid?: string }) {
   const IconComponent = isActive && item.activeIcon ? item.activeIcon : item.icon;
   const finalHref = item.href(currentUserUid);
   return (
@@ -112,6 +113,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { currentUser, userData, isUserLoading: isAuthActionLoading, isUserDataLoading } = useAuth();
   const { toast } = useToast();
+  const { showNotification: showInAppNotification } = useInAppNotification();
 
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestForPopover[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -168,24 +170,95 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
     const incomingQuery = query(collection(db, "friendRequests"), where("toUserId", "==", currentUser.uid), where("status", "==", "pending"), orderBy("createdAt", "desc"));
     const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
+      let newRequestsMadeThisSession = false;
       const reqPromises = snapshot.docs.map(async (reqDoc) => {
         const data = reqDoc.data();
+        const requestId = reqDoc.id;
         let userProfileData: UserData | undefined = undefined;
         try {
           const senderProfileDoc = await getDoc(doc(db, "users", data.fromUserId));
           if (senderProfileDoc.exists()) userProfileData = { uid: senderProfileDoc.id, ...senderProfileDoc.data() } as UserData;
         } catch (e) { console.error(`Error fetching profile for sender ${data.fromUserId}:`, e); }
 
-        return { id: reqDoc.id, fromUserId: data.fromUserId, fromUsername: userProfileData?.displayName || data.fromUsername, fromAvatarUrl: userProfileData?.photoURL || data.fromAvatarUrl, fromUserIsPremium: userProfileData ? checkUserPremium(userProfileData) : data.fromUserIsPremium || false, createdAt: data.createdAt as Timestamp, userProfile: userProfileData } as FriendRequestForPopover;
+        if (data.status === "pending" && userProfileData && !notifiedRequestIdsRef.current.has(requestId)) {
+          showInAppNotification({
+            title: "Yeni Arkadaşlık İsteği",
+            message: `${userProfileData.displayName || 'Bir kullanıcı'} sana arkadaşlık isteği gönderdi.`,
+            type: 'friend_request',
+            avatarUrl: userProfileData.photoURL,
+            senderName: userProfileData.displayName,
+            link: '/friends',
+          });
+          notifiedRequestIdsRef.current.add(requestId);
+          newRequestsMadeThisSession = true;
+        }
+        return { id: requestId, fromUserId: data.fromUserId, fromUsername: userProfileData?.displayName || data.fromUsername, fromAvatarUrl: userProfileData?.photoURL || data.fromAvatarUrl, fromUserIsPremium: userProfileData ? checkUserPremium(userProfileData) : data.fromUserIsPremium || false, createdAt: data.createdAt as Timestamp, userProfile: userProfileData } as FriendRequestForPopover;
       });
       try {
         const resolvedRequests = (await Promise.all(reqPromises)).filter(req => req !== null) as FriendRequestForPopover[];
         setIncomingRequests(resolvedRequests);
+        if (newRequestsMadeThisSession) {
+          try { localStorage.setItem(NOTIFIED_REQUEST_IDS_STORAGE_KEY, JSON.stringify(Array.from(notifiedRequestIdsRef.current))); } catch(e) { console.warn("Error saving notified request IDs to localStorage", e); }
+        }
       } catch (e) { console.error("Error resolving request promises for notifications:", e); }
       finally { setLoadingRequests(false); if (!incomingInitialized) setIncomingInitialized(true); }
     }, (e) => { console.error("Error fetching incoming requests:", e); setLoadingRequests(false); if (!incomingInitialized) setIncomingInitialized(true); });
     return () => unsubscribeIncoming();
-  }, [currentUser?.uid, incomingInitialized, isClient]);
+  }, [currentUser?.uid, incomingInitialized, showInAppNotification, isClient]);
+
+  useEffect(() => {
+    if (!currentUser?.uid || !isClient) return;
+    const dmsQuery = query(collection(db, "directMessages"), where("participantUids", "array-contains", currentUser.uid));
+    const unsubscribeDms = onSnapshot(dmsQuery, (snapshot) => {
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type === "modified" || change.type === "added") {
+          const dmData = change.doc.data();
+          const dmId = change.doc.id;
+          if (dmData.lastMessageSenderId && dmData.lastMessageSenderId !== currentUser.uid && dmData.lastMessageTimestamp) {
+            const lastMessageTimeMillis = (dmData.lastMessageTimestamp as Timestamp).toMillis();
+            const lastShownTimeMillis = lastShownDmTimestampsRef.current[dmId];
+            if ((!lastShownTimeMillis || lastMessageTimeMillis > lastShownTimeMillis) && pathname !== `/dm/${dmId}`) {
+              const senderUid = dmData.lastMessageSenderId;
+              let senderName = "Bir kullanıcı"; let senderAvatar: string | null = null;
+              if (dmData.participantInfo && dmData.participantInfo[senderUid]) {
+                senderName = dmData.participantInfo[senderUid].displayName || senderName;
+                senderAvatar = dmData.participantInfo[senderUid].photoURL;
+              } else {
+                try {
+                  const userSnap = await getDoc(doc(db, "users", senderUid));
+                  if (userSnap.exists()) { const d = userSnap.data() as UserData; senderName = d.displayName || senderName; senderAvatar = d.photoURL; }
+                } catch (e) { console.error("DM bildirim için gönderen bilgisi çekilemedi:", e); }
+              }
+              showInAppNotification({ title: `Yeni Mesaj: ${senderName}`, message: dmData.lastMessageText ? (dmData.lastMessageText.length > 50 ? dmData.lastMessageText.substring(0, 47) + "..." : dmData.lastMessageText) : "Bir mesaj gönderdi.", type: 'new_dm', avatarUrl: senderAvatar, senderName: senderName, link: `/dm/${dmId}` });
+              const newTimestamps = { ...lastShownDmTimestampsRef.current, [dmId]: lastMessageTimeMillis };
+              lastShownDmTimestampsRef.current = newTimestamps;
+              try { localStorage.setItem(LAST_SHOWN_DM_TIMESTAMPS_STORAGE_KEY, JSON.stringify(newTimestamps)); } catch (e) { console.warn("Error writing DM timestamps to localStorage:", e); }
+            }
+          }
+        }
+      });
+    }, (e) => { console.error("Error fetching DMs for notifications:", e); });
+    return () => unsubscribeDms();
+  }, [currentUser?.uid, pathname, isClient, showInAppNotification]);
+
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && firebaseMessaging && isClient) {
+      const unsubscribeForeground = onMessage(firebaseMessaging, (payload) => {
+        console.log('[AppLayout] FCM Foreground Message Received:', payload);
+        showInAppNotification({
+          title: payload.notification?.title || "Yeni Bildirim",
+          message: payload.notification?.body || "",
+          type: (payload.data?.type as InAppNotificationData['type']) || 'info',
+          avatarUrl: payload.notification?.icon || payload.data?.avatarUrl,
+          senderName: payload.data?.senderName,
+          link: payload.data?.link || payload.fcmOptions?.link,
+        });
+      });
+      return () => unsubscribeForeground();
+    }
+  }, [isClient, showInAppNotification]);
+
 
   useEffect(() => {
     if (isClient && currentUser && userData) {
@@ -303,36 +376,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const getAvatarFallback = useCallback((name?: string | null) => (name ? name.substring(0, 2).toUpperCase() : currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "HW"), [currentUser?.email]);
 
-  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/') || pathname.startsWith('/match/');
-  const mainContentClasses = cn("flex-1 overflow-auto bg-background", isChatPage ? "p-0" : "px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-[calc(theme(spacing.16)+theme(spacing.3))] sm:pb-[calc(theme(spacing.16)+theme(spacing.4))]");
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
+  const isSpecialPage = isAuthPage || pathname.startsWith('/admin') || pathname.startsWith('/call');
 
-  if (isAuthActionLoading && !currentUser) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    // This case is handled by the redirect in AuthProvider, but as a fallback
-    return <div className="h-screen w-screen bg-background">{children}</div>;
-  }
+  const mainContentClasses = cn("flex-1 overflow-auto bg-background", isSpecialPage ? "p-0" : "px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-[calc(theme(spacing.16)+theme(spacing.3))] sm:pb-[calc(theme(spacing.16)+theme(spacing.4))]");
   
+  if (isAuthPage || isAuthActionLoading) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {!isChatPage && (
+      {!isSpecialPage && (
         <header className="flex h-14 items-center justify-between border-b border-border bg-card px-3 sm:px-4 sticky top-0 z-30 shadow-sm">
-          <Link href="/" aria-label="Anasayfa">
-            <motion.h1
-              className="text-2xl font-extrabold font-headline animated-logo-gradient"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 10 }}
-            >
-              HiweWalk
-            </motion.h1>
-          </Link>
+          <Link href="/" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">HiweWalk</Link>
           <div className="flex items-center gap-0.5 sm:gap-1">
              <Button asChild variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:h-9" aria-label="Ayarlar">
                 <Link href="/settings"><Settings className="h-4 w-4 sm:h-5 sm:w-5" /></Link>
@@ -393,9 +450,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </DialogContent>
         </Dialog>
       )}
-      {!isChatPage && isClient && currentUser && (
+      {!isSpecialPage && isClient && currentUser && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-[0_-2px_10px_-3px_rgba(0,0,0,0.07)] z-30">
-          {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profilim' ? pathname.startsWith('/profile/') || pathname.startsWith('/settings') : pathname === item.href(currentUser.uid)} currentUserUid={currentUser.uid}/>))}
+          {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profil' ? pathname.startsWith('/profile/') || pathname.startsWith('/settings') : pathname === item.href(currentUser?.uid)} currentUserUid={currentUser?.uid}/>))}
         </nav>
       )}
     </div>
