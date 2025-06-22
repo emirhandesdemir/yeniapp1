@@ -777,10 +777,10 @@ export default function DirectMessagePage() {
         </div>
         {!isMatchSessionActive && (
             <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || !!(isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Sesli Ara">
+            <Button variant="ghost" size="icon" onClick={handleVoiceCall} className="h-9 w-9 rounded-full text-green-500 hover:text-green-600 hover:bg-green-500/10" disabled={!!(isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded))} aria-label="Sesli Ara">
                 <Phone className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || !!(isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded)} aria-label="Görüntülü Ara (Yakında)">
+            <Button variant="ghost" size="icon" onClick={handleVideoCall} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10" disabled={!!(isPartnerBlockedByCurrentUser || isCurrentUserBlockedByPartner || isUserLoading || (isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded))} aria-label="Görüntülü Ara (Yakında)">
                 <Video className="h-5 w-5" />
             </Button>
             <DropdownMenu>
@@ -974,7 +974,3 @@ export default function DirectMessagePage() {
     </div>
   );
 }
-
-
-
-
