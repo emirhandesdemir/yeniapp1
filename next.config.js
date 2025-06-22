@@ -1,5 +1,6 @@
 
 const withPWAInit = require('@ducanh2912/next-pwa');
+const withPWA = withPWAInit.default || withPWAInit;
 
 const customRuntimeCaching = [
   {
@@ -82,7 +83,7 @@ const pwaConfig = {
   swDest: 'public/sw.js',
 };
 
-const withPWA = withPWAInit(pwaConfig);
+const nextPwaWithConfig = withPWA(pwaConfig);
 
 const securityHeaders = [
   {
@@ -144,6 +145,6 @@ const currentNextConfig = {
 
 const finalConfig = process.env.NODE_ENV === 'development'
   ? currentNextConfig
-  : withPWA(currentNextConfig);
+  : nextPwaWithConfig(currentNextConfig);
 
 module.exports = finalConfig;
