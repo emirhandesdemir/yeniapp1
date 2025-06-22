@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import AppLayout from '@/components/layout/AppLayout';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -62,51 +63,53 @@ export default function HomePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
-      {currentUser && (
-        <motion.div variants={itemVariants}>
-          <Card className="shadow-md">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Yeni Gönderi</CardTitle>
-              <CardDescription>Düşüncelerini toplulukla paylaş.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CreatePostForm onPostCreated={handlePostCreated} />
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {loading ? (
-          <div className="space-y-5">
-            <Skeleton className="h-[250px] w-full rounded-xl" />
-            <Skeleton className="h-[220px] w-full rounded-xl" />
-          </div>
-      ) : (
-        <AnimatePresence>
-          <motion.div
-            layout
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="space-y-5"
-          >
-            {posts.length === 0 ? (
-              <motion.div variants={itemVariants} className="text-center text-muted-foreground py-16">
-                <Globe className="mx-auto h-16 w-16 mb-4 opacity-50" />
-                <h3 className="text-xl font-semibold">Akışta henüz bir şey yok.</h3>
-                <p className="text-sm mt-2">İlk gönderiyi sen paylaşarak sohbeti başlat!</p>
-              </motion.div>
-            ) : (
-              posts.map(post => (
-                <motion.div layout key={post.id} variants={itemVariants}>
-                  <PostCard post={post} />
-                </motion.div>
-              ))
-            )}
+    <AppLayout>
+      <div className="max-w-2xl mx-auto space-y-5">
+        {currentUser && (
+          <motion.div variants={itemVariants}>
+            <Card className="shadow-md">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-xl">Yeni Gönderi</CardTitle>
+                <CardDescription>Düşüncelerini toplulukla paylaş.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CreatePostForm onPostCreated={handlePostCreated} />
+              </CardContent>
+            </Card>
           </motion.div>
-        </AnimatePresence>
-      )}
-    </div>
+        )}
+
+        {loading ? (
+            <div className="space-y-5">
+              <Skeleton className="h-[250px] w-full rounded-xl" />
+              <Skeleton className="h-[220px] w-full rounded-xl" />
+            </div>
+        ) : (
+          <AnimatePresence>
+            <motion.div
+              layout
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="space-y-5"
+            >
+              {posts.length === 0 ? (
+                <motion.div variants={itemVariants} className="text-center text-muted-foreground py-16">
+                  <Globe className="mx-auto h-16 w-16 mb-4 opacity-50" />
+                  <h3 className="text-xl font-semibold">Akışta henüz bir şey yok.</h3>
+                  <p className="text-sm mt-2">İlk gönderiyi sen paylaşarak sohbeti başlat!</p>
+                </motion.div>
+              ) : (
+                posts.map(post => (
+                  <motion.div layout key={post.id} variants={itemVariants}>
+                    <PostCard post={post} />
+                  </motion.div>
+                ))
+              )}
+            </motion.div>
+          </AnimatePresence>
+        )}
+      </div>
+    </AppLayout>
   );
 }
