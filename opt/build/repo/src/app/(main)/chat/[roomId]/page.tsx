@@ -1845,7 +1845,7 @@ export default function ChatRoomPage() {
       )}
       <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
         {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
-            console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
+            console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
             return (
             <audio
                 key={uid}
@@ -1855,7 +1855,8 @@ export default function ChatRoomPage() {
                 ref={audioEl => {
                 if (audioEl) {
                     if (audioEl.srcObject !== stream) {
-                        console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
+                        const oldStreamId = (audioEl.srcObject instanceof MediaStream) ? audioEl.srcObject.id : 'N/A';
+                        console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${oldStreamId}`);
                         audioEl.srcObject = stream;
                     }
                     if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) {
