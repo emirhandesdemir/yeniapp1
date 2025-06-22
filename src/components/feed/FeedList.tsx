@@ -1,3 +1,4 @@
+
 // Bu FeedList bileşeni, ana sayfa akış mantığının doğrudan src/app/page.tsx içine
 // entegre edilmesiyle birlikte artık kullanılmamaktadır.
 // Proje yapısını temiz tutmak ve olası karışıklıkları önlemek amacıyla içeriği boşaltılmıştır.

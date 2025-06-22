@@ -13,13 +13,6 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "HiweWalk",
   description: "Yeni nesil sosyal etkileşim platformu.",
-  manifest: "/manifest.json",
-  themeColor: "#ffffff",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "HiweWalk",
-  },
 };
 
 export default function RootLayout({
