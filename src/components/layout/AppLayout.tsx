@@ -44,7 +44,7 @@ import {
 } from "firebase/firestore";
 import { UserCheck, UserX, Star } from 'lucide-react';
 import WelcomeOnboarding from '@/components/onboarding/WelcomeOnboarding';
-import { InAppNotificationData, useInAppNotification } from '@/contexts/InAppNotificationContext';
+import { useInAppNotification, type InAppNotificationData } from '@/contexts/InAppNotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { requestNotificationPermission, subscribeUserToPush } from '@/lib/notificationUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -76,12 +76,12 @@ interface IncomingCallInfo {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: () => '/', label: 'Akış', icon: Globe, activeIcon: Globe }, // Corrected href to '/'
+  { href: () => '/', label: 'Akış', icon: Globe, activeIcon: Globe },
   { href: () => '/chat', label: 'Odalar', icon: Compass, activeIcon: Compass },
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
   { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle },
   { href: () => '/friends', label: 'Arkadaşlar', icon: Users, activeIcon: UserPlus },
-  { href: (uid) => uid ? `/profile/${uid}` : '/profile', label: 'Profil', icon: UserRound, activeIcon: UserRound },
+  { href: (uid) => uid ? `/profile/${uid}` : '/settings', label: 'Profil', icon: UserRound, activeIcon: UserRound },
 ];
 
 function BottomNavItem({ item, isActive, currentUserUid }: { item: BottomNavItemType, isActive: boolean, currentUserUid?: string }) {
@@ -376,18 +376,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const getAvatarFallback = useCallback((name?: string | null) => (name ? name.substring(0, 2).toUpperCase() : currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "HW"), [currentUser?.email]);
 
-  const isAuthPage = pathname === '/login' || pathname === '/signup';
-  const isSpecialPage = isAuthPage || pathname.startsWith('/admin') || pathname.startsWith('/call');
-
-  const mainContentClasses = cn("flex-1 overflow-auto bg-background", isSpecialPage ? "p-0" : "px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-[calc(theme(spacing.16)+theme(spacing.3))] sm:pb-[calc(theme(spacing.16)+theme(spacing.4))]");
+  const isChatPage = pathname.startsWith('/chat/') || pathname.startsWith('/dm/') || pathname.startsWith('/call/');
   
-  if (isAuthPage || isAuthActionLoading) {
-    return <>{children}</>;
-  }
+  const mainContentClasses = cn("flex-1 overflow-auto bg-background", isChatPage ? "p-0" : "px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-[calc(theme(spacing.16)+theme(spacing.3))] sm:pb-[calc(theme(spacing.16)+theme(spacing.4))]");
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {!isSpecialPage && (
         <header className="flex h-14 items-center justify-between border-b border-border bg-card px-3 sm:px-4 sticky top-0 z-30 shadow-sm">
           <Link href="/" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">HiweWalk</Link>
           <div className="flex items-center gap-0.5 sm:gap-1">
@@ -431,7 +425,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </Popover>
           </div>
         </header>
-      )}
       {isClient ? (<AnimatePresence mode="wait"><motion.main key={pathname} className={cn(mainContentClasses, "flex flex-col")} variants={pageVariants} initial="initial" animate="in" exit="out" transition={pageTransition}>{children}</motion.main></AnimatePresence>) : (<main className={cn(mainContentClasses, "flex flex-col")}>{children}</main>)}
       {isClient && showOnboarding && <WelcomeOnboarding isOpen={showOnboarding} onClose={handleCloseOnboarding} />}
       {isClient && <MinimizedChatWidget />}
@@ -450,7 +443,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </DialogContent>
         </Dialog>
       )}
-      {!isSpecialPage && isClient && currentUser && (
+      {isClient && currentUser && !isChatPage && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-[0_-2px_10px_-3px_rgba(0,0,0,0.07)] z-30">
           {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profil' ? pathname.startsWith('/profile') || pathname.startsWith('/settings') : pathname === item.href(currentUser?.uid) || (item.label === 'Akış' && pathname === '/')} currentUserUid={currentUser?.uid}/>))}
         </nav>

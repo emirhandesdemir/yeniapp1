@@ -1,3 +1,4 @@
+
 import { notFound } from 'next/navigation';
 
 // This file exists to prevent a routing conflict with /src/app/(main)/page.tsx
