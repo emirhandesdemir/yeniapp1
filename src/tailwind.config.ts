@@ -1,5 +1,4 @@
-
-// This file is deprecated. The main configuration is in the root `tailwind.config.js`.
-// This file is modified to re-export the root config to prevent build errors.
-const config = require('../../tailwind.config.js');
-module.exports = config;
+// This file is non-standard and can cause build issues with Next.js/Tailwind.
+// The main configuration should only exist in the root `tailwind.config.js`.
+// This file has been neutralized to prevent conflicts.
+module.exports = {};
