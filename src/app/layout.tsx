@@ -8,7 +8,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
-import { usePathname } from 'next/navigation';
 
 // Metadata needs to be handled differently in client components,
 // typically in the nearest server component parent or page.
@@ -24,8 +23,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const pathname = usePathname();
-
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
