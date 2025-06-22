@@ -76,7 +76,7 @@ interface IncomingCallInfo {
 }
 
 const bottomNavItems: BottomNavItemType[] = [
-  { href: () => '/', label: 'Akış', icon: Globe, activeIcon: Globe },
+  { href: () => '/feed', label: 'Akış', icon: Globe, activeIcon: Globe }, // Updated href
   { href: () => '/chat', label: 'Odalar', icon: Compass, activeIcon: Compass },
   { href: () => '/direct-messages', label: 'DM', icon: MessageCircle, activeIcon: MessageCircle },
   { href: () => '/match', label: 'Eşleş', icon: Shuffle, activeIcon: Shuffle },
@@ -389,7 +389,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex flex-col min-h-screen bg-background">
       {!isSpecialPage && (
         <header className="flex h-14 items-center justify-between border-b border-border bg-card px-3 sm:px-4 sticky top-0 z-30 shadow-sm">
-          <Link href="/" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">HiweWalk</Link>
+          <Link href="/feed" aria-label="Anasayfa" className="text-xl font-bold text-primary font-headline">HiweWalk</Link>
           <div className="flex items-center gap-0.5 sm:gap-1">
              <Button asChild variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-foreground w-8 h-8 sm:w-9 sm:h-9" aria-label="Ayarlar">
                 <Link href="/settings"><Settings className="h-4 w-4 sm:h-5 sm:w-5" /></Link>
@@ -452,7 +452,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
       {!isSpecialPage && isClient && currentUser && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-[0_-2px_10px_-3px_rgba(0,0,0,0.07)] z-30">
-          {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profil' ? pathname.startsWith('/profile/') || pathname.startsWith('/settings') : pathname === item.href(currentUser?.uid)} currentUserUid={currentUser?.uid}/>))}
+          {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profil' ? pathname.startsWith('/profile/') || pathname.startsWith('/settings') : pathname.startsWith(item.href(currentUser?.uid))} currentUserUid={currentUser?.uid}/>))}
         </nav>
       )}
     </div>

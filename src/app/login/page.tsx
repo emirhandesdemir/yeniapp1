@@ -29,7 +29,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && currentUser) {
-      const redirectUrl = searchParams.get('redirect') || '/';
+      const redirectUrl = searchParams.get('redirect') || '/feed';
       router.replace(redirectUrl);
     }
   }, [currentUser, loading, router, searchParams]);
@@ -57,5 +57,3 @@ export default function LoginPage() {
     </AuthLayout>
   );
 }
-
-    
