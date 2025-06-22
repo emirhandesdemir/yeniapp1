@@ -1,12 +1,7 @@
 
 import type { ReactNode } from 'react';
 
-// Bu, 404 hatasının kaynağını bulmak için basitleştirilmiş bir MainLayout'tur.
-// Karmaşık AppLayout bileşeni geçici olarak kaldırılmıştır.
-export default function MainAppPagesLayout({ children }: { children: ReactNode }) {
-  return (
-    <div>
-      <main>{children}</main>
-    </div>
-  );
+// Bu dosya, 404 hatasının kaynağını bulmak için geçici olarak etkisizleştirilmiştir.
+export default function DeprecatedMainLayout({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }

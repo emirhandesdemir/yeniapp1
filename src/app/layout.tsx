@@ -1,14 +1,11 @@
 
-import type { Metadata } from 'next';
 import './globals.css';
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'HiweWalk - Hata Ayıklama',
-  description: 'Başlangıç sorunları gideriliyor.',
+  description: 'Uygulama başlangıç sorunu gideriliyor.',
 };
 
-// Bu, 404 hatasının kaynağını bulmak için basitleştirilmiş bir RootLayout'tur.
-// Tüm karmaşık sağlayıcılar (Provider) geçici olarak kaldırılmıştır.
 export default function RootLayout({
   children,
 }: {
@@ -16,7 +13,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="tr">
-      <body>{children}</body>
+      <body className="bg-background text-foreground">
+        {children}
+      </body>
     </html>
   );
 }
