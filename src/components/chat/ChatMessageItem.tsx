@@ -75,9 +75,9 @@ interface ChatMessageItemProps {
   onKickParticipantFromTextChat?: (targetUserId: string, targetUsername?: string) => void;
   roomId: string;
   isActiveParticipant: boolean;
+  onStartEdit: (messageId: string, currentText: string) => void;
   onMessageDeleted: (messageId: string) => void;
   onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
-  onStartEdit: (messageId: string, currentText: string) => void;
 }
 
 const PREDEFINED_REACTIONS = [
@@ -107,9 +107,8 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   onKickParticipantFromTextChat,
   roomId,
   isActiveParticipant,
-  onMessageDeleted,
-  onMessageEdited,
   onStartEdit,
+  onMessageDeleted
 }) => {
   const { reportUser, blockUser, unblockUser, checkIfUserBlocked, userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
@@ -148,6 +147,7 @@ const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
   const handleCopyText = () => {
     navigator.clipboard.writeText(msg.text);
     toast({ title: "Kopyalandı", description: "Mesaj panoya kopyalandı." });
+    setIsMenuOpen(false);
   };
 
   const handleEditMessage = () => {

@@ -1,3 +1,4 @@
+
 usht i Bu uygulamanin lisansi ve hakları gizlidir.
 
 ---

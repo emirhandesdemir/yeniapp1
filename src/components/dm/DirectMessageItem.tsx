@@ -57,6 +57,8 @@ interface DirectMessageItemProps {
   chatId: string;
   onStartEdit: (messageId: string, currentText: string) => void;
   isMatchSession?: boolean;
+  onMessageDeleted: (messageId: string) => void;
+  onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
 }
 
 const PREDEFINED_REACTIONS = [
@@ -73,6 +75,8 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   chatId,
   onStartEdit,
   isMatchSession,
+  onMessageDeleted,
+  onMessageEdited,
 }) => {
   const { userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
@@ -121,6 +125,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
     try {
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
+      onMessageDeleted(msg.id);
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
     } catch (error) {
       console.error("Error deleting direct message:", error);
