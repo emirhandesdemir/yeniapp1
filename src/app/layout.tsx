@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
@@ -5,7 +6,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
-import AppLayout from '@/components/layout/AppLayout';
 
 export const metadata: Metadata = {
   title: 'HiweWalk',
@@ -49,9 +49,7 @@ export default function RootLayout({
           <AuthProvider>
             <InAppNotificationProvider>
               <MinimizedChatProvider>
-                <AppLayout>
-                    {children}
-                </AppLayout>
+                {children}
                 <Toaster />
               </MinimizedChatProvider>
             </InAppNotificationProvider>
