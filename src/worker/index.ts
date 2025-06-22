@@ -1,2 +1,2 @@
-// PWA functionality has been temporarily disabled to resolve a server startup issue.
-// This file can be restored once the root cause is identified and fixed.
+// PWA functionality has been removed.
+// This file is now obsolete and can be deleted in the future.
