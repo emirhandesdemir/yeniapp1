@@ -161,64 +161,71 @@ export default function DirectMessagePage() {
     if (!chatId || !currentUser?.uid) return;
     setLoadingDmPartner(true);
 
+    let partnerUnsubscribe: (() => void) | undefined;
     const dmDocRef = doc(db, "directMessages", chatId);
+    
     const unsubscribeDmDoc = onSnapshot(dmDocRef, async (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data() as DmDocumentData;
-            setDmDocData(data);
-            
-            const partnerUid = data.participantUids.find(uid => uid !== currentUser.uid);
-            if (!partnerUid) {
-                toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
-                router.push("/friends"); return;
-            }
-            
-            try {
-                const userDocRef = doc(db, "users", partnerUid);
-                const userSnap = await getDoc(userDocRef);
-                if (userSnap.exists()) {
-                    const partnerData = userSnap.data() as UserData;
-                    setDmPartnerDetails({
-                        uid: partnerUid,
-                        displayName: partnerData.displayName,
-                        photoURL: partnerData.photoURL,
-                        email: partnerData.email,
-                        isPremium: checkUserPremium(partnerData),
-                        isBanned: partnerData.isBanned || false,
-                        lastSeen: partnerData.lastSeen || null,
-                        avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
-                    });
-                    document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
-                } else {
-                     const partnerInfoFromDM = data.participantInfo?.[partnerUid];
-                     setDmPartnerDetails({
-                        uid: partnerUid,
-                        displayName: partnerInfoFromDM?.displayName || "Bilinmeyen Kullanıcı",
-                        photoURL: partnerInfoFromDM?.photoURL || null,
-                        lastSeen: null,
-                     });
-                     document.title = `${partnerInfoFromDM?.displayName || 'Sohbet'} - DM`;
-                }
-            } catch (error) {
-                console.error("Error fetching partner details:", error);
-            }
+      if (partnerUnsubscribe) {
+        partnerUnsubscribe();
+      }
 
-            if (currentUser && partnerUid) {
-                checkIfUserBlocked(partnerUid).then(setIsPartnerBlockedByCurrentUser);
-                checkIfCurrentUserIsBlockedBy(partnerUid).then(setIsCurrentUserBlockedByPartner);
-            }
-
-        } else {
-            toast({ title: "Hata", description: "Sohbet bulunamadı.", variant: "destructive" });
-            router.push("/direct-messages");
+      if (docSnap.exists()) {
+        const data = docSnap.data() as DmDocumentData;
+        setDmDocData(data);
+        const partnerUid = data.participantUids.find(uid => uid !== currentUser.uid);
+        
+        if (!partnerUid) {
+          toast({ title: "Hata", description: "Sohbet partneri bulunamadı.", variant: "destructive" });
+          router.push("/friends");
+          return;
         }
-        setLoadingDmPartner(false);
+
+        const userDocRef = doc(db, "users", partnerUid);
+        partnerUnsubscribe = onSnapshot(userDocRef, (userSnap) => {
+          const partnerInfoFromDM = data.participantInfo?.[partnerUid];
+          if (userSnap.exists()) {
+            const partnerData = userSnap.data() as UserData;
+            setDmPartnerDetails({
+              uid: partnerUid,
+              displayName: partnerData.displayName,
+              photoURL: partnerData.photoURL,
+              email: partnerData.email,
+              isPremium: checkUserPremium(partnerData),
+              isBanned: partnerData.isBanned || false,
+              lastSeen: partnerData.lastSeen || null,
+              avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
+            });
+            document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
+          } else {
+            setDmPartnerDetails({
+              uid: partnerUid,
+              displayName: partnerInfoFromDM?.displayName || "Bilinmeyen Kullanıcı",
+              photoURL: partnerInfoFromDM?.photoURL || null,
+              lastSeen: null,
+            });
+            document.title = `${partnerInfoFromDM?.displayName || 'Sohbet'} - DM`;
+          }
+        });
+
+        if (currentUser && partnerUid) {
+          checkIfUserBlocked(partnerUid).then(setIsPartnerBlockedByCurrentUser);
+          checkIfCurrentUserIsBlockedBy(partnerUid).then(setIsCurrentUserBlockedByPartner);
+        }
+      } else {
+        toast({ title: "Hata", description: "Sohbet bulunamadı.", variant: "destructive" });
+        router.push("/direct-messages");
+      }
+      setLoadingDmPartner(false);
     }, (error) => {
-        setLoadingDmPartner(false);
-        toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive"});
+      setLoadingDmPartner(false);
+      toast({ title: "Hata", description: "Sohbet bilgileri alınırken bir sorun oluştu.", variant: "destructive" });
     });
+
     return () => {
-        unsubscribeDmDoc();
+      unsubscribeDmDoc();
+      if (partnerUnsubscribe) {
+        partnerUnsubscribe();
+      }
     };
   }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
 

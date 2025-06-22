@@ -345,8 +345,8 @@ export default function MatchChatPage() {
         <ScrollArea className="flex-1 p-3 sm:p-4" ref={scrollAreaRef}>
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
-              <motion.div key={msg.id} layout variants={messageVariants} initial="hidden" animate="visible">
-                <DirectMessageItem msg={msg} getAvatarFallbackText={getAvatarFallbackText} chatId={chatId} isMatchSession={true} onMessageDeleted={() => {}} onMessageEdited={() => {}} />
+              <motion.div key={msg.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } }}>
+                <DirectMessageItem msg={msg} getAvatarFallbackText={getAvatarFallbackText} chatId={chatId} isMatchSession={true} onStartEdit={() => {}} onMessageDeleted={() => {}} onMessageEdited={() => {}} />
               </motion.div>
             ))}
           </AnimatePresence>
