@@ -1,3 +1,4 @@
+
 const withPWAInit = require('@ducanh2912/next-pwa');
 
 const customRuntimeCaching = [
@@ -71,11 +72,10 @@ const pwaConfig = {
   dest: 'public',
   register: true,
   skipWaiting: true,
-  reloadOnOnline: true, // Re-added to help with cache-busting
   disable: process.env.NODE_ENV === 'development',
   runtimeCaching: customRuntimeCaching,
-  buildExcludes: [/middleware-manifest\.json$/],
-  fallbacks: {
+  buildExcludes: [/middleware-manifest\.json$/], 
+  fallbacks: { 
     document: '/offline',
   },
   swSrc: 'src/worker/index.ts',
@@ -126,7 +126,7 @@ const currentNextConfig = {
         port: '',
         pathname: '/**',
       },
-      {
+      { 
         protocol: 'https',
         hostname: 'firebasestorage.googleapis.com',
       },
