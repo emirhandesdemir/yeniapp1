@@ -1845,7 +1845,7 @@ export default function ChatRoomPage() {
       )}
       <div className="flex flex-col h-full bg-card rounded-xl shadow-lg overflow-hidden relative">
         {Object.entries(activeRemoteStreams).map(([uid, stream]) => {
-            console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
+            console.log(`[WebRTC RENDER] Rendering audio element for ${uid}`, stream, stream?.id, stream?.active, stream?.getAudioTracks().map(t => ({id:t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState})));
             return (
             <audio
                 key={uid}
@@ -1890,8 +1890,30 @@ export default function ChatRoomPage() {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-semibold text-foreground truncate" title={roomDetails.name}>{roomDetails.name}</h2>
-                {isCurrentUserRoomCreator && <Crown className="h-4 w-4 text-yellow-500 flex-shrink-0" title="Oda Sahibi" />}
-                {roomDetails.creatorIsPremium && <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" title="Premium Oda Sahibi" />}
+                {isCurrentUserRoomCreator && (
+                    <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger>
+                                <Crown className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Oda Sahibi</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
+                {roomDetails.creatorIsPremium && (
+                     <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger>
+                                <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Premium Oda Sahibi</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
                 {roomDetails.description && (<TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary p-0"><Info className="h-4 w-4" /> <span className="sr-only">Oda Açıklaması</span></Button></TooltipTrigger><TooltipContent side="bottom" className="max-w-xs"><p className="text-xs">{roomDetails.description}</p></TooltipContent></Tooltip></TooltipProvider>)}
                 </div>
                 <div className="flex items-center text-xs text-muted-foreground gap-x-2 flex-wrap">
