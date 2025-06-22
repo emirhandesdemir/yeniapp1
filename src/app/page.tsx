@@ -1,8 +1,3 @@
-
-// Bu dosyanın içeriği ana sayfayı düzgün bir şekilde yönlendirmek ve
-// (main) route group'u içindeki düzene uymak için src/app/(main)/page.tsx dosyasına taşındı.
-// Bu dosya artık gereksizdir ve projenizden güvenle silinebilir.
-
-export default function DeprecatedHomePage() {
-  return null;
-}
+// Bu dosyanın içeriği, /app/(main)/page.tsx ile olan yönlendirme çakışmasını çözmek için temizlenmiştir.
+// Ana sayfa içeriği artık doğru bir şekilde /app/(main)/page.tsx dosyasında bulunmaktadır.
+// Bu dosya güvenle silinebilir.
