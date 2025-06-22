@@ -1,20 +1,48 @@
 
-import './globals.css';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { Toaster } from "@/components/ui/toaster";
+import { InAppNotificationProvider } from "@/contexts/InAppNotificationContext";
+import { MinimizedChatProvider } from "@/contexts/MinimizedChatContext";
 
-export const metadata = {
-  title: 'HiweWalk - Hata Ayıklama',
-  description: 'Uygulama başlangıç sorunu gideriliyor.',
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "HiweWalk",
+  description: "Yeni nesil sosyal etkileşim platformu.",
+  manifest: "/manifest.json",
+  themeColor: "#ffffff",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "HiweWalk",
+  },
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
-    <html lang="tr">
-      <body className="bg-background text-foreground">
-        {children}
+    <html lang="tr" suppressHydrationWarning>
+      <body className={inter.className}>
+        <ThemeProvider
+          defaultTheme="system"
+          storageKey="hiwewalk-theme"
+        >
+          <AuthProvider>
+            <InAppNotificationProvider>
+              <MinimizedChatProvider>
+                {children}
+                <Toaster />
+              </MinimizedChatProvider>
+            </InAppNotificationProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
