@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 9002",
+    "dev": "next dev",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "next build",
@@ -15,7 +15,6 @@
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.7",
     "@genkit-ai/googleai": "0.5.0",
-    "@genkit-ai/next": "0.5.0",
     "@hookform/resolvers": "^3.6.0",
     "@opentelemetry/exporter-jaeger": "^1.22.0",
     "@radix-ui/react-accordion": "^1.2.3",
