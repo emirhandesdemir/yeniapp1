@@ -154,6 +154,14 @@ export default function DirectMessagePage() {
     setNewMessage("");
   }, []);
   
+  const handleMessageDeleted = (messageId: string) => {
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+  };
+  
+  const handleMessageEdited = (messageId: string, newText: string, editedAt: Timestamp) => {
+     setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text: newText, editedAt } : m));
+  };
+
   const handleSaveEdit = useCallback(async () => {
     if (!editingMessage || !newMessage.trim() || newMessage.trim() === editingMessage.text) {
       handleCancelEdit();
@@ -714,7 +722,7 @@ export default function DirectMessagePage() {
 
   const partnerActivityStatus = formatPartnerLastSeen(dmPartnerDetails?.lastSeen);
   const isPartnerCurrentlyActive = partnerActivityStatus === "Aktif";
-  const isMatchSessionActive = isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded;
+  const isMatchSessionActive = !!(isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded);
 
   const headerBackButtonAction = () => {
     if (isMatchSessionActive) {
@@ -922,7 +930,7 @@ export default function DirectMessagePage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={showDecisionModal && isMatchSessionChat && dmDocDataRef.current && !dmDocDataRef.current.matchSessionEnded && myDecision === 'pending'} onOpenChange={(open) => { if(!open) setShowDecisionModal(false); }}>
+      <AlertDialog open={!!(showDecisionModal && isMatchSessionChat && dmDocDataRef.current && !dmDocDataRef.current.matchSessionEnded && myDecision === 'pending')} onOpenChange={(open) => { if(!open) setShowDecisionModal(false); }}>
         <AlertDialogContent className="sm:max-w-sm">
             <AlertDialogHeader>
                 <div className="flex justify-center mb-3">
@@ -966,4 +974,6 @@ export default function DirectMessagePage() {
     </div>
   );
 }
+
+
 
