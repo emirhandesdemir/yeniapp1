@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import React, { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, ShieldAlert, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Bot, Palette, ArrowLeft } from 'lucide-react';
+import { Loader2, ShieldAlert, LayoutDashboard, Users, ListChecks, Settings2 as GameSettingsIcon, Palette, ArrowLeft } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,6 @@ const adminNavItems = [
   { href: "/admin/chat-rooms", label: "Odalar", icon: ListChecks },
   { href: "/admin/game-settings", label: "Oyun", icon: GameSettingsIcon },
   { href: "/admin/appearance", label: "Görünüm", icon: Palette },
-  { href: "/admin/project-assistant", label: "Asistan", icon: Bot },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
