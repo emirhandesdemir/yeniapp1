@@ -5,8 +5,8 @@ import { messaging } from '@/lib/firebase'; // Firebase'den messaging import edi
 import { getToken, deleteToken } from 'firebase/messaging';
 
 // ===================================================================================
-// VAPID anahtarı eklendi.
-const VAPID_KEY = "BNpgmdIpfel0F4oErwFBjyh28V8tlYpoBJ7pb2V5pR3Sm8r";
+// VAPID anahtarı artık .env dosyasından okunuyor.
+const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_KEY || "";
 // ===================================================================================
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
@@ -30,9 +30,9 @@ export async function subscribeUserToPush(): Promise<string | null> {
     return null;
   }
 
-  if (!VAPID_KEY || VAPID_KEY === "YOUR_VAPID_KEY_HERE") {
-    console.warn("VAPID_KEY is not set in notificationUtils.ts. Push notifications may not work correctly.");
-    // We will proceed anyway to allow for local testing, but this is a critical warning for production.
+  if (!VAPID_KEY) {
+    console.error("VAPID_KEY is not set in environment variables (NEXT_PUBLIC_VAPID_KEY). Push notifications will not work.");
+    return null;
   }
 
   try {

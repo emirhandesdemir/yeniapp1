@@ -36,13 +36,16 @@ try {
   if (typeof window !== 'undefined') {
     // Initialize Firebase App Check with reCAPTCHA v3 provider
     try {
-      // IMPORTANT: Replace the placeholder below with your actual reCAPTCHA v3 Site Key.
-      // You can get this key from the Google Cloud Console or your Firebase project's App Check section.
-      initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider('6LeUBGkrAAAAANbXDY-97-kzg9QofLWJSYRy1Vj1'),
-        isTokenAutoRefreshEnabled: true,
-      });
-      console.log("Firebase App Check initialized successfully.");
+      const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+      if (!recaptchaSiteKey) {
+        console.warn("reCAPTCHA v3 Site Key is not set in environment variables (NEXT_PUBLIC_RECAPTCHA_SITE_KEY). App Check will be disabled.");
+      } else {
+        initializeAppCheck(app, {
+          provider: new ReCaptchaV3Provider(recaptchaSiteKey),
+          isTokenAutoRefreshEnabled: true,
+        });
+        console.log("Firebase App Check initialized successfully.");
+      }
     } catch (e) {
       console.error("Firebase App Check initialization error:", e);
     }
