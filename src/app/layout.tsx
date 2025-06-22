@@ -5,7 +5,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
-import AppLayout from '@/components/layout/AppLayout';
 import "./globals.css";
 
 const inter = Inter({ subsets: ['latin'] });
@@ -29,15 +28,11 @@ export default function RootLayout({
           <meta name="viewport" content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no, user-scalable=no, viewport-fit=cover" />
       </head>
       <body className={inter.className}>
-        <ThemeProvider
-          storageKey="hiwewalk-theme"
-        >
+        <ThemeProvider storageKey="hiwewalk-theme">
           <AuthProvider>
             <InAppNotificationProvider>
               <MinimizedChatProvider>
-                <AppLayout>
-                  {children}
-                </AppLayout>
+                {children}
                 <Toaster />
               </MinimizedChatProvider>
             </InAppNotificationProvider>
