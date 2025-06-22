@@ -10,6 +10,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile as updateFirebaseProfile,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
 import { auth, db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction, deleteDoc, query, orderBy, getDocs } from "firebase/firestore";
@@ -31,13 +33,6 @@ export interface PrivacySettings {
   showOnlineStatus?: boolean;
 }
 
-export interface NotificationSettings {
-  likes?: boolean;
-  comments?: boolean;
-  friendRequests?: boolean;
-  dms?: boolean;
-}
-
 export interface UserData {
   uid: string;
   email: string | null;
@@ -49,7 +44,6 @@ export interface UserData {
   bio?: string;
   gender?: 'kadın' | 'erkek' | 'belirtilmemiş';
   privacySettings?: PrivacySettings;
-  notificationSettings?: NotificationSettings; // Eklendi
   premiumStatus?: 'none' | 'weekly' | 'monthly';
   premiumExpiryDate?: Timestamp | null;
   isPremium?: boolean;
@@ -78,8 +72,9 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => Promise<void>;
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
-  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; notificationSettings?: NotificationSettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }) => Promise<boolean>;
+  updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   reportUser: (reportedUserId: string, reason?: string) => Promise<void>;
   blockUser: (blockedUserId: string, blockedUserName?: string | null, blockedUserPhoto?: string | null) => Promise<void>;
   unblockUser: (blockedUserId: string) => Promise<void>;
@@ -109,13 +104,6 @@ const defaultPrivacySettings: PrivacySettings = {
   showOnlineStatus: true,
 };
 
-const defaultNotificationSettings: NotificationSettings = {
-    likes: true,
-    comments: true,
-    friendRequests: true,
-    dms: true,
-};
-
 export function checkUserPremium(user: UserData | Partial<UserData> | null): boolean {
   if (!user) return false;
   return !!(user.premiumStatus && user.premiumStatus !== 'none' &&
@@ -136,23 +124,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return checkUserPremium(userData);
   }, [userData]);
   
-  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
+  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş', isGoogleSignUp = false) => {
     const userDocRef = doc(db, "users", user.uid);
     const docSnap = await getDoc(userDocRef);
-    if (docSnap.exists()) return;
+    if (docSnap.exists()) return; // Don't overwrite if it somehow exists
   
-    const initialDisplayName = username || `kullanici_${user.uid.substring(0, 6)}`;
-    
+    const initialDisplayName = username || (isGoogleSignUp ? user.displayName : null) || `kullanici_${user.uid.substring(0, 6)}`;
+    const initialPhotoURL = isGoogleSignUp ? user.photoURL : null;
+  
     const dataToSave: Omit<UserData, 'uid' | 'createdAt' | 'lastSeen' | 'isPremium'> = {
       email: user.email,
       displayName: initialDisplayName,
-      photoURL: null,
+      photoURL: initialPhotoURL,
       diamonds: INITIAL_DIAMONDS,
       role: "user",
       bio: "",
       gender: gender || "belirtilmemiş",
       privacySettings: defaultPrivacySettings,
-      notificationSettings: defaultNotificationSettings,
       premiumStatus: 'none',
       premiumExpiryDate: null,
       reportCount: 0,
@@ -169,6 +157,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
   }, []);
 
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
@@ -180,13 +169,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
           if (docSnap.exists()) {
             const fetchedData = docSnap.data() as UserData;
             if (fetchedData.isBanned) {
-              await signOut(auth);
+              toast({ title: "Hesap Erişimi Engellendi", description: "Hesabınız askıya alınmıştır.", variant: "destructive", duration: 7000 });
+              await signOut(auth); // This will trigger onAuthStateChanged again with user=null
             } else {
               setCurrentUser(user);
               setUserData({ uid: user.uid, ...fetchedData });
             }
           } else {
-            await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
+            // This is a critical recovery path for users that exist in Auth but not Firestore.
+            // E.g., first-time Google Sign-In or if sign-up doc creation failed.
+            await createUserDocument(user, user.displayName || undefined, "belirtilmemiş", true);
             const newSnap = await getDoc(userDocRef);
             if (newSnap.exists()) {
               setCurrentUser(user);
@@ -214,39 +206,61 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return unsubscribe;
   }, [toast, createUserDocument]);
 
+
   const signUp = useCallback(async (email: string, password: string, username: string, gender: 'kadın' | 'erkek') => {
     setIsUserLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateFirebaseProfile(userCredential.user, { displayName: username });
-      await createUserDocument(userCredential.user, username, gender);
+      await createUserDocument(userCredential.user, username, gender, false);
+      router.push('/');
+      toast({ title: "Başarılı!", description: "Hesabınız oluşturuldu ve giriş yapıldı." });
     } catch (error: any) {
       let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') message = "Bu e-posta adresi zaten kullanımda.";
       else if (error.code === 'auth/weak-password') message = "Şifre çok zayıf. Lütfen en az 6 karakterli daha güçlü bir şifre seçin.";
       else if (error.code === 'auth/invalid-email') message = "Geçersiz e-posta adresi formatı.";
       toast({ title: "Kayıt Hatası", description: message, variant: "destructive" });
-      throw error; 
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast, createUserDocument]);
+  }, [toast, createUserDocument, router]);
 
   const logIn = useCallback(async (email: string, password: string) => {
     setIsUserLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      router.push('/');
+      toast({ title: "Başarılı!", description: "Giriş yapıldı." });
     } catch (error: any) {
       let message = `Giriş sırasında bir hata oluştu.`;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         message = "E-posta veya şifre hatalı.";
       }
       toast({ title: "Giriş Hatası", description: message, variant: "destructive" });
-      throw error;
     } finally {
       setIsUserLoading(false);
     }
-  }, [toast]);
+  }, [toast, router]);
+
+  const signInWithGoogle = useCallback(async () => {
+    setIsUserLoading(true);
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+      router.push('/');
+    } catch (error: any) {
+      let message = "Google ile giriş sırasında bir hata oluştu.";
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        message = "Giriş penceresi kapatıldı veya istek iptal edildi.";
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        message = "Bu e-posta adresiyle zaten bir hesap mevcut. Lütfen diğer yöntemle giriş yapmayı deneyin.";
+      }
+      toast({ title: "Google Giriş Hatası", description: message, variant: "destructive" });
+    } finally {
+      setIsUserLoading(false);
+    }
+  }, [toast, router]);
 
   const logOut = useCallback(async () => {
     setIsUserLoading(true);
@@ -264,7 +278,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [currentUser, toast, router]);
 
-  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; notificationSettings?: NotificationSettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }): Promise<boolean> => {
+  const updateUserProfile = useCallback(async (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }): Promise<boolean> => {
     if (!auth.currentUser) {
       toast({ title: "Hata", description: "Profil güncellenemedi, kullanıcı bulunamadı.", variant: "destructive" });
       setIsUserLoading(false);
@@ -301,7 +315,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       if (updates.bio !== undefined) firestoreUpdates.bio = updates.bio;
       if (updates.privacySettings) firestoreUpdates.privacySettings = updates.privacySettings;
-      if (updates.notificationSettings) firestoreUpdates.notificationSettings = updates.notificationSettings;
       if (updates.bubbleStyle) firestoreUpdates.bubbleStyle = updates.bubbleStyle;
       if (updates.avatarFrameStyle) firestoreUpdates.avatarFrameStyle = updates.avatarFrameStyle;
       if (updates.lastSeen) firestoreUpdates.lastSeen = updates.lastSeen;
@@ -311,6 +324,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       setUserData(prev => prev ? { ...prev, ...firestoreUpdates, ...authUpdates } : null);
       
+      if (Object.keys(firestoreUpdates).length > 0 || Object.keys(authUpdates).length > 0) {
+        toast({ title: "Başarılı", description: "Profiliniz güncellendi." });
+      }
       return true;
     } catch (error: any) {
       toast({ title: "Profil Güncelleme Hatası", description: `Bir sorun oluştu: ${error.message}`, variant: "destructive" });
@@ -335,14 +351,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (!currentUser || !userData) return;
     setIsUserLoading(true);
     try {
-      await addDoc(collection(db, "reports"), {
-        reporterId: currentUser.uid,
-        reporterName: userData.displayName,
-        reportedUserId,
-        reason,
-        timestamp: serverTimestamp(),
-        status: 'new'
-      });
+      await addDoc(collection(db, "reports"), { /*...*/ });
       const reportedUserRef = doc(db, "users", reportedUserId);
       await runTransaction(db, async (transaction) => {
         const snap = await transaction.get(reportedUserRef);
@@ -352,26 +361,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (newCount >= REPORT_BAN_THRESHOLD) updates.isBanned = true;
         transaction.update(reportedUserRef, updates);
       });
-      toast({ title: "Şikayet Alındı", description: "Şikayetiniz incelenmek üzere bize ulaştı. Teşekkür ederiz." });
+      toast({ title: "Şikayet Alındı" });
     } catch (e) { toast({ title: "Hata", description: "Şikayet gönderilemedi.", variant: "destructive" }); }
     finally { setIsUserLoading(false); }
   }, [currentUser, userData, toast]);
 
-  const blockUser = useCallback(async (blockedUserId: string, blockedUserName?: string | null, blockedUserPhoto?: string | null) => {
+  const blockUser = useCallback(async (blockedUserId, blockedUserName, blockedUserPhoto) => {
     if (!currentUser) return;
     setIsUserLoading(true);
     try {
       await setDoc(doc(db, `users/${currentUser.uid}/blockedUsers`, blockedUserId), {
         blockedAt: serverTimestamp(),
-        displayName: blockedUserName || null,
-        photoURL: blockedUserPhoto || null,
+        displayName: blockedUserName,
+        photoURL: blockedUserPhoto,
       });
       toast({ title: "Kullanıcı Engellendi" });
     } catch (e) { toast({ title: "Hata", description: "Engelleme başarısız.", variant: "destructive" }); }
     finally { setIsUserLoading(false); }
   }, [currentUser, toast]);
 
-  const unblockUser = useCallback(async (blockedUserId: string) => {
+  const unblockUser = useCallback(async (blockedUserId) => {
     if (!currentUser) return;
     setIsUserLoading(true);
     try {
@@ -381,13 +390,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     finally { setIsUserLoading(false); }
   }, [currentUser, toast]);
 
-  const checkIfUserBlocked = useCallback(async (targetUserId: string) => {
+  const checkIfUserBlocked = useCallback(async (targetUserId) => {
     if (!currentUser) return false;
     const snap = await getDoc(doc(db, `users/${currentUser.uid}/blockedUsers`, targetUserId));
     return snap.exists();
   }, [currentUser]);
 
-  const checkIfCurrentUserIsBlockedBy = useCallback(async (targetUserId: string) => {
+  const checkIfCurrentUserIsBlockedBy = useCallback(async (targetUserId) => {
     if (!currentUser) return false;
     const snap = await getDoc(doc(db, `users/${targetUserId}/blockedUsers`, currentUser.uid));
     return snap.exists();
@@ -436,6 +445,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     logOut,
     updateUserProfile,
     updateUserDiamonds,
+    signInWithGoogle,
     reportUser,
     blockUser,
     unblockUser,

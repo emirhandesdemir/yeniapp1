@@ -1,6 +1,14 @@
 
 "use client";
-// This page is temporarily disabled to diagnose the startup issue.
+
+import React from 'react'; // Added explicit React import
+import AdminDashboardContent from "@/components/admin/sections/AdminDashboardContent";
+
+export const dynamic = 'force-dynamic'; // Sayfanın dinamik olarak render edilmesini zorla
+
 export default function AdminDashboardPage() {
-    return <div>Admin paneli geçici olarak devre dışı.</div>;
+  // Bu sayfa, AdminOverlayPanel içinde AdminDashboardContent komponentini kullanır.
+  // Doğrudan /admin/dashboard adresine gidildiğinde de bu içerik gösterilir.
+  // Ana yetkilendirme src/app/(admin)/layout.tsx tarafından yapılır.
+  return <AdminDashboardContent />;
 }
