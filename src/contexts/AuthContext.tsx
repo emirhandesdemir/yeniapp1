@@ -10,8 +10,6 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile as updateFirebaseProfile,
-  GoogleAuthProvider,
-  signInWithPopup,
 } from 'firebase/auth';
 import { auth, db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, increment, runTransaction, deleteDoc, query, orderBy, getDocs } from "firebase/firestore";
@@ -82,7 +80,6 @@ interface AuthContextType {
   logOut: () => Promise<void>;
   updateUserProfile: (updates: { displayName?: string; newPhotoBlob?: Blob; removePhoto?: boolean; bio?: string; privacySettings?: PrivacySettings; notificationSettings?: NotificationSettings; lastSeen?: Timestamp | null; bubbleStyle?: string; avatarFrameStyle?: string; }) => Promise<boolean>;
   updateUserDiamonds: (newDiamondCount: number) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
   reportUser: (reportedUserId: string, reason?: string) => Promise<void>;
   blockUser: (blockedUserId: string, blockedUserName?: string | null, blockedUserPhoto?: string | null) => Promise<void>;
   unblockUser: (blockedUserId: string) => Promise<void>;
@@ -139,18 +136,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return checkUserPremium(userData);
   }, [userData]);
   
-  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş', isGoogleSignUp = false) => {
+  const createUserDocument = useCallback(async (user: User, username?: string, gender?: 'kadın' | 'erkek' | 'belirtilmemiş') => {
     const userDocRef = doc(db, "users", user.uid);
     const docSnap = await getDoc(userDocRef);
     if (docSnap.exists()) return;
   
-    const initialDisplayName = username || (isGoogleSignUp ? user.displayName : null) || `kullanici_${user.uid.substring(0, 6)}`;
-    const initialPhotoURL = isGoogleSignUp ? user.photoURL : null;
-  
+    const initialDisplayName = username || `kullanici_${user.uid.substring(0, 6)}`;
+    
     const dataToSave: Omit<UserData, 'uid' | 'createdAt' | 'lastSeen' | 'isPremium'> = {
       email: user.email,
       displayName: initialDisplayName,
-      photoURL: initialPhotoURL,
+      photoURL: null,
       diamonds: INITIAL_DIAMONDS,
       role: "user",
       bio: "",
@@ -190,7 +186,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
               setUserData({ uid: user.uid, ...fetchedData });
             }
           } else {
-            await createUserDocument(user, user.displayName || undefined, "belirtilmemiş", true);
+            await createUserDocument(user, user.displayName || undefined, "belirtilmemiş");
             const newSnap = await getDoc(userDocRef);
             if (newSnap.exists()) {
               setCurrentUser(user);
@@ -223,7 +219,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateFirebaseProfile(userCredential.user, { displayName: username });
-      await createUserDocument(userCredential.user, username, gender, false);
+      await createUserDocument(userCredential.user, username, gender);
     } catch (error: any) {
       let message = "Kayıt sırasında bir hata oluştu. Lütfen bilgilerinizi kontrol edin ve tekrar deneyin.";
       if (error.code === 'auth/email-already-in-use') message = "Bu e-posta adresi zaten kullanımda.";
@@ -246,26 +242,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         message = "E-posta veya şifre hatalı.";
       }
       toast({ title: "Giriş Hatası", description: message, variant: "destructive" });
-      throw error;
-    } finally {
-      setIsUserLoading(false);
-    }
-  }, [toast]);
-
-  const signInWithGoogle = useCallback(async () => {
-    setIsUserLoading(true);
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error: any) {
-      console.error("Google Sign-In Error:", error);
-      let message = `Google ile giriş sırasında bir hata oluştu. (Kod: ${error.code})`;
-      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
-        message = "Giriş penceresi kapatıldı veya istek iptal edildi.";
-      } else if (error.code === 'auth/account-exists-with-different-credential') {
-        message = "Bu e-posta adresiyle zaten bir hesap mevcut. Lütfen diğer yöntemle giriş yapmayı deneyin.";
-      }
-      toast({ title: "Google Giriş Hatası", description: message, variant: "destructive" });
       throw error;
     } finally {
       setIsUserLoading(false);
@@ -460,7 +436,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     logOut,
     updateUserProfile,
     updateUserDiamonds,
-    signInWithGoogle,
     reportUser,
     blockUser,
     unblockUser,
