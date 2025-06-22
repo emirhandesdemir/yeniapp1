@@ -1,8 +1,8 @@
-
-// Bu dosyanın içeriği, ana sayfa mantığının /src/app/page.tsx dosyasına taşınmasıyla
-// birlikte yönlendirme çakışmasını önlemek amacıyla temizlenmiştir.
-// Bu dosya artık aktif olarak kullanılmamaktadır ve projenizden güvenle silinebilir.
-
-export default function DeprecatedMainPage() {
+// This file is now deprecated.
+// The homepage logic has been consolidated into the root /src/app/page.tsx
+// and the layout is now handled by the root /src/app/layout.tsx.
+// This change resolves routing conflicts and simplifies the project structure.
+// This file can be safely deleted.
+export default function DeprecatedMainIndexPage() {
   return null;
 }

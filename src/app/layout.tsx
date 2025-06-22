@@ -1,23 +1,35 @@
 
-import type { Metadata } from 'next';
+"use client";
+
+import type { ReactNode } from 'react';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
+import AppLayout from '@/components/layout/AppLayout';
+import { usePathname } from 'next/navigation';
 
-export const metadata: Metadata = {
-  title: 'HiweWalk',
-  description: 'Arkadaşlarınızla sohbet edin ve yeni bağlantılar kurun.',
-  manifest: '/manifest.json',
-};
+// Metadata needs to be handled differently in client components,
+// typically in the nearest server component parent or page.
+// We are moving to a client-side root layout to conditionally apply AppLayout.
+// export const metadata: Metadata = {
+//   title: 'HiweWalk',
+//   description: 'Arkadaşlarınızla sohbet edin ve yeni bağlantılar kurun.',
+//   manifest: '/manifest.json',
+// };
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pathname = usePathname();
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
+  const isAdminPage = pathname.startsWith('/admin');
+  const isCallPage = pathname.startsWith('/call/');
+  const showAppLayout = !isAuthPage && !isAdminPage && !isCallPage;
 
   return (
     <html lang="tr" suppressHydrationWarning>
@@ -53,7 +65,7 @@ export default function RootLayout({
           <AuthProvider>
             <InAppNotificationProvider>
               <MinimizedChatProvider>
-                {children}
+                {showAppLayout ? <AppLayout>{children}</AppLayout> : children}
                 <Toaster />
               </MinimizedChatProvider>
             </InAppNotificationProvider>

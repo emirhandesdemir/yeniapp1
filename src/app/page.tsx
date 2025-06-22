@@ -5,7 +5,6 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Gem, Compass, PlusCircle, Sparkles, Globe, MessageSquare, Users, Target, Edit3, RefreshCw, Star, Gamepad2, MessageSquarePlus, RadioTower } from "lucide-react";
 import { useAuth, checkUserPremium } from '@/contexts/AuthContext';
-import AppLayout from '@/components/layout/AppLayout';
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -105,7 +104,7 @@ export default function HomePage() {
 
   const [friends, setFriends] = useState<string[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(true);
-  const [blockedUserIds, setBlockedUserIds] = useState<string[]>();
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
   const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(true);
 
 
@@ -322,7 +321,7 @@ export default function HomePage() {
     }
 
     let filteredPosts = allPosts;
-    if (blockedUserIds?.length > 0) {
+    if (blockedUserIds && blockedUserIds.length > 0) {
         filteredPosts = filteredPosts.filter(post => !blockedUserIds.includes(post.userId));
     }
 
@@ -396,7 +395,6 @@ export default function HomePage() {
     const userIsCurrentlyPremium = checkUserPremium(userData);
 
     return (
-      <AppLayout>
         <div className="mx-auto max-w-2xl w-full space-y-5">
           <AnimatePresence>
             {isWelcomeCardVisible && (
@@ -599,24 +597,21 @@ export default function HomePage() {
           )}
 
         </div>
-      </AppLayout>
     );
   }
 
   // Fallback for when currentUser is null (e.g., after logout, before redirect)
   return (
-    <AppLayout>
-        <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
-            <div className="mb-6">
-                <Globe className="h-20 w-20 text-primary animate-pulse mx-auto" />
-            </div>
-            <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
-                Bir An...
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-md">
-                Sayfa yükleniyor veya yönlendiriliyor. Lütfen bekleyin.
-            </p>
-        </div>
-    </AppLayout>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background text-center p-4">
+          <div className="mb-6">
+              <Globe className="h-20 w-20 text-primary animate-pulse mx-auto" />
+          </div>
+          <h1 className="text-3xl font-headline font-semibold text-primary mb-3">
+              Bir An...
+          </h1>
+          <p className="text-lg text-muted-foreground max-w-md">
+              Sayfa yükleniyor veya yönlendiriliyor. Lütfen bekleyin.
+          </p>
+      </div>
   );
 }
