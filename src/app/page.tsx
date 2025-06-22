@@ -1,10 +1,8 @@
 
-import { notFound } from 'next/navigation';
-
-// This file exists to prevent a routing conflict with /src/app/(main)/page.tsx
-// which is the true root page of the application. By calling notFound(),
-// we explicitly tell Next.js to skip this file and look for the page
-// inside the route groups. This is a robust way to handle this structure.
+// This file is intentionally left almost empty to avoid routing conflicts.
+// The main page is defined in src/app/(main)/page.tsx, which correctly
+// maps to the root URL ('/') due to the (main) route group. This setup
+// ensures the main page uses the shared layout from the (main) group.
 export default function RootPage() {
-  notFound();
+  return null;
 }

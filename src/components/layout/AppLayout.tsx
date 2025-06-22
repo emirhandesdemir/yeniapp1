@@ -443,7 +443,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </DialogContent>
         </Dialog>
       )}
-      {isClient && currentUser && !isChatPage && (
+      {isClient && currentUser && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border flex items-stretch justify-around shadow-[0_-2px_10px_-3px_rgba(0,0,0,0.07)] z-30">
           {bottomNavItems.map((item) => (<BottomNavItem key={item.label} item={item} isActive={item.label === 'Profil' ? pathname.startsWith('/profile') || pathname.startsWith('/settings') : pathname === item.href(currentUser?.uid) || (item.label === 'Akış' && pathname === '/')} currentUserUid={currentUser?.uid}/>))}
         </nav>

@@ -5,9 +5,9 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
-// This page is deprecated. The main feed is now at `/`.
-// This component now acts as a permanent redirect to the root path.
-export default function DeprecatedFeedPage() {
+// This page is now deprecated and redirects to the root path `/`
+// where the main feed is now located.
+export default function DeprecatedFeedPageRedirect() {
   const router = useRouter();
 
   useEffect(() => {
