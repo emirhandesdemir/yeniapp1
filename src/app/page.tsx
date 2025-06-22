@@ -1,8 +1,9 @@
 
-// This file is intentionally left almost empty to avoid routing conflicts.
-// The main page is defined in src/app/(main)/page.tsx, which correctly
-// maps to the root URL ('/') due to the (main) route group. This setup
-// ensures the main page uses the shared layout from the (main) group.
+import { notFound } from 'next/navigation';
+
+// Bu sayfa, (main) grubundaki ana sayfa ile çakışmayı önlemek için
+// artık kasten "not found" durumuna yönlendiriyor.
+// Ana sayfa içeriği /src/app/(main)/page.tsx dosyasındadır.
 export default function RootPage() {
-  return null;
+  notFound();
 }
