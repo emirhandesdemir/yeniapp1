@@ -29,7 +29,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && currentUser) {
-      const redirectUrl = searchParams.get('redirect') || '/feed';
+      const redirectUrl = searchParams.get('redirect') || '/';
       router.replace(redirectUrl);
     }
   }, [currentUser, loading, router, searchParams]);
