@@ -633,12 +633,6 @@ export default function ChatRoomPage() {
     };
     if (isCurrentUserInVoiceChat) {
         setupSignalListener();
-    } else {
-        if (unsubscribeSignals) {
-            console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} as user left voice chat.`);
-            unsubscribeSignals();
-            unsubscribeSignals = null;
-        }
     }
     return () => {
       if (unsubscribeSignals) {
@@ -1431,6 +1425,7 @@ export default function ChatRoomPage() {
   }, [messages, loadingMessages, scrollToBottom]);
 
   const isRoomExpired = roomDetails?.expiresAt ? isPast(roomDetails.expiresAt.toDate()) : false;
+  const canSendMessage = !isRoomExpired && !isRoomFullError && isCurrentUserParticipantRef.current;
 
   const handleNewMessageInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const currentMessage = e.target.value; setNewMessage(currentMessage);
@@ -1829,6 +1824,15 @@ export default function ChatRoomPage() {
     return (<div className="flex flex-1 items-center justify-center h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-2 text-lg">Oda yükleniyor...</p></div>);
   }
 
+  const handleFormSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if(editingMessage) {
+        handleSaveEdit();
+    } else {
+        handleSendMessage(e);
+    }
+  };
+
   return (
     <div className="relative h-screen">
       {activeChest && roomDetails?.expiresAt && (
@@ -1851,7 +1855,7 @@ export default function ChatRoomPage() {
                 ref={audioEl => {
                 if (audioEl) {
                     if (audioEl.srcObject !== stream) {
-                        console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${audioEl.srcObject?.id}`);
+                        console.log(`[WebRTC RENDER REF] Setting srcObject for ${uid}. New stream ID: ${stream?.id}, Old srcObject ID: ${(audioEl.srcObject instanceof MediaStream) ? audioEl.srcObject.id : 'N/A'}`);
                         audioEl.srcObject = stream;
                     }
                     if (stream && audioEl.srcObject === stream && audioEl.paused && audioEl.readyState >= 2) {
