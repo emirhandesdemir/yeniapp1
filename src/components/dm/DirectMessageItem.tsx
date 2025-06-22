@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Timestamp } from 'firebase/firestore';
 import Link from "next/link";
-import { Star, Trash2, Loader2, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, MoreHorizontal, Copy, Smile as SmileIcon } from 'lucide-react';
+import { Star, Trash2, Loader2, Edit2, ThumbsUp, Heart, Laugh, PartyPopper, HelpCircle, Copy, Smile as SmileIcon, Check } from 'lucide-react';
 import { useAuth, checkUserPremium, type UserData } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,7 @@ interface DirectMessageItemProps {
   msg: DirectMessage;
   getAvatarFallbackText: (name?: string | null) => string;
   chatId: string;
+  onStartEdit: (messageId: string, currentText: string) => void;
   onMessageDeleted: (messageId: string) => void;
   onMessageEdited: (messageId: string, newText: string, editedAt: Timestamp) => void;
   isMatchSession?: boolean;
@@ -73,6 +74,7 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   msg,
   getAvatarFallbackText,
   chatId,
+  onStartEdit,
   onMessageDeleted,
   onMessageEdited,
   isMatchSession,
@@ -80,24 +82,14 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   const { userData: currentUserData, currentUser } = useAuth();
   const { toast } = useToast();
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedText, setEditedText] = useState(msg.text);
-  const [isProcessingEditOrDelete, setIsProcessingEditOrDelete] = useState(false);
+  const [isProcessingDelete, setIsProcessingDelete] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const editInputRef = useRef<HTMLTextAreaElement>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pressTimer = useRef<NodeJS.Timeout>();
 
-  useEffect(() => {
-    if (isEditing && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
-    }
-  }, [isEditing]);
-  
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
-        setIsMenuOpen(true);
+      setIsMenuOpen(true);
     }, 500);
   };
   
@@ -106,13 +98,19 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsMenuOpen(true);
+    e.preventDefault();
+    setIsMenuOpen(true);
   };
 
   const handleCopyText = () => {
     navigator.clipboard.writeText(msg.text);
     toast({ title: "Kopyalandı", description: "Mesaj panoya kopyalandı." });
+    setIsMenuOpen(false);
+  };
+
+  const handleEditMessage = () => {
+    onStartEdit(msg.id, msg.text);
+    setIsMenuOpen(false);
   };
 
   const bubbleStyle = msg.isOwn ? (currentUserData?.bubbleStyle || 'default') : (msg.senderBubbleStyle || 'default');
@@ -123,55 +121,19 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
 
   const handleDeleteMessage = async () => {
     if (!msg.isOwn || !chatId || !msg.id) return;
-    setIsProcessingEditOrDelete(true);
+    setIsProcessingDelete(true);
     setShowDeleteConfirm(false);
     try {
       const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
       await deleteFirestoreDoc(messageRef);
-      // onMessageDeleted is removed to let onSnapshot handle UI update
+      // Let onSnapshot handle the UI update
       toast({ title: "Başarılı", description: "Mesajınız silindi." });
     } catch (error) {
       console.error("Error deleting direct message:", error);
       toast({ title: "Hata", description: "Mesaj silinirken bir sorun oluştu.", variant: "destructive" });
     } finally {
-      setIsProcessingEditOrDelete(false);
+      setIsProcessingDelete(false);
     }
-  };
-
-  const handleEditMessage = () => {
-    setEditedText(msg.text);
-    setIsEditing(true);
-    setIsMenuOpen(false);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!msg.isOwn || !chatId || !msg.id || !editedText.trim() || editedText.trim() === msg.text) {
-      setIsEditing(false);
-      return;
-    }
-    setIsProcessingEditOrDelete(true);
-    try {
-      const messageRef = doc(db, `directMessages/${chatId}/messages`, msg.id);
-      await updateDoc(messageRef, {
-        text: editedText.trim(),
-        editedAt: Timestamp.now(),
-      });
-      // onMessageEdited is removed to let onSnapshot handle UI update
-      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
-    } catch (error) {
-      console.error("Error editing message:", error);
-      toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
-    } finally {
-      setIsProcessingEditOrDelete(false);
-      setIsEditing(false);
-      setIsMenuOpen(false);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditedText(msg.text);
-    setIsMenuOpen(false);
   };
 
   const handleReaction = async (emoji: string) => {
@@ -238,42 +200,23 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
       )}>
         <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
           <DropdownMenuTrigger asChild>
-          <div
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onContextMenu={handleContextMenu}
-            className={cn(
-              "relative p-2.5 sm:p-3 shadow-md break-words group/bubble cursor-pointer",
-              `bubble-${bubbleStyle}`,
-              msg.isOwn
-              ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
-              : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
-            )}
-          >
-            {isEditing ? (
-                <div className="space-y-2 w-full">
-                    <Textarea
-                        ref={editInputRef}
-                        value={editedText}
-                        onChange={(e) => setEditedText(e.target.value)}
-                        className="w-full text-sm bg-card text-card-foreground p-2 rounded-md min-h-[60px] max-h-[120px] resize-y"
-                        rows={Math.max(2, Math.min(5, editedText.split('\n').length))}
-                        disabled={isProcessingEditOrDelete}
-                    />
-                    <div className="flex justify-end gap-2">
-                        <Button size="xs" variant="ghost" onClick={handleCancelEdit} disabled={isProcessingEditOrDelete} className="text-xs">İptal</Button>
-                        <Button size="xs" onClick={handleSaveEdit} disabled={isProcessingEditOrDelete || !editedText.trim() || editedText.trim() === msg.text} className="text-xs">
-                            {isProcessingEditOrDelete ? <Loader2 className="h-3 w-3 animate-spin" /> : "Kaydet"}
-                        </Button>
-                    </div>
+            <div
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
+                onContextMenu={handleContextMenu}
+                className={cn(
+                    "relative p-2.5 sm:p-3 shadow-md break-words group/bubble cursor-pointer",
+                    `bubble-${bubbleStyle}`,
+                    msg.isOwn
+                    ? "bg-primary text-primary-foreground rounded-t-xl rounded-l-xl sm:rounded-t-2xl sm:rounded-l-2xl"
+                    : "bg-secondary text-secondary-foreground rounded-t-xl rounded-r-xl sm:rounded-t-2xl sm:rounded-r-2xl"
+                )}
+                >
+                <div className="allow-text-selection">
+                    <p className="text-sm">{msg.text}</p>
+                    {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
                 </div>
-            ) : (
-              <div className="allow-text-selection">
-                  <p className="text-sm">{msg.text}</p>
-                  {msg.editedAt && <span className="text-[10px] opacity-70 ml-1.5 italic">(düzenlendi)</span>}
-              </div>
-            )}
-          </div>
+            </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={msg.isOwn ? "end" : "start"} className="w-48">
               {!isMatchSession && (
@@ -305,18 +248,19 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
               {msg.isOwn && !isMatchSession && (
                   <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingEditOrDelete}>
+                      <DropdownMenuItem onClick={handleEditMessage} disabled={isProcessingDelete}>
                           <Edit2 className="mr-2 h-4 w-4" /> Düzenle
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingEditOrDelete}>
+                      <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled={isProcessingDelete}>
                           <Trash2 className="mr-2 h-4 w-4" /> Sil
                       </DropdownMenuItem>
                   </>
               )}
           </DropdownMenuContent>
         </DropdownMenu>
+
            {/* Reactions Display */}
-            {!isEditing && msg.reactions && Object.keys(msg.reactions).length > 0 && (
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                 <div className={cn("mt-1 flex flex-wrap gap-1", msg.isOwn ? "justify-end" : "justify-start", "px-1")}>
                 {Object.entries(msg.reactions).map(([emoji, users]) => {
                     if (!users || users.length === 0) return null;
@@ -366,13 +310,13 @@ const DirectMessageItem: React.FC<DirectMessageItemProps> = React.memo(({
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingEditOrDelete}>İptal</AlertDialogCancel>
+                <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)} disabled={isProcessingDelete}>İptal</AlertDialogCancel>
                 <AlertDialogAction
                     onClick={handleDeleteMessage}
                     className="bg-destructive hover:bg-destructive/90"
-                    disabled={isProcessingEditOrDelete}
+                    disabled={isProcessingDelete}
                 >
-                    {isProcessingEditOrDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isProcessingDelete && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Sil
                 </AlertDialogAction>
             </AlertDialogFooter>

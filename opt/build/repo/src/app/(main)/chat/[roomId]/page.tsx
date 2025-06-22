@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot, Gift } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Smile, Loader2, Users, Trash2, Clock, Gem, RefreshCw, UserCircle, MessageSquare, MoreVertical, UsersRound, ShieldAlert, Pencil, Gamepad2, X, Puzzle, Lightbulb, Info, ExternalLink, Mic, MicOff, UserCog, VolumeX, LogOut, Crown, UserPlus, Star, Settings as SettingsIcon, Dot, Gift, Check } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, FormEvent, useCallback, ChangeEvent, useLayoutEffect } from "react";
@@ -64,6 +64,7 @@ import {
 import CreateChestDialog from "@/components/chat/CreateChestDialog";
 import ActiveChestDisplay from "@/components/chat/ActiveChestDisplay";
 import { useMinimizedChat } from '@/contexts/MinimizedChatContext';
+import { motion, AnimatePresence } from 'framer-motion';
 
 
 export interface ActiveChest {
@@ -286,6 +287,38 @@ export default function ChatRoomPage() {
     ));
   }, []);
 
+  const handleStartEdit = useCallback((messageId: string, currentText: string) => {
+    setEditingMessage({ id: messageId, text: currentText });
+    setNewMessage(currentText);
+    messageInputRef.current?.focus();
+  }, []);
+  
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessage(null);
+    setNewMessage("");
+  }, []);
+  
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingMessage || !newMessage.trim() || newMessage.trim() === editingMessage.text) {
+      handleCancelEdit();
+      return;
+    }
+    setIsSending(true);
+    const messageRef = doc(db, `chatRooms/${roomId}/messages`, editingMessage.id);
+    try {
+      await updateDoc(messageRef, {
+        text: newMessage.trim(),
+        editedAt: serverTimestamp(),
+      });
+      toast({ title: "Başarılı", description: "Mesajınız düzenlendi." });
+    } catch (error) {
+      console.error("Error saving edited message:", error);
+      toast({ title: "Hata", description: "Mesaj düzenlenirken bir sorun oluştu.", variant: "destructive" });
+    } finally {
+      setIsSending(false);
+      handleCancelEdit();
+    }
+  }, [editingMessage, newMessage, roomId, toast, handleCancelEdit]);
 
   const sendSignalMessage = useCallback(async (toUid: string, signal: WebRTCSignal) => {
     if (!currentUser || !roomId) return;
@@ -600,12 +633,6 @@ export default function ChatRoomPage() {
     };
     if (isCurrentUserInVoiceChat) {
         setupSignalListener();
-    } else {
-        if (unsubscribeSignals) {
-            console.log(`[WebRTC] Cleaning up signal listener for ${currentUser.uid} as user left voice chat.`);
-            unsubscribeSignals();
-            unsubscribeSignals = null;
-        }
     }
     return () => {
       if (unsubscribeSignals) {
@@ -2065,4 +2092,3 @@ export default function ChatRoomPage() {
     </div>
   );
 }
-
