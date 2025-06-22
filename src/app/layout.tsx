@@ -1,7 +1,4 @@
-
-"use client";
-
-import type { ReactNode } from 'react';
+import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -9,20 +6,17 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 
-// Metadata needs to be handled differently in client components,
-// typically in the nearest server component parent or page.
-// We are moving to a client-side root layout to conditionally apply AppLayout.
-// export const metadata: Metadata = {
-//   title: 'HiweWalk',
-//   description: 'Arkadaşlarınızla sohbet edin ve yeni bağlantılar kurun.',
-//   manifest: '/manifest.json',
-// };
+export const metadata: Metadata = {
+  title: 'HiweWalk',
+  description: 'Arkadaşlarınızla sohbet edin ve yeni bağlantılar kurun.',
+  manifest: '/manifest.json',
+};
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
@@ -36,7 +30,7 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-config" content="/icons/browserconfig.xml" />
-        <meta name="msapplication-TileColor" content="#ADD8E6" /> 
+        <meta name="msapplication-TileColor" content="#ADD8E6" />
         <meta name="msapplication-tap-highlight" content="no" />
         <meta name="theme-color" content="#F0F8FF" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
@@ -50,10 +44,7 @@ export default function RootLayout({
         <link rel="shortcut icon" href="/favicon.ico" />
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col">
-        <ThemeProvider
-          defaultTheme="dark"
-          storageKey="hiwewalk-theme"
-        >
+        <ThemeProvider defaultTheme="dark" storageKey="hiwewalk-theme">
           <AuthProvider>
             <InAppNotificationProvider>
               <MinimizedChatProvider>

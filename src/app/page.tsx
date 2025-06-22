@@ -1,7 +1,6 @@
+// This file is intentionally left blank to resolve a routing conflict.
+// The root page content is now served by /src/app/(main)/page.tsx.
 
-// Bu dosyanın içeriği, yönlendirme çakışmasını çözmek için ana dizindeki /src/app/(main)/page.tsx dosyasına taşındı.
-// Bu dosya artık gereksizdir ve projenizden güvenle silinebilir.
-
-export default function DeprecatedMainRootPage() {
+export default function RootPage() {
   return null;
 }
