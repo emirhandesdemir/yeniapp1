@@ -117,7 +117,6 @@ export default function DirectMessagePage() {
   const [reportReason, setReportReason] = useState("");
 
   const [dmDocData, setDmDocData] = useState<DmDocumentData | null>(null);
-  const partnerLastSeenUnsubscribeRef = useRef<() => void | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
 
@@ -174,45 +173,35 @@ export default function DirectMessagePage() {
                 router.push("/friends"); return;
             }
             
-            let partnerInfo: Partial<DmPartnerDetails> = { uid: partnerUid };
-            if (data.participantInfo && data.participantInfo[partnerUid]) {
-                 partnerInfo = {
-                    ...partnerInfo,
-                    displayName: data.participantInfo[partnerUid].displayName,
-                    photoURL: data.participantInfo[partnerUid].photoURL,
-                    isPremium: data.participantInfo[partnerUid].isPremium || false,
-                 };
-            }
-            
-            if (partnerLastSeenUnsubscribeRef.current) {
-                partnerLastSeenUnsubscribeRef.current();
-            }
-            const userDocRef = doc(db, "users", partnerUid);
-            partnerLastSeenUnsubscribeRef.current = onSnapshot(userDocRef, (userSnap) => {
+            try {
+                const userDocRef = doc(db, "users", partnerUid);
+                const userSnap = await getDoc(userDocRef);
                 if (userSnap.exists()) {
                     const partnerData = userSnap.data() as UserData;
-                    setDmPartnerDetails(prev => ({
-                        ...(prev || partnerInfo), 
+                    setDmPartnerDetails({
                         uid: partnerUid,
-                        displayName: partnerData.displayName || partnerInfo.displayName,
-                        photoURL: partnerData.photoURL || partnerInfo.photoURL,
+                        displayName: partnerData.displayName,
+                        photoURL: partnerData.photoURL,
                         email: partnerData.email,
                         isPremium: checkUserPremium(partnerData),
                         isBanned: partnerData.isBanned || false,
                         lastSeen: partnerData.lastSeen || null,
                         avatarFrameStyle: partnerData.avatarFrameStyle || 'default',
-                    }));
+                    });
                     document.title = `${partnerData.displayName || 'Sohbet'} - DM`;
                 } else {
-                    setDmPartnerDetails(prev => ({
-                        ...(prev || partnerInfo),
+                     const partnerInfoFromDM = data.participantInfo?.[partnerUid];
+                     setDmPartnerDetails({
                         uid: partnerUid,
-                        lastSeen: null, 
-                    }));
-                     document.title = `${partnerInfo.displayName || 'Sohbet'} - DM`;
+                        displayName: partnerInfoFromDM?.displayName || "Bilinmeyen Kullanıcı",
+                        photoURL: partnerInfoFromDM?.photoURL || null,
+                        lastSeen: null,
+                     });
+                     document.title = `${partnerInfoFromDM?.displayName || 'Sohbet'} - DM`;
                 }
-            });
-
+            } catch (error) {
+                console.error("Error fetching partner details:", error);
+            }
 
             if (currentUser && partnerUid) {
                 checkIfUserBlocked(partnerUid).then(setIsPartnerBlockedByCurrentUser);
@@ -230,9 +219,6 @@ export default function DirectMessagePage() {
     });
     return () => {
         unsubscribeDmDoc();
-        if (partnerLastSeenUnsubscribeRef.current) {
-            partnerLastSeenUnsubscribeRef.current();
-        }
     };
   }, [chatId, currentUser?.uid, toast, router, checkIfUserBlocked, checkIfCurrentUserIsBlockedBy]);
 
