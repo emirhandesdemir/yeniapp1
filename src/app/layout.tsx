@@ -8,7 +8,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { MinimizedChatProvider } from '@/contexts/MinimizedChatContext';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
-import AppLayout from '@/components/layout/AppLayout';
 import { usePathname } from 'next/navigation';
 
 // Metadata needs to be handled differently in client components,
@@ -26,10 +25,6 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
-  const isAuthPage = pathname === '/login' || pathname === '/signup';
-  const isAdminPage = pathname.startsWith('/admin');
-  const isCallPage = pathname.startsWith('/call/');
-  const showAppLayout = !isAuthPage && !isAdminPage && !isCallPage;
 
   return (
     <html lang="tr" suppressHydrationWarning>
@@ -65,7 +60,7 @@ export default function RootLayout({
           <AuthProvider>
             <InAppNotificationProvider>
               <MinimizedChatProvider>
-                {showAppLayout ? <AppLayout>{children}</AppLayout> : children}
+                {children}
                 <Toaster />
               </MinimizedChatProvider>
             </InAppNotificationProvider>
