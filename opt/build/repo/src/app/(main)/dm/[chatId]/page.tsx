@@ -722,7 +722,7 @@ export default function DirectMessagePage() {
 
   const partnerActivityStatus = formatPartnerLastSeen(dmPartnerDetails?.lastSeen);
   const isPartnerCurrentlyActive = partnerActivityStatus === "Aktif";
-  const isMatchSessionActive = isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded;
+  const isMatchSessionActive = !!(isMatchSessionChat && dmDocData && !dmDocData.matchSessionEnded);
 
   const headerBackButtonAction = () => {
     if (isMatchSessionActive) {
@@ -974,4 +974,5 @@ export default function DirectMessagePage() {
     </div>
   );
 }
+
 
