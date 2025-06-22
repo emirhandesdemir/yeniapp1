@@ -345,10 +345,11 @@ export default function ChatRoomsPage() {
         name: roomDataToCreate.name,
         description: roomDataToCreate.description,
         createdAt: Timestamp.now(),
-        expiresAt: Timestamp.fromDate(expiresAtDate),
+        isPremiumRoom: roomDataToCreate.isPremiumRoom,
+        participantCount: 0,
+        maxParticipants: roomDataToCreate.maxParticipants,
         image: roomDataToCreate.image,
         imageAiHint: roomDataToCreate.imageAiHint,
-        maxParticipants: roomDataToCreate.maxParticipants,
         isGameEnabledInRoom: roomDataToCreate.isGameEnabledInRoom,
         isActive: false,
       } as ChatRoomFeedDisplayData);
@@ -583,7 +584,7 @@ export default function ChatRoomsPage() {
           }}
           roomId={editingRoomDetails.id}
           initialName={editingRoomDetails.name}
-          initialDescription={editingRoomDetails.description}
+          initialDescription={editingRoomDetails.description || ""}
           initialImage={editingRoomDetails.image}
           initialIsGameEnabledInRoom={editingRoomDetails.isGameEnabledInRoom}
         />
@@ -629,3 +630,4 @@ export default function ChatRoomsPage() {
     </div>
   );
 }
+
